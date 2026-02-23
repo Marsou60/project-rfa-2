@@ -1,0 +1,613 @@
+import { useState, useEffect } from 'react'
+import { X, FileText, User, Users, Pencil, Check, Link2 } from 'lucide-react'
+import { getContracts, exportEntityPdf, getContractRules } from '../api/client'
+import TierOverrideEditor from './TierOverrideEditor'
+
+function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContractChange, onAssignContract, cotisationAmount = 0, onCotisationChange, onRefresh }) {
+  const [editingOverride, setEditingOverride] = useState(null)
+  const [contractRules, setContractRules] = useState({})
+  const [marginRateReceived, setMarginRateReceived] = useState('')
+
+  useEffect(() => {
+    if (entity?.contract_applied?.id) {
+      loadContractRules(entity.contract_applied.id)
+    }
+  }, [entity?.contract_applied?.id])
+
+  const loadContractRules = async (contractId) => {
+    try {
+      const rules = await getContractRules(contractId)
+      const rulesMap = {}
+      for (const rule of rules) {
+        rulesMap[rule.key] = rule
+      }
+      setContractRules(rulesMap)
+    } catch (err) {
+      console.error('Erreur chargement regles:', err)
+    }
+  }
+
+  const openOverrideEditor = (fieldKey, fieldLabel, tierType, item) => {
+    const rule = contractRules[fieldKey]
+    let currentTiers = []
+    if (rule) {
+      if (tierType === 'rfa' && rule.tiers_rfa) {
+        currentTiers = JSON.parse(rule.tiers_rfa)
+      } else if (tierType === 'bonus' && rule.tiers_bonus) {
+        currentTiers = JSON.parse(rule.tiers_bonus)
+      } else if (tierType === 'tri' && rule.tiers) {
+        currentTiers = JSON.parse(rule.tiers)
+      }
+    }
+
+    setEditingOverride({
+      fieldKey,
+      fieldLabel,
+      tierType,
+      currentTiers,
+      currentRate: tierType === 'tri' ? item.rate : item[tierType]?.rate || 0,
+      currentValue: tierType === 'tri' ? item.value : item[tierType]?.value || 0,
+      ca: item.ca
+    })
+  }
+
+  const handleOverrideSaved = () => {
+    setEditingOverride(null)
+    if (onRefresh) onRefresh()
+  }
+
+  const formatAmount = (amount) => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 2,
+    }).format(amount)
+  }
+
+  const formatPercent = (rate) => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'percent',
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 3,
+    }).format(rate)
+  }
+
+  const rawGrandTotal = entity?.rfa?.totals?.grand_total || 0
+  const adjustedGrandTotal = mode === 'client' && cotisationAmount > 0
+    ? Math.max(rawGrandTotal - cotisationAmount, 0)
+    : rawGrandTotal
+
+  const totalCaGlobal = entity?.ca?.totals?.global_total || 0
+  const totalCaTri = entity?.ca?.totals?.tri_total || 0
+  const totalCa = totalCaGlobal + totalCaTri
+  const parsedMarginRate = marginRateReceived === '' ? null : parseFloat(marginRateReceived) / 100
+  const rfaReceived = parsedMarginRate !== null ? totalCa * parsedMarginRate : null
+  const unionMargin = parsedMarginRate !== null ? (rfaReceived - adjustedGrandTotal) : null
+
+  if (!entity && !loading) {
+    return null
+  }
+
+  return (
+    <>
+      {/* Overlay */}
+      {entity && (
+        <div
+          className="fixed inset-0 glass-modal-overlay z-40"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Drawer */}
+      <div
+        className={`fixed right-0 top-0 h-full w-full max-w-5xl glass-drawer z-50 transform transition-transform duration-300 ease-in-out overflow-hidden ${
+          entity ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <div className="h-full flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-white/10">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-glow-blue">
+                {mode === 'client' ? (
+                  <User className="w-6 h-6 text-white" />
+                ) : (
+                  <Users className="w-6 h-6 text-white" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">
+                  {loading ? 'Chargement...' : (
+                    mode === 'client'
+                      ? entity?.code_union
+                      : entity?.groupe_client
+                  )}
+                </h2>
+                {entity && mode === 'client' && entity.nom_client && (
+                  <p className="text-sm text-glass-secondary">{entity.nom_client}</p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {entity && !loading && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const entityId = mode === 'client' ? entity.code_union : entity.groupe_client
+                      await exportEntityPdf(importId, mode, entityId, entity.contract_applied?.id)
+                    } catch (err) {
+                      console.error('Erreur export PDF:', err)
+                      alert('Erreur lors de l\'export PDF: ' + (err.response?.data?.detail || err.message))
+                    }
+                  }}
+                  className="glass-btn-danger flex items-center gap-2"
+                  title="Exporter en PDF"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Exporter PDF</span>
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="glass-btn-icon"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6 glass-scrollbar">
+            {loading ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="text-glass-secondary">Chargement du détail...</div>
+              </div>
+            ) : entity ? (
+              <div className="space-y-6">
+                {/* Info entité */}
+                <div className="glass-card p-5">
+                  {mode === 'client' ? (
+                    <>
+                      <h3 className="text-xs font-medium text-glass-muted uppercase tracking-wider mb-1">Code Union</h3>
+                      <p className="text-lg font-semibold text-white">{entity.code_union}</p>
+                      {entity.nom_client && (
+                        <>
+                          <h3 className="text-xs font-medium text-glass-muted uppercase tracking-wider mt-4 mb-1">Nom Client</h3>
+                          <p className="text-lg text-glass-primary">{entity.nom_client}</p>
+                        </>
+                      )}
+                      {entity.groupe_client && (
+                        <>
+                          <h3 className="text-xs font-medium text-glass-muted uppercase tracking-wider mt-4 mb-1">Groupe Client</h3>
+                          <p className="text-lg text-glass-primary">{entity.groupe_client}</p>
+                        </>
+                      )}
+
+                      {/* Cotisation Union */}
+                      <div className="mt-5 p-4 glass-card-dark border-orange-500/20">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <h3 className="text-sm font-medium text-white">Cotisation Union</h3>
+                            <p className="text-xs text-glass-muted">Déduction de la RFA client</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!onCotisationChange) return
+                              onCotisationChange(cotisationAmount > 0 ? 0 : (cotisationAmount || 1500))
+                            }}
+                            className={`text-xs px-3 py-2 rounded-full font-semibold transition-all ${
+                              cotisationAmount > 0
+                                ? 'glass-badge-emerald'
+                                : 'glass-badge-gray'
+                            }`}
+                            title="Activer / désactiver la cotisation"
+                          >
+                            {cotisationAmount > 0 ? (
+                              <span className="flex items-center gap-1">
+                                <Check className="w-3 h-3" />
+                                Cotisation activée
+                              </span>
+                            ) : (
+                              'Activer cotisation'
+                            )}
+                          </button>
+                        </div>
+                        {cotisationAmount > 0 && (
+                          <div className="mt-3">
+                            <label className="block text-xs text-glass-muted mb-1">Montant (€)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="10"
+                              value={cotisationAmount}
+                              onChange={(e) => {
+                                if (!onCotisationChange) return
+                                onCotisationChange(Number(e.target.value || 0))
+                              }}
+                              className="glass-input"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-xs font-medium text-glass-muted uppercase tracking-wider mb-1">Groupe Client</h3>
+                      <p className="text-lg font-semibold text-white">{entity.groupe_client}</p>
+                      <h3 className="text-xs font-medium text-glass-muted uppercase tracking-wider mt-4 mb-1">Nombre de comptes</h3>
+                      <p className="text-lg text-glass-primary">{entity.nb_comptes}</p>
+                      {entity.codes_union && entity.codes_union.length > 0 && (
+                        <>
+                          <h3 className="text-xs font-medium text-glass-muted uppercase tracking-wider mt-4 mb-2">Codes Union</h3>
+                          <div className="flex flex-wrap gap-2">
+                            {entity.codes_union.map((code) => (
+                              <span
+                                key={code}
+                                className="glass-badge-gray"
+                              >
+                                {code}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Contrat appliqué et assignation */}
+                <div className="glass-card p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-medium text-glass-muted uppercase tracking-wider mb-1">Contrat appliqué</h3>
+                      <p className="text-lg font-semibold text-white">
+                        {entity.contract_applied?.name || 'Contrat par défaut'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <ContractSelector
+                        currentContractId={entity.contract_applied?.id}
+                        onSelect={(contractId) => onContractChange(contractId)}
+                      />
+                      {onAssignContract && (
+                        <button
+                          onClick={() => {
+                            const entityData = mode === 'client'
+                              ? { id: entity.code_union, label: entity.label || entity.code_union, groupe_client: entity.groupe_client }
+                              : { id: entity.groupe_client, label: entity.groupe_client }
+                            onAssignContract(entityData, mode)
+                          }}
+                          className="glass-btn-primary text-sm flex items-center gap-2"
+                          title="Modifier l'affectation de contrat"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          <span>Assigner</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* RFA Globales Plateformes */}
+                {entity.rfa?.global && (
+                  <div className="glass-card overflow-hidden">
+                    <div className="flex items-center justify-between p-4 border-b border-white/10">
+                      <h3 className="text-lg font-semibold text-white">RFA Globales (Plateformes)</h3>
+                      <span className="text-xs text-purple-300 flex items-center gap-1">
+                        <Pencil className="w-3 h-3" />
+                        Cliquez sur un taux pour le personnaliser
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="glass-table">
+                        <thead>
+                          <tr>
+                            <th className="text-left">Element</th>
+                            <th className="text-right">CA</th>
+                            <th className="text-right">Seuil RFA</th>
+                            <th className="text-right">Taux RFA</th>
+                            <th className="text-right">RFA €</th>
+                            <th className="text-right">Seuil Bonus</th>
+                            <th className="text-right">Taux Bonus</th>
+                            <th className="text-right">Bonus €</th>
+                            <th className="text-right">Total €</th>
+                            <th className="text-center">Déclenché</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(entity.rfa.global || {}).map(([key, item]) => (
+                            <tr key={key} className={item.has_override ? 'bg-purple-500/10' : ''}>
+                              <td className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  {item.label}
+                                  {item.has_override && (
+                                    <span className="glass-badge-purple text-xs">
+                                      Override
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="text-right">{formatAmount(item.ca)}</td>
+                              <td className="text-right text-glass-secondary">
+                                {item.rfa.selected_min ? formatAmount(item.rfa.selected_min) : (item.rfa.min_threshold ? formatAmount(item.rfa.min_threshold) : '-')}
+                              </td>
+                              <td className="text-right">
+                                <button
+                                  onClick={() => openOverrideEditor(key, item.label, 'rfa', item)}
+                                  className={`px-2 py-1 rounded transition-colors ${
+                                    item.rfa.has_override
+                                      ? 'bg-purple-500/30 text-purple-200 font-semibold'
+                                      : 'hover:bg-purple-500/20 text-glass-primary hover:text-purple-200'
+                                  }`}
+                                  title="Cliquez pour personnaliser ce taux"
+                                >
+                                  {item.rfa.rate > 0 ? formatPercent(item.rfa.rate) : '-'}
+                                  <Pencil className="w-3 h-3 ml-1 inline text-purple-400" />
+                                </button>
+                              </td>
+                              <td className="text-right font-semibold">
+                                {formatAmount(item.rfa.value)}
+                              </td>
+                              <td className="text-right text-glass-secondary">
+                                {item.bonus.selected_min ? formatAmount(item.bonus.selected_min) : (item.bonus.min_threshold ? formatAmount(item.bonus.min_threshold) : '-')}
+                              </td>
+                              <td className="text-right">
+                                <button
+                                  onClick={() => openOverrideEditor(key, item.label, 'bonus', item)}
+                                  className={`px-2 py-1 rounded transition-colors ${
+                                    item.bonus.has_override
+                                      ? 'bg-purple-500/30 text-purple-200 font-semibold'
+                                      : 'hover:bg-purple-500/20 text-glass-primary hover:text-purple-200'
+                                  }`}
+                                  title="Cliquez pour personnaliser ce taux"
+                                >
+                                  {item.bonus.rate > 0 ? formatPercent(item.bonus.rate) : '-'}
+                                  <Pencil className="w-3 h-3 ml-1 inline text-purple-400" />
+                                </button>
+                              </td>
+                              <td className="text-right font-semibold">
+                                {formatAmount(item.bonus.value)}
+                              </td>
+                              <td className="text-right font-bold text-blue-400">
+                                {formatAmount(item.total.value)}
+                              </td>
+                              <td className="text-center">
+                                {item.triggered ? (
+                                  <span className="glass-badge-emerald">Oui</span>
+                                ) : (
+                                  <span className="glass-badge-gray">Non</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* RFA Tri-partites */}
+                {entity.rfa?.tri && (
+                  <div className="glass-card overflow-hidden">
+                    <div className="flex items-center justify-between p-4 border-b border-white/10">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                          <Link2 className="w-4 h-4 text-white" />
+                        </div>
+                        <h3 className="text-lg font-bold text-white">Tri-partites</h3>
+                      </div>
+                      <span className="text-xs text-purple-300 flex items-center gap-1">
+                        <Pencil className="w-3 h-3" />
+                        Cliquez sur un taux pour le personnaliser
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="glass-table">
+                        <thead>
+                          <tr>
+                            <th className="text-left">Element</th>
+                            <th className="text-right">CA</th>
+                            <th className="text-right">Seuil</th>
+                            <th className="text-right">Taux</th>
+                            <th className="text-right">RFA €</th>
+                            <th className="text-center">Déclenché</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(entity.rfa.tri || {})
+                            .filter(([_, item]) => item.ca > 0 || item.triggered)
+                            .map(([key, item]) => (
+                            <tr key={key} className={item.has_override ? 'bg-purple-500/10' : ''}>
+                              <td className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  {item.label}
+                                  {item.has_override && (
+                                    <span className="glass-badge-purple text-xs">
+                                      Override
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="text-right">{formatAmount(item.ca)}</td>
+                              <td className="text-right text-glass-secondary">
+                                {item.selected_min ? formatAmount(item.selected_min) : (item.min_threshold ? formatAmount(item.min_threshold) : '-')}
+                              </td>
+                              <td className="text-right">
+                                <button
+                                  onClick={() => openOverrideEditor(key, item.label, 'tri', item)}
+                                  className={`px-2 py-1 rounded transition-colors ${
+                                    item.has_override
+                                      ? 'bg-purple-500/30 text-purple-200 font-semibold'
+                                      : 'hover:bg-purple-500/20 text-glass-primary hover:text-purple-200'
+                                  }`}
+                                  title="Cliquez pour personnaliser ce taux"
+                                >
+                                  {item.rate > 0 ? formatPercent(item.rate) : '-'}
+                                  <Pencil className="w-3 h-3 ml-1 inline text-purple-400" />
+                                </button>
+                              </td>
+                              <td className="text-right font-semibold">
+                                {formatAmount(item.value)}
+                              </td>
+                              <td className="text-center">
+                                {item.triggered ? (
+                                  <span className="glass-badge-emerald">Oui</span>
+                                ) : (
+                                  <span className="glass-badge-gray">Non</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Totaux RFA */}
+                {entity.rfa?.totals && (
+                  <div className="glass-card p-5">
+                    <h3 className="text-lg font-semibold text-white mb-4">Totaux RFA</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-glass-secondary">Total RFA Plateformes</span>
+                        <span className="text-lg font-semibold text-white">
+                          {formatAmount(entity.rfa.totals.global_rfa || 0)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-glass-secondary">Total Bonus Plateformes</span>
+                        <span className="text-lg font-semibold text-white">
+                          {formatAmount(entity.rfa.totals.global_bonus || 0)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-glass-secondary">Total Plateformes (RFA + Bonus)</span>
+                        <span className="text-lg font-semibold text-blue-400">
+                          {formatAmount(entity.rfa.totals.global_total || 0)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-glass-secondary">Total Tri</span>
+                        <span className="text-lg font-semibold text-white">
+                          {formatAmount(entity.rfa.totals.tri_total || 0)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                        <span className="text-base font-semibold text-white">Total Final RFA</span>
+                        <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+                          {formatAmount(adjustedGrandTotal)}
+                        </span>
+                      </div>
+                      {mode === 'client' && cotisationAmount > 0 && (
+                        <div className="flex items-center justify-between text-xs text-orange-400">
+                          <span>Déduction cotisation</span>
+                          <span>- {formatAmount(cotisationAmount)} (brut: {formatAmount(rawGrandTotal)})</span>
+                        </div>
+                      )}
+                      <div className="pt-4 border-t border-white/10">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-sm text-glass-secondary">Taux RFA perçu Union (%)</span>
+                            <p className="text-xs text-glass-muted">Simulation marge sur ce client</p>
+                          </div>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            value={marginRateReceived}
+                            onChange={(e) => setMarginRateReceived(e.target.value)}
+                            placeholder="15"
+                            className="glass-input w-24 text-sm"
+                          />
+                        </div>
+                        <div className="mt-3 flex items-center justify-between">
+                          <span className="text-sm text-glass-secondary">Marge Union simulée</span>
+                          <span className={`text-lg font-semibold ${unionMargin !== null && unionMargin >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {unionMargin !== null ? formatAmount(unionMargin) : '—'}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-xs text-glass-muted">
+                          <span>RFA perçue estimée</span>
+                          <span>{rfaReceived !== null ? formatAmount(rfaReceived) : '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {/* Modal d'edition des overrides */}
+      {editingOverride && (
+        <TierOverrideEditor
+          targetType={mode === 'client' ? 'CODE_UNION' : 'GROUPE_CLIENT'}
+          targetValue={mode === 'client' ? entity?.code_union : entity?.groupe_client}
+          fieldKey={editingOverride.fieldKey}
+          fieldLabel={editingOverride.fieldLabel}
+          tierType={editingOverride.tierType}
+          currentTiers={editingOverride.currentTiers}
+          currentRate={editingOverride.currentRate}
+          currentValue={editingOverride.currentValue}
+          ca={editingOverride.ca}
+          onSave={handleOverrideSaved}
+          onClose={() => setEditingOverride(null)}
+        />
+      )}
+    </>
+  )
+}
+
+function ContractSelector({ currentContractId, onSelect }) {
+  const [contracts, setContracts] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    loadContracts()
+  }, [])
+
+  const loadContracts = async () => {
+    try {
+      setLoading(true)
+      const data = await getContracts()
+      setContracts(data.filter(c => c.is_active))
+    } catch (err) {
+      console.error('Erreur chargement contrats:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleChange = (e) => {
+    const contractId = e.target.value ? parseInt(e.target.value) : null
+    onSelect(contractId)
+  }
+
+  if (loading) {
+    return <span className="text-sm text-glass-muted">Chargement...</span>
+  }
+
+  return (
+    <select
+      onChange={handleChange}
+      className="glass-select text-sm"
+      defaultValue=""
+    >
+      <option value="">Tester un autre contrat...</option>
+      {contracts
+        .filter(c => c.id !== currentContractId)
+        .map((contract) => (
+          <option key={contract.id} value={contract.id}>
+            {contract.name}
+          </option>
+        ))}
+    </select>
+  )
+}
+
+export default EntityDetailDrawer
