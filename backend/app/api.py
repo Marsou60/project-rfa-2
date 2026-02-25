@@ -2635,7 +2635,7 @@ async def genie_query_endpoint(
     if not import_data:
         raise HTTPException(status_code=404, detail="Import non trouvé")
 
-    from app.services.genie_engine import genie_query
+    from app.services.genie_engine import genie_query, genie_query_fast
     params = {}
     if key:
         params["key"] = key
@@ -2644,9 +2644,28 @@ async def genie_query_endpoint(
     if limit:
         params["limit"] = limit
 
+    # Tente la version complète avec timeout court sur Vercel
+    import concurrent.futures
+    is_vercel = os.environ.get("VERCEL") == "1"
+    timeout_sec = 7 if is_vercel else 120
+
+    def run_full():
+        return genie_query(import_data, query_type, params)
+
     try:
-        result = genie_query(import_data, query_type, params)
-        return result
+        if is_vercel:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(run_full)
+                try:
+                    return future.result(timeout=timeout_sec)
+                except concurrent.futures.TimeoutError:
+                    # Fallback propre vers la version rapide
+                    result = genie_query_fast(import_data, query_type, params)
+                    result["_limited_mode"] = True
+                    result["_note"] = "Analyse CA uniquement (version cloud). Lancez l'application locale pour l'analyse complète avec contrats."
+                    return result
+        else:
+            return run_full()
     except Exception as e:
         import traceback
         traceback.print_exc()
