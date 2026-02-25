@@ -106,17 +106,34 @@ COL_TASK = {
 
 # ── Clients Google ─────────────────────────────────────────────────────────────
 
+def _get_google_service_account_info() -> dict:
+    """Lit les credentials du compte de service depuis le fichier ou la variable d'env JSON."""
+    import json as _json
+    # Priorité 1 : variable d'env contenant le JSON complet (Vercel)
+    raw = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
+    if raw:
+        return _json.loads(raw)
+    # Priorité 2 : fichier local (développement)
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if path and os.path.isfile(path):
+        with open(path) as f:
+            return _json.load(f)
+    raise ValueError(
+        "Credentials Google manquants : définir GOOGLE_CREDENTIALS_JSON (Vercel) "
+        "ou GOOGLE_APPLICATION_CREDENTIALS (local)"
+    )
+
+
 def _get_sheets_creds():
     """Credentials compte de service pour Sheets (lecture/écriture)."""
     try:
         from google.oauth2 import service_account
     except ImportError:
         raise ImportError("Installez : pip install -r requirements-sheets.txt")
-    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not path or not os.path.isfile(path):
-        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS non configuré")
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    return service_account.Credentials.from_service_account_file(path, scopes=scopes)
+    return service_account.Credentials.from_service_account_info(
+        _get_google_service_account_info(), scopes=scopes
+    )
 
 
 def _get_drive_creds():
