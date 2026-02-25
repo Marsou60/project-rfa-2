@@ -2644,28 +2644,17 @@ async def genie_query_endpoint(
     if limit:
         params["limit"] = limit
 
-    # Tente la version complète avec timeout court sur Vercel
-    import concurrent.futures
     is_vercel = os.environ.get("VERCEL") == "1"
-    timeout_sec = 7 if is_vercel else 120
-
-    def run_full():
-        return genie_query(import_data, query_type, params)
 
     try:
         if is_vercel:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(run_full)
-                try:
-                    return future.result(timeout=timeout_sec)
-                except concurrent.futures.TimeoutError:
-                    # Fallback propre vers la version rapide
-                    result = genie_query_fast(import_data, query_type, params)
-                    result["_limited_mode"] = True
-                    result["_note"] = "Analyse CA uniquement (version cloud). Lancez l'application locale pour l'analyse complète avec contrats."
-                    return result
+            # Vercel free tier : timeout 10s, version rapide (CA, sans résolution contrat)
+            result = genie_query_fast(import_data, query_type, params)
+            result["_limited_mode"] = True
+            result["_note"] = "Analyse CA (cloud). Ouvrez l'application locale pour l'analyse complète avec objectifs et contrats."
+            return result
         else:
-            return run_full()
+            return genie_query(import_data, query_type, params)
     except Exception as e:
         import traceback
         traceback.print_exc()
