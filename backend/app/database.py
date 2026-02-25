@@ -11,14 +11,12 @@ import hashlib
 # Sinon on reste sur SQLite en local.
 _SUPABASE_URL = os.environ.get("DATABASE_URL", "")
 if _SUPABASE_URL:
-    # pg8000 = driver PostgreSQL pur Python (pas de dépendance binaire)
     _base = _SUPABASE_URL
     for prefix in ("postgresql://", "postgres://"):
         if _base.startswith(prefix):
             _base = _base.replace(prefix, "postgresql+pg8000://", 1)
             break
-    # Ajoute SSL requis par Supabase
-    DATABASE_URL  = _base + ("&" if "?" in _base else "?") + "ssl_context=true"
+    DATABASE_URL  = _base
     DATABASE_PATH = None
 else:
     DATABASE_URL  = "sqlite:///./rfa_contracts.db"
@@ -34,7 +32,16 @@ SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Créer le moteur
 # check_same_thread uniquement pour SQLite
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+# SSL requis pour Supabase (pg8000)
+if DATABASE_URL.startswith("sqlite"):
+    _connect_args = {"check_same_thread": False}
+else:
+    import ssl as _ssl
+    _ssl_ctx = _ssl.create_default_context()
+    _ssl_ctx.check_hostname = False
+    _ssl_ctx.verify_mode = _ssl.CERT_NONE
+    _connect_args = {"ssl_context": _ssl_ctx}
+
 engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
 
 
