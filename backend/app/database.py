@@ -11,14 +11,27 @@ import hashlib
 # Sinon on reste sur SQLite en local.
 _SUPABASE_URL = os.environ.get("DATABASE_URL", "")
 if _SUPABASE_URL:
-    # psycopg2 avec sslmode=require pour Supabase Transaction Pooler
-    _base = _SUPABASE_URL
-    for prefix in ("postgresql://", "postgres://"):
-        if _base.startswith(prefix):
-            _base = _base.replace(prefix, "postgresql+psycopg2://", 1)
-            break
-    _sep = "&" if "?" in _base else "?"
-    DATABASE_URL  = _base + _sep + "sslmode=require"
+    # Parse l'URL manuellement et utilise le builder SQLAlchemy
+    # pour gérer correctement le username avec un point (postgres.project_ref)
+    import re as _re
+    from sqlalchemy.engine import URL as _SAURL
+    _m = _re.match(
+        r"(?:postgresql|postgres)://([^:]+):([^@]+)@([^:/]+):(\d+)/(.+)",
+        _SUPABASE_URL
+    )
+    if _m:
+        _DB_URL = _SAURL.create(
+            drivername="postgresql+psycopg2",
+            username=_m.group(1),
+            password=_m.group(2),
+            host=_m.group(3),
+            port=int(_m.group(4)),
+            database=_m.group(5),
+            query={"sslmode": "require"},
+        )
+    else:
+        _DB_URL = _SUPABASE_URL
+    DATABASE_URL  = _DB_URL
     DATABASE_PATH = None
 else:
     DATABASE_URL  = "sqlite:///./rfa_contracts.db"
@@ -33,7 +46,8 @@ LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
 SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Créer le moteur
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+_is_sqlite = isinstance(DATABASE_URL, str) and DATABASE_URL.startswith("sqlite")
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
 engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
 
 
