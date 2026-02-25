@@ -277,7 +277,7 @@ def _load_live_cache(session: Optional[Session]):
 def _resolve_import_data(import_id: str, session: Optional[Session] = None):
     """
     Résout import_id en ImportData.
-    Pour sheets_live : mémoire → cache Supabase → rechargement depuis Sheets.
+    Pour sheets_live : mémoire → table rfa_data (Supabase) → rechargement depuis Sheets.
     """
     if import_id != LIVE_IMPORT_ID:
         return get_import(import_id)
@@ -285,11 +285,25 @@ def _resolve_import_data(import_id: str, session: Optional[Session] = None):
     data = get_live_import()
     if data:
         return data
-    # 2. Cache Supabase (survit aux redémarrages cold-start)
-    data = _load_live_cache(session)
-    if data:
-        return data
-    # 3. Rechargement depuis Google Sheets (lent, uniquement si pas de cache)
+    # 2. Table rfa_data Supabase (rapide, survit aux cold starts)
+    if session:
+        try:
+            from app.services.rfa_supabase import read_rfa_from_supabase, build_column_mapping
+            data_list = read_rfa_from_supabase(session)
+            if data_list:
+                column_mapping = build_column_mapping()
+                raw_columns = list(column_mapping.keys())
+                set_live_import(raw_columns, column_mapping, data_list)
+                import_data = get_live_import()
+                if import_data:
+                    try:
+                        compute_aggregations(import_data)
+                    except Exception:
+                        pass
+                return import_data
+        except Exception as e:
+            print(f"[RESOLVE] Erreur lecture rfa_data: {e}")
+    # 3. Rechargement depuis Google Sheets (lent, dernier recours)
     spreadsheet_id, sheet_name = _get_rfa_sheets_config(session)
     if not spreadsheet_id:
         return None
@@ -308,7 +322,11 @@ def _resolve_import_data(import_id: str, session: Optional[Session] = None):
         return None
     set_live_import(raw_columns, column_mapping, data_list)
     if session:
-        _save_live_cache(session, data_list, raw_columns, column_mapping)
+        try:
+            from app.services.rfa_supabase import write_rfa_to_supabase
+            write_rfa_to_supabase(session, data_list)
+        except Exception as e:
+            print(f"[RESOLVE] Erreur écriture rfa_data: {e}")
     import_data = get_live_import()
     if import_data:
         try:
@@ -427,8 +445,15 @@ async def refresh_rfa_sheets(
             status_code=400,
             detail="Aucune donnée valide dans le Sheet.",
         )
-    # Sauvegarde le cache dans Supabase pour les cold starts Vercel
-    _save_live_cache(session, data, raw_columns, column_mapping)
+    # Sauvegarde dans la table rfa_data Supabase (source de vérité pour les cold starts)
+    try:
+        from app.services.rfa_supabase import write_rfa_to_supabase
+        nb = write_rfa_to_supabase(session, data)
+        print(f"[REFRESH] {nb} lignes écrites dans rfa_data")
+    except Exception as e:
+        print(f"[REFRESH] Erreur écriture rfa_data: {e}")
+        # Fallback : ancien cache JSON
+        _save_live_cache(session, data, raw_columns, column_mapping)
 
     if body and body.get("spreadsheet_id"):
         for key, value in [
