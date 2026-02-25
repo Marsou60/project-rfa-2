@@ -197,16 +197,76 @@ def _get_rfa_sheets_config(session: Optional[Session] = None) -> tuple:
     return (sid or None, sname or None)
 
 
+_CACHE_KEY_DATA  = "sheets_live_raw_data"
+_CACHE_KEY_COLS  = "sheets_live_raw_columns"
+_CACHE_KEY_MAP   = "sheets_live_col_mapping"
+
+
+def _save_live_cache(session: Session, data_list: list, raw_columns: list, column_mapping: dict):
+    """Sauvegarde le cache des données Sheets dans Supabase pour survivre aux redémarrages Vercel."""
+    try:
+        import json as _json
+        for key, value in [
+            (_CACHE_KEY_DATA, _json.dumps(data_list)),
+            (_CACHE_KEY_COLS, _json.dumps(raw_columns)),
+            (_CACHE_KEY_MAP,  _json.dumps(column_mapping)),
+        ]:
+            st = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
+            if st:
+                st.value = value
+                st.updated_at = datetime.now()
+            else:
+                session.add(AppSettings(key=key, value=value))
+        session.commit()
+    except Exception as e:
+        print(f"[CACHE] Erreur sauvegarde cache Supabase: {e}")
+
+
+def _load_live_cache(session: Optional[Session]):
+    """Charge le cache depuis Supabase et reconstitue l'ImportData en mémoire."""
+    if not session:
+        return None
+    try:
+        import json as _json
+        st_data = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_DATA)).first()
+        st_cols = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_COLS)).first()
+        st_map  = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_MAP)).first()
+        if not (st_data and st_data.value and st_cols and st_cols.value and st_map and st_map.value):
+            return None
+        data_list      = _json.loads(st_data.value)
+        raw_columns    = _json.loads(st_cols.value)
+        column_mapping = _json.loads(st_map.value)
+        if not data_list:
+            return None
+        set_live_import(raw_columns, column_mapping, data_list)
+        import_data = get_live_import()
+        if import_data:
+            try:
+                compute_aggregations(import_data)
+            except Exception:
+                pass
+        return import_data
+    except Exception as e:
+        print(f"[CACHE] Erreur lecture cache Supabase: {e}")
+        return None
+
+
 def _resolve_import_data(import_id: str, session: Optional[Session] = None):
     """
-    Résout import_id en ImportData. Si import_id == sheets_live, utilise l'import
-    feuille Sheets ; si absent mais config présente, charge depuis le Sheet puis retourne.
+    Résout import_id en ImportData.
+    Pour sheets_live : mémoire → cache Supabase → rechargement depuis Sheets.
     """
     if import_id != LIVE_IMPORT_ID:
         return get_import(import_id)
+    # 1. Mémoire (même process Vercel)
     data = get_live_import()
     if data:
         return data
+    # 2. Cache Supabase (survit aux redémarrages cold-start)
+    data = _load_live_cache(session)
+    if data:
+        return data
+    # 3. Rechargement depuis Google Sheets (lent, uniquement si pas de cache)
     spreadsheet_id, sheet_name = _get_rfa_sheets_config(session)
     if not spreadsheet_id:
         return None
@@ -224,6 +284,8 @@ def _resolve_import_data(import_id: str, session: Optional[Session] = None):
     if not data_list:
         return None
     set_live_import(raw_columns, column_mapping, data_list)
+    if session:
+        _save_live_cache(session, data_list, raw_columns, column_mapping)
     import_data = get_live_import()
     if import_data:
         try:
@@ -312,6 +374,9 @@ async def refresh_rfa_sheets(
             status_code=400,
             detail="Aucune donnée valide dans le Sheet.",
         )
+    # Sauvegarde le cache dans Supabase pour les cold starts Vercel
+    _save_live_cache(session, data, raw_columns, column_mapping)
+
     if body and body.get("spreadsheet_id"):
         for key, value in [
             ("rfa_sheets_spreadsheet_id", spreadsheet_id),
