@@ -7,17 +7,19 @@ import os
 import sqlite3
 import hashlib
 
-# Sur Vercel le filesystem est en lecture seule — on utilise /tmp
-# En local, on garde le fichier dans le répertoire courant
-_IS_VERCEL = os.environ.get("VERCEL") == "1"
-if _IS_VERCEL:
-    DATABASE_URL  = "sqlite:////tmp/rfa_contracts.db"
-    DATABASE_PATH = "/tmp/rfa_contracts.db"
+# Si DATABASE_URL est défini (Vercel + Supabase), on l'utilise.
+# Sinon on reste sur SQLite en local.
+_SUPABASE_URL = os.environ.get("DATABASE_URL", "")
+if _SUPABASE_URL:
+    # SQLAlchemy attend postgresql+psycopg2:// (pas postgresql://)
+    DATABASE_URL  = _SUPABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+    DATABASE_PATH = None  # pas de fichier local
 else:
     DATABASE_URL  = "sqlite:///./rfa_contracts.db"
     DATABASE_PATH = "./rfa_contracts.db"
 
 # Dossiers pour les uploads
+_IS_VERCEL = os.environ.get("VERCEL") == "1"
 _UPLOAD_BASE = "/tmp/uploads" if _IS_VERCEL else os.path.join(os.path.dirname(__file__), "..", "uploads")
 UPLOADS_DIR        = os.path.join(_UPLOAD_BASE, "ads")
 AVATARS_DIR        = os.path.join(_UPLOAD_BASE, "avatars")
@@ -25,7 +27,9 @@ LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
 SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Créer le moteur
-engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
+# check_same_thread uniquement pour SQLite
+_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
 
 
 def hash_password(password: str) -> str:
@@ -39,8 +43,8 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def run_migrations():
-    """Execute les migrations manuelles pour ajouter les nouvelles colonnes."""
-    if not os.path.exists(DATABASE_PATH):
+    """Execute les migrations manuelles (SQLite uniquement — Supabase a le bon schéma d'emblée)."""
+    if not DATABASE_PATH or not os.path.exists(DATABASE_PATH):
         return
     
     conn = sqlite3.connect(DATABASE_PATH)
