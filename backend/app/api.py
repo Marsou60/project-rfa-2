@@ -318,6 +318,36 @@ def _resolve_import_data(import_id: str, session: Optional[Session] = None):
     return import_data
 
 
+@router.get("/rfa-sheets/kpis")
+async def get_rfa_kpis(import_id: str = "sheets_live", session: Session = Depends(get_session)):
+    """KPIs rapides pour Nicolas (pas de calcul RFA complet — juste les CA agrégés)."""
+    import_data = _resolve_import_data(import_id, session)
+    if not import_data:
+        return {"nb_clients": 0, "nb_groupes": 0, "ca_total": 0, "ca_by_supplier": {}}
+    by_client = import_data.by_client or {}
+    by_group  = import_data.by_group or {}
+    ca_total = sum(c.get("grand_total", 0) for c in by_client.values())
+    from app.core.fields import get_global_fields
+    ca_by_supplier = {}
+    for key in get_global_fields():
+        label = key.replace("GLOBAL_", "")
+        ca_by_supplier[label] = sum(
+            c.get("global", {}).get(key, 0) for c in by_client.values()
+        )
+    top_clients = sorted(
+        [{"id": k, "label": f"{k} - {v.get('nom_client','')}", "ca": v.get("grand_total", 0)}
+         for k, v in by_client.items()],
+        key=lambda x: -x["ca"]
+    )[:10]
+    return {
+        "nb_clients":    len(by_client),
+        "nb_groupes":    len(by_group),
+        "ca_total":      ca_total,
+        "ca_by_supplier": ca_by_supplier,
+        "top_clients":   top_clients,
+    }
+
+
 @router.get("/rfa-sheets/config")
 async def get_rfa_sheets_config(session: Session = Depends(get_session)):
     """Retourne la config de la feuille RFA connectée (admin + tous pour affichage)."""
@@ -423,15 +453,7 @@ async def refresh_rfa_sheets(
                 status_code=500,
                 detail=f"Erreur agrégation: {str(agg_error)}",
             )
-        # Pré-calcule et cache l'analyse Génie (Nicolas + Union Intelligence)
-        try:
-            import json as _json
-            from app.services.genie_engine import genie_full_analysis
-            genie_result = genie_full_analysis(import_data)
-            _upsert_setting(session, _CACHE_KEY_GENIE, _json.dumps(genie_result, default=str))
-            session.commit()
-        except Exception as e:
-            print(f"[CACHE] Erreur cache Génie: {e}")
+        # Note: genie_full_analysis est trop lent pour Vercel (>10s) — pas mis en cache ici
     return UploadResponse(
         import_id=LIVE_IMPORT_ID,
         meta={"source": "google_sheets", "spreadsheet_id": spreadsheet_id, "nb_lignes": len(data)},
