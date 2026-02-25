@@ -1,0 +1,4 @@
+# Dépendances optionnelles pour utiliser Google Sheets comme source de données
+# Installation : pip install -r requirements-sheets.txt
+google-api-python-client>=2.100.0
+google-auth>=2.23.0

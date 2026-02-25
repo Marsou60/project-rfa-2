@@ -1,0 +1,240 @@
+{
+  "version": "1.0",
+  "globalBaremeBase": {
+    "rfa": [
+      {"min": 20000, "rate": 0.01},
+      {"min": 50000, "rate": 0.015},
+      {"min": 75000, "rate": 0.02},
+      {"min": 100000, "rate": 0.025},
+      {"min": 150000, "rate": 0.03},
+      {"min": 200000, "rate": 0.035}
+    ],
+    "bonus": [
+      {"min": 20000, "rate": 0.005},
+      {"min": 50000, "rate": 0.01},
+      {"min": 75000, "rate": 0.015},
+      {"min": 100000, "rate": 0.02},
+      {"min": 150000, "rate": 0.025},
+      {"min": 200000, "rate": 0.03}
+    ]
+  },
+  "contracts": [
+    {
+      "id": "APA_MARSEILLE",
+      "name": "APA MARSEILLE",
+      "isDefault": false,
+      "notes": "Contrat spécifique pour APA MARSEILLE avec barèmes personnalisés",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "useBaseBareme": true
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 30000, "rate": 0.015},
+            {"min": 60000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025}
+          ],
+          "tiersBonus": [
+            {"min": 30000, "rate": 0.01},
+            {"min": 60000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02}
+          ]
+        },
+        "GLOBAL_DCA": {
+          "useBaseBareme": true
+        },
+        "GLOBAL_EXADIS": {
+          "useBaseBareme": true
+        }
+      },
+      "triRules": {
+        "TRI_DCA_SBS": {
+          "tiers": [
+            {"min": 30000, "rate": 0.035}
+          ]
+        },
+        "TRI_ACR_FREINAGE": {
+          "tiers": [
+            {"min": 60000, "rate": 0.045}
+          ]
+        },
+        "TRI_ACR_EMBRAYAGE": {
+          "tiers": [
+            {"min": 60000, "rate": 0.045}
+          ]
+        },
+        "TRI_ACR_FILTRE": {
+          "tiers": [
+            {"min": 30000, "rate": 0.02}
+          ]
+        },
+        "TRI_ACR_DISTRIBUTION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.035}
+          ]
+        },
+        "TRI_EXADIS_EMBRAYAGE": {
+          "tiers": [
+            {"min": 60000, "rate": 0.045}
+          ]
+        },
+        "TRI_EXADIS_FILTRATION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.025}
+          ]
+        },
+        "TRI_EXADIS_DISTRIBUTION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.035}
+          ]
+        },
+        "TRI_EXADIS_ETANCHEITE": {
+          "tiers": [
+            {"min": 6000, "rate": 0.025}
+          ]
+        },
+        "TRI_EXADIS_THERMIQUE": {
+          "tiers": [
+            {"min": 6000, "rate": 0.02}
+          ]
+        },
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.055}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 25000, "rate": 0.09}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 25000, "rate": 0.09}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 25000, "rate": 0.045}
+          ]
+        }
+      }
+    },
+    {
+      "id": "TECHNO_FRANCONVILLE",
+      "name": "TECHNO FRANCONVILLE",
+      "isDefault": false,
+      "notes": "Contrat spécifique pour TECHNO FRANCONVILLE",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [
+            {"min": 25000, "rate": 0.012},
+            {"min": 55000, "rate": 0.018},
+            {"min": 80000, "rate": 0.022},
+            {"min": 120000, "rate": 0.028}
+          ],
+          "tiersBonus": [
+            {"min": 25000, "rate": 0.006},
+            {"min": 55000, "rate": 0.012},
+            {"min": 80000, "rate": 0.018},
+            {"min": 120000, "rate": 0.024}
+          ]
+        },
+        "GLOBAL_ALLIANCE": {
+          "useBaseBareme": true
+        },
+        "GLOBAL_DCA": {
+          "useBaseBareme": true
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [
+            {"min": 25000, "rate": 0.012},
+            {"min": 55000, "rate": 0.018},
+            {"min": 80000, "rate": 0.022}
+          ],
+          "tiersBonus": [
+            {"min": 25000, "rate": 0.006},
+            {"min": 55000, "rate": 0.012},
+            {"min": 80000, "rate": 0.018}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_DCA_SBS": {
+          "tiers": [
+            {"min": 30000, "rate": 0.032}
+          ]
+        },
+        "TRI_ACR_FREINAGE": {
+          "tiers": [
+            {"min": 55000, "rate": 0.042}
+          ]
+        },
+        "TRI_ACR_EMBRAYAGE": {
+          "tiers": [
+            {"min": 55000, "rate": 0.042}
+          ]
+        },
+        "TRI_ACR_FILTRE": {
+          "tiers": [
+            {"min": 30000, "rate": 0.018}
+          ]
+        },
+        "TRI_ACR_DISTRIBUTION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.032}
+          ]
+        },
+        "TRI_EXADIS_EMBRAYAGE": {
+          "tiers": [
+            {"min": 55000, "rate": 0.042}
+          ]
+        },
+        "TRI_EXADIS_FILTRATION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.022}
+          ]
+        },
+        "TRI_EXADIS_DISTRIBUTION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.032}
+          ]
+        },
+        "TRI_EXADIS_ETANCHEITE": {
+          "tiers": [
+            {"min": 5500, "rate": 0.022}
+          ]
+        },
+        "TRI_EXADIS_THERMIQUE": {
+          "tiers": [
+            {"min": 5500, "rate": 0.018}
+          ]
+        },
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 22000, "rate": 0.052}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 22000, "rate": 0.085}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 22000, "rate": 0.085}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 22000, "rate": 0.042}
+          ]
+        }
+      }
+    }
+  ]
+}
+
+
+
+

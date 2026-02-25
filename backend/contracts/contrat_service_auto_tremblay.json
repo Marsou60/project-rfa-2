@@ -1,0 +1,120 @@
+{
+  "version": "1.0",
+  "description": "Contrat Service Auto Tremblay - Barème RFA/Bonus + Tripartites ALLIANCE/EXADIS",
+  "contracts": [
+    {
+      "id": "CONTRAT_SERVICE_AUTO_TREMBLAY",
+      "name": "Service Auto Tremblay",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Barème RFA/Bonus standard appliqué aux plateformes sans avenant. Avenant AAG (ALLIANCE) uniquement sur la RFA: 100k=6.5%, 150k=7%, 200k=7.5%. Bonus fidélité 1000€ si 300k d'achat Groupement Union + tripartites validées (non automatisé).",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [
+            { "min": 20000, "rate": 0.01 },
+            { "min": 50000, "rate": 0.015 },
+            { "min": 75000, "rate": 0.02 },
+            { "min": 100000, "rate": 0.025 },
+            { "min": 150000, "rate": 0.03 },
+            { "min": 200000, "rate": 0.035 }
+          ],
+          "tiersBonus": [
+            { "min": 20000, "rate": 0.005 },
+            { "min": 50000, "rate": 0.01 },
+            { "min": 75000, "rate": 0.015 },
+            { "min": 100000, "rate": 0.02 },
+            { "min": 150000, "rate": 0.025 },
+            { "min": 200000, "rate": 0.03 }
+          ]
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [
+            { "min": 20000, "rate": 0.01 },
+            { "min": 50000, "rate": 0.015 },
+            { "min": 75000, "rate": 0.02 },
+            { "min": 100000, "rate": 0.025 },
+            { "min": 150000, "rate": 0.03 },
+            { "min": 200000, "rate": 0.035 }
+          ],
+          "tiersBonus": [
+            { "min": 20000, "rate": 0.005 },
+            { "min": 50000, "rate": 0.01 },
+            { "min": 75000, "rate": 0.015 },
+            { "min": 100000, "rate": 0.02 },
+            { "min": 150000, "rate": 0.025 },
+            { "min": 200000, "rate": 0.03 }
+          ]
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [
+            { "min": 20000, "rate": 0.01 },
+            { "min": 50000, "rate": 0.015 },
+            { "min": 75000, "rate": 0.02 },
+            { "min": 100000, "rate": 0.025 },
+            { "min": 150000, "rate": 0.03 },
+            { "min": 200000, "rate": 0.035 }
+          ],
+          "tiersBonus": [
+            { "min": 20000, "rate": 0.005 },
+            { "min": 50000, "rate": 0.01 },
+            { "min": 75000, "rate": 0.015 },
+            { "min": 100000, "rate": 0.02 },
+            { "min": 150000, "rate": 0.025 },
+            { "min": 200000, "rate": 0.03 }
+          ]
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            { "min": 100000, "rate": 0.065 },
+            { "min": 150000, "rate": 0.07 },
+            { "min": 200000, "rate": 0.075 }
+          ],
+          "tiersBonus": []
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            { "min": 25000, "rate": 0.03 },
+            { "min": 50000, "rate": 0.05 }
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            { "min": 30000, "rate": 0.04 },
+            { "min": 40000, "rate": 0.06 },
+            { "min": 50000, "rate": 0.08 }
+          ]
+        },
+        "TRI_EXADIS_FREINAGE": {
+          "tiers": [
+            { "min": 10000, "rate": 0.015 },
+            { "min": 15000, "rate": 0.02 }
+          ]
+        },
+        "TRI_EXADIS_EMBRAYAGE": {
+          "tiers": [
+            { "min": 15000, "rate": 0.015 },
+            { "min": 20000, "rate": 0.025 }
+          ]
+        },
+        "TRI_EXADIS_FILTRATION": {
+          "tiers": [
+            { "min": 25000, "rate": 0.02 }
+          ]
+        },
+        "TRI_EXADIS_ETANCHEITE": {
+          "tiers": [
+            { "min": 5000, "rate": 0.015 }
+          ]
+        },
+        "TRI_EXADIS_THERMIQUE": {
+          "tiers": [
+            { "min": 5000, "rate": 0.015 },
+            { "min": 10000, "rate": 0.025 }
+          ]
+        }
+      }
+    }
+  ]
+}

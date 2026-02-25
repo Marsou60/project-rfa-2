@@ -1,0 +1,79 @@
+{
+  "version": "1.0",
+  "description": "Contrat MMPA Créteil - Alliance (AAG) + ACR",
+  "contracts": [
+    {
+      "id": "CONTRAT_MMPA_CRETEIL",
+      "name": "MMPA Créteil",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat MMPA Créteil. AAG = ALLIANCE. Bonus supplémentaire si palier AAG 250k€ (+0.5%) ou 275k€ (+1%). Tripartites Alliance: Schaeffler, Delphi/Brembo, Sogefi.",
+      "globalRules": {
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03},
+            {"min": 200000, "rate": 0.035}
+          ],
+          "tiersBonus": [
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03},
+            {"min": 250000, "rate": 0.035},
+            {"min": 275000, "rate": 0.04}
+          ]
+        },
+        "GLOBAL_ACR": {
+          "tiersRfa": [
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03}
+          ],
+          "tiersBonus": [
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025}
+          ]
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03},
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 15000, "rate": 0.02},
+            {"min": 30000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 50000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 15000, "rate": 0.02},
+            {"min": 30000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 50000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 50000, "rate": 0.04}
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "description": "Contrat Client SMP - 100% Alliance avec tripartites spécifiques",
+  "contracts": [
+    {
+      "id": "CONTRAT_SMP",
+      "name": "Contrat Client SMP",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat SMP (100% Alliance). RFA et Bonus uniquement sur ALLIANCE. Tripartites: Schaeffler, Delphi, Brembo, SKF.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 300000, "rate": 0.05}
+          ],
+          "tiersBonus": [
+            {"min": 300000, "rate": 0.02},
+            {"min": 350000, "rate": 0.025},
+            {"min": 400000, "rate": 0.03}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03},
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_SKF": {
+          "tiers": [
+            {"min": 15000, "rate": 0.02},
+            {"min": 20000, "rate": 0.03},
+            {"min": 30000, "rate": 0.045},
+            {"min": 40000, "rate": 0.06}
+          ]
+        }
+      }
+    }
+  ]
+}

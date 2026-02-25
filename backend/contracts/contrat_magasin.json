@@ -1,0 +1,143 @@
+{
+  "version": "1.0",
+  "description": "Contrat Magasin Universel - Le taux est calculé sur le TOTAL des 4 fournisseurs (ACR+DCA+ALLIANCE+EXADIS), puis appliqué à chaque fournisseur",
+  "contracts": [
+    {
+      "id": "CONTRAT_MAGASIN",
+      "name": "Contrat Magasin Universel",
+      "isDefault": false,
+      "useCombinedGlobalRate": true,
+      "notes": "Contrat universel avec paliers progressifs basés sur le CA TOTAL des 4 fournisseurs. Le taux RFA est le même pour tous les fournisseurs.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [
+            {"min": 1, "rate": 0.015},
+            {"min": 50000, "rate": 0.035},
+            {"min": 100000, "rate": 0.055},
+            {"min": 150000, "rate": 0.065},
+            {"min": 200000, "rate": 0.07},
+            {"min": 250000, "rate": 0.075},
+            {"min": 300000, "rate": 0.085},
+            {"min": 400000, "rate": 0.095},
+            {"min": 500000, "rate": 0.10}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 1, "rate": 0.015},
+            {"min": 50000, "rate": 0.035},
+            {"min": 100000, "rate": 0.055},
+            {"min": 150000, "rate": 0.065},
+            {"min": 200000, "rate": 0.07},
+            {"min": 250000, "rate": 0.075},
+            {"min": 300000, "rate": 0.085},
+            {"min": 400000, "rate": 0.095},
+            {"min": 500000, "rate": 0.10}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [
+            {"min": 1, "rate": 0.015},
+            {"min": 50000, "rate": 0.035},
+            {"min": 100000, "rate": 0.055},
+            {"min": 150000, "rate": 0.065},
+            {"min": 200000, "rate": 0.07},
+            {"min": 250000, "rate": 0.075},
+            {"min": 300000, "rate": 0.085},
+            {"min": 400000, "rate": 0.095},
+            {"min": 500000, "rate": 0.10}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [
+            {"min": 1, "rate": 0.015},
+            {"min": 50000, "rate": 0.035},
+            {"min": 100000, "rate": 0.055},
+            {"min": 150000, "rate": 0.065},
+            {"min": 200000, "rate": 0.07},
+            {"min": 250000, "rate": 0.075},
+            {"min": 300000, "rate": 0.085},
+            {"min": 400000, "rate": 0.095},
+            {"min": 500000, "rate": 0.10}
+          ],
+          "tiersBonus": []
+        }
+      },
+      "triRules": {
+        "TRI_DCA_SBS": {
+          "tiers": [
+            {"min": 30000, "rate": 0.035}
+          ]
+        },
+        "TRI_ACR_FREINAGE": {
+          "tiers": [
+            {"min": 60000, "rate": 0.045}
+          ]
+        },
+        "TRI_ACR_EMBRAYAGE": {
+          "tiers": [
+            {"min": 60000, "rate": 0.045}
+          ]
+        },
+        "TRI_ACR_FILTRE": {
+          "tiers": [
+            {"min": 30000, "rate": 0.02}
+          ]
+        },
+        "TRI_ACR_DISTRIBUTION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.035}
+          ]
+        },
+        "TRI_EXADIS_EMBRAYAGE": {
+          "tiers": [
+            {"min": 60000, "rate": 0.045}
+          ]
+        },
+        "TRI_EXADIS_FILTRATION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.025}
+          ]
+        },
+        "TRI_EXADIS_DISTRIBUTION": {
+          "tiers": [
+            {"min": 30000, "rate": 0.035}
+          ]
+        },
+        "TRI_EXADIS_ETANCHEITE": {
+          "tiers": [
+            {"min": 6000, "rate": 0.025}
+          ]
+        },
+        "TRI_EXADIS_THERMIQUE": {
+          "tiers": [
+            {"min": 6000, "rate": 0.02}
+          ]
+        },
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.055}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 25000, "rate": 0.09}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 25000, "rate": 0.09}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 25000, "rate": 0.045}
+          ]
+        }
+      }
+    }
+  ]
+}

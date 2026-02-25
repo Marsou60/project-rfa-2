@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "description": "Contrat Groupe Center Pièces Auto - 100% Alliance Automotive",
+  "contracts": [
+    {
+      "id": "CONTRAT_CENTER",
+      "name": "Groupe Center Pièces Auto",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat Center Pièces Auto (100% Alliance Automotive). RFA et Bonus uniquement sur ALLIANCE. Tripartites: Schaeffler, Delphi, Brembo, Sogefi.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 150000, "rate": 0.04},
+            {"min": 200000, "rate": 0.05},
+            {"min": 250000, "rate": 0.05}
+          ],
+          "tiersBonus": [
+            {"min": 150000, "rate": 0.015},
+            {"min": 200000, "rate": 0.02},
+            {"min": 250000, "rate": 0.025}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03},
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 50000, "rate": 0.04}
+          ]
+        }
+      }
+    }
+  ]
+}
