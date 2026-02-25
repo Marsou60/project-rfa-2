@@ -197,57 +197,79 @@ def _get_rfa_sheets_config(session: Optional[Session] = None) -> tuple:
     return (sid or None, sname or None)
 
 
-_CACHE_KEY_DATA  = "sheets_live_raw_data"
-_CACHE_KEY_COLS  = "sheets_live_raw_columns"
-_CACHE_KEY_MAP   = "sheets_live_col_mapping"
+_CACHE_KEY_DATA   = "sheets_live_raw_data"
+_CACHE_KEY_COLS   = "sheets_live_raw_columns"
+_CACHE_KEY_MAP    = "sheets_live_col_mapping"
+_CACHE_KEY_CLIENT = "sheets_live_by_client"
+_CACHE_KEY_GROUP  = "sheets_live_by_group"
+
+
+def _upsert_setting(session: Session, key: str, value: str):
+    st = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
+    if st:
+        st.value = value
+        st.updated_at = datetime.now()
+    else:
+        session.add(AppSettings(key=key, value=value))
 
 
 def _save_live_cache(session: Session, data_list: list, raw_columns: list, column_mapping: dict):
-    """Sauvegarde le cache des données Sheets dans Supabase pour survivre aux redémarrages Vercel."""
+    """Sauvegarde le cache complet (raw + agrégations) dans Supabase."""
     try:
         import json as _json
-        for key, value in [
-            (_CACHE_KEY_DATA, _json.dumps(data_list)),
-            (_CACHE_KEY_COLS, _json.dumps(raw_columns)),
-            (_CACHE_KEY_MAP,  _json.dumps(column_mapping)),
-        ]:
-            st = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
-            if st:
-                st.value = value
-                st.updated_at = datetime.now()
-            else:
-                session.add(AppSettings(key=key, value=value))
-        session.commit()
-    except Exception as e:
-        print(f"[CACHE] Erreur sauvegarde cache Supabase: {e}")
-
-
-def _load_live_cache(session: Optional[Session]):
-    """Charge le cache depuis Supabase et reconstitue l'ImportData en mémoire."""
-    if not session:
-        return None
-    try:
-        import json as _json
-        st_data = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_DATA)).first()
-        st_cols = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_COLS)).first()
-        st_map  = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_MAP)).first()
-        if not (st_data and st_data.value and st_cols and st_cols.value and st_map and st_map.value):
-            return None
-        data_list      = _json.loads(st_data.value)
-        raw_columns    = _json.loads(st_cols.value)
-        column_mapping = _json.loads(st_map.value)
-        if not data_list:
-            return None
+        # 1. Données brutes + colonnes
+        _upsert_setting(session, _CACHE_KEY_DATA, _json.dumps(data_list))
+        _upsert_setting(session, _CACHE_KEY_COLS, _json.dumps(raw_columns))
+        _upsert_setting(session, _CACHE_KEY_MAP,  _json.dumps(column_mapping))
+        # 2. Données agrégées (by_client, by_group) — calculées maintenant pour éviter de le refaire à chaque requête
         set_live_import(raw_columns, column_mapping, data_list)
         import_data = get_live_import()
         if import_data:
             try:
                 compute_aggregations(import_data)
-            except Exception:
-                pass
+                _upsert_setting(session, _CACHE_KEY_CLIENT, _json.dumps(import_data.by_client))
+                _upsert_setting(session, _CACHE_KEY_GROUP,  _json.dumps(import_data.by_group))
+            except Exception as e:
+                print(f"[CACHE] Erreur agrégations: {e}")
+        session.commit()
+    except Exception as e:
+        print(f"[CACHE] Erreur sauvegarde: {e}")
+
+
+def _load_live_cache(session: Optional[Session]):
+    """Charge le cache depuis Supabase — agrégations pré-calculées incluses."""
+    if not session:
+        return None
+    try:
+        import json as _json
+        def _get(key):
+            st = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
+            return _json.loads(st.value) if st and st.value else None
+
+        data_list      = _get(_CACHE_KEY_DATA)
+        raw_columns    = _get(_CACHE_KEY_COLS)
+        column_mapping = _get(_CACHE_KEY_MAP)
+        by_client      = _get(_CACHE_KEY_CLIENT)
+        by_group       = _get(_CACHE_KEY_GROUP)
+
+        if not data_list or not raw_columns:
+            return None
+        set_live_import(raw_columns, column_mapping or {}, data_list)
+        import_data = get_live_import()
+        if import_data:
+            if by_client:
+                import_data.by_client = by_client
+            if by_group:
+                import_data.by_group = by_group
+            # Si pas d'agrégations en cache, les calculer (lent, mais seulement 1 fois)
+            if not by_client or not by_group:
+                try:
+                    compute_aggregations(import_data)
+                except Exception:
+                    pass
         return import_data
     except Exception as e:
-        print(f"[CACHE] Erreur lecture cache Supabase: {e}")
+        print(f"[CACHE] Erreur lecture: {e}")
         return None
 
 
