@@ -188,6 +188,21 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
     # =====================================================================
     # 1) Analyser chaque ADHÉRENT (contrats sortants : ce que Union paie)
     # =====================================================================
+    # Cache des règles contrat par (contract_id, mode) pour éviter N requêtes identiques
+    _rules_cache: Dict[tuple, Dict] = {}
+    _orig_load_rules_map = None
+    try:
+        import app.services.pdf_export as _pe_mod
+        _orig_load_rules_map = _pe_mod._load_rules_map
+        def _cached_load_rules_map(contract_id, mode, entity_id):
+            k = (contract_id, mode)
+            if k not in _rules_cache:
+                _rules_cache[k] = _orig_load_rules_map(contract_id, mode, entity_id)
+            return _rules_cache[k]
+        _pe_mod._load_rules_map = _cached_load_rules_map
+    except Exception:
+        pass
+
     all_near = []
     all_achieved = []
     client_rfa_by_key = {}  # key -> total RFA payée à tous les adhérents
@@ -703,9 +718,14 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
 
     smart_plans.sort(key=lambda x: (-x["tiers_with_bonus"], -x["tiers_unlocked"], x["total_with_bonus"]))
 
-    # Restaure resolve_contract original
+    # Restaure les fonctions originales
     _resolver_mod.resolve_contract = _orig_resolve
     _calc_mod.resolve_contract = _orig_resolve
+    if _orig_load_rules_map:
+        try:
+            _pe_mod._load_rules_map = _orig_load_rules_map
+        except Exception:
+            pass
 
     return {
         "summary": {
