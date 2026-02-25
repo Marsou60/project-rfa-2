@@ -707,9 +707,13 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
 # REQUÊTES CHATBOT
 # =====================================================================
 
-def genie_query(import_data: ImportData, query_type: str, params: Dict = None) -> Dict:
-    params = params or {}
-    analysis = genie_full_analysis(import_data)
+def _apply_query_to_analysis(analysis: Dict, query_type: str, params: Dict, import_data=None) -> Dict:
+    """Applique une requête Génie sur une analyse déjà calculée (depuis cache)."""
+    return _dispatch_query(analysis, query_type, params or {}, import_data)
+
+
+def _dispatch_query(analysis: Dict, query_type: str, params: Dict, import_data=None) -> Dict:
+    """Dispatch interne partagé entre genie_query et _apply_query_to_analysis."""
 
     if query_type == "dashboard":
         s = analysis["summary"]
@@ -1205,3 +1209,9 @@ def genie_query(import_data: ImportData, query_type: str, params: Dict = None) -
 
     else:
         return {"type": "error", "message": f"Requête inconnue: {query_type}"}
+
+
+def genie_query(import_data: ImportData, query_type: str, params: Dict = None) -> Dict:
+    params = params or {}
+    analysis = genie_full_analysis(import_data)
+    return _dispatch_query(analysis, query_type, params, import_data)

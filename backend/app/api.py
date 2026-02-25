@@ -202,6 +202,7 @@ _CACHE_KEY_COLS   = "sheets_live_raw_columns"
 _CACHE_KEY_MAP    = "sheets_live_col_mapping"
 _CACHE_KEY_CLIENT = "sheets_live_by_client"
 _CACHE_KEY_GROUP  = "sheets_live_by_group"
+_CACHE_KEY_GENIE  = "sheets_live_genie_analysis"
 
 
 def _upsert_setting(session: Session, key: str, value: str):
@@ -411,7 +412,6 @@ async def refresh_rfa_sheets(
             else:
                 session.add(AppSettings(key=key, value=value))
         session.commit()
-    set_live_import(raw_columns, column_mapping, data)
     import_data = get_live_import()
     if import_data:
         try:
@@ -423,6 +423,15 @@ async def refresh_rfa_sheets(
                 status_code=500,
                 detail=f"Erreur agrégation: {str(agg_error)}",
             )
+        # Pré-calcule et cache l'analyse Génie (Nicolas + Union Intelligence)
+        try:
+            import json as _json
+            from app.services.genie_engine import genie_full_analysis
+            genie_result = genie_full_analysis(import_data)
+            _upsert_setting(session, _CACHE_KEY_GENIE, _json.dumps(genie_result, default=str))
+            session.commit()
+        except Exception as e:
+            print(f"[CACHE] Erreur cache Génie: {e}")
     return UploadResponse(
         import_id=LIVE_IMPORT_ID,
         meta={"source": "google_sheets", "spreadsheet_id": spreadsheet_id, "nb_lignes": len(data)},
@@ -2579,7 +2588,7 @@ async def genie_query_endpoint(
     if not import_data:
         raise HTTPException(status_code=404, detail="Import non trouvé")
 
-    from app.services.genie_engine import genie_query
+    from app.services.genie_engine import genie_query, genie_full_analysis
     params = {}
     if key:
         params["key"] = key
@@ -2587,6 +2596,18 @@ async def genie_query_endpoint(
         params["search"] = search
     if limit:
         params["limit"] = limit
+
+    # Tente d'utiliser l'analyse Génie pré-calculée (cache Supabase)
+    try:
+        import json as _json
+        st_genie = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_GENIE)).first()
+        if st_genie and st_genie.value:
+            cached_analysis = _json.loads(st_genie.value)
+            from app.services.genie_engine import _apply_query_to_analysis
+            result = _apply_query_to_analysis(cached_analysis, query_type, params, import_data)
+            return result
+    except Exception:
+        pass  # Fallback sur calcul en temps réel
 
     try:
         result = genie_query(import_data, query_type, params)
