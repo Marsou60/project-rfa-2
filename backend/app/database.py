@@ -141,25 +141,31 @@ def seed_admin_user():
 def init_db():
     """Crée les tables si elles n'existent pas et execute les migrations."""
     # Créer les dossiers uploads si nécessaire
-    os.makedirs(UPLOADS_DIR, exist_ok=True)
-    os.makedirs(AVATARS_DIR, exist_ok=True)
-    os.makedirs(LOGOS_DIR, exist_ok=True)
-    os.makedirs(SUPPLIER_LOGOS_DIR, exist_ok=True)
-    
-    # Exécuter les migrations AVANT de créer les tables (pour les tables existantes)
+    for d in [UPLOADS_DIR, AVATARS_DIR, LOGOS_DIR, SUPPLIER_LOGOS_DIR]:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+
+    # Migrations SQLite uniquement
     run_migrations()
-    
-    # Créer les tables avec le schéma actuel
-    SQLModel.metadata.create_all(engine)
-    
-    # Re-exécuter les migrations au cas où (pour les nouvelles tables)
+
+    # Crée les tables manquantes (sans supprimer l'existant)
+    # Sur PostgreSQL/Supabase, checkfirst=True évite les conflits de type enum
+    try:
+        SQLModel.metadata.create_all(engine, checkfirst=True)
+    except Exception as e:
+        print(f"[INIT_DB] create_all warning (tables existent peut-être déjà): {e}")
+
     run_migrations()
-    
     seed_admin_user()
 
 
 def get_session():
     """Retourne une session de base de données."""
-    with Session(engine) as session:
-        yield session
+    try:
+        with Session(engine) as session:
+            yield session
+    except Exception as e:
+        raise RuntimeError(f"Impossible de se connecter à la base de données: {e}")
 

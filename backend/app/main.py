@@ -19,8 +19,14 @@ app = FastAPI(title="RFA Excel Import API", version="0.2.0")
 # Initialiser la base de données au démarrage
 @app.on_event("startup")
 def on_startup():
-    init_db()
-    seed_base_standard()
+    try:
+        init_db()
+    except Exception as e:
+        print(f"[STARTUP] init_db warning: {e}")
+    try:
+        seed_base_standard()
+    except Exception as e:
+        print(f"[STARTUP] seed warning: {e}")
 
 # CORS pour le frontend
 _extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
