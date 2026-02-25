@@ -103,6 +103,53 @@ def resolve_contract(
         raise ValueError("Aucun contrat adhérent disponible")
 
 
+class BatchContractResolver:
+    """
+    Résout les contrats pour de nombreuses entités en une seule série de requêtes.
+    Charge tous les assignments et contrats en mémoire une fois, puis résout en Python.
+    Réduit les requêtes DB de N×3 à 3 (indépendant du nombre d'entités).
+    """
+    def __init__(self):
+        with Session(engine) as session:
+            from app.models import ContractScope
+            all_assignments = session.exec(select(ContractAssignment)).all()
+            all_contracts   = session.exec(select(Contract).where(Contract.is_active == True)).all()
+            self._by_code_union: dict  = {}  # code_union_upper → contract
+            self._by_groupe: dict      = {}  # groupe_upper → contract
+            self._default: Optional[Contract] = None
+            contracts_map = {c.id: c for c in all_contracts}
+            for a in all_assignments:
+                c = contracts_map.get(a.contract_id)
+                if not c or not c.is_active or c.scope != ContractScope.ADHERENT:
+                    continue
+                val = normalize_value(a.target_value)
+                if a.target_type == TargetType.CODE_UNION and val not in self._by_code_union:
+                    self._by_code_union[val] = c
+                elif a.target_type == TargetType.GROUPE_CLIENT and val not in self._by_groupe:
+                    self._by_groupe[val] = c
+            # Contrat par défaut adhérent
+            for c in all_contracts:
+                if c.scope == ContractScope.ADHERENT and c.is_default:
+                    self._default = c
+                    break
+            if not self._default:
+                for c in all_contracts:
+                    if c.scope == ContractScope.ADHERENT:
+                        self._default = c
+                        break
+
+    def resolve(self, code_union: Optional[str] = None, groupe_client: Optional[str] = None) -> Optional[Contract]:
+        if code_union:
+            c = self._by_code_union.get(normalize_value(code_union))
+            if c:
+                return c
+        if groupe_client:
+            c = self._by_groupe.get(normalize_value(groupe_client))
+            if c:
+                return c
+        return self._default
+
+
 def get_contract_by_id(contract_id: int) -> Optional[Contract]:
     """Récupère un contrat par son ID."""
     with Session(engine) as session:

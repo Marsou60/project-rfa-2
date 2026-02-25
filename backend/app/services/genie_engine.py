@@ -163,9 +163,21 @@ def _rfa_for_ca_tri(ca: float, rule: Dict) -> float:
 def genie_full_analysis(import_data: ImportData) -> Dict:
     """
     Analyse complète : compare ENTRANT (Union reçoit des fournisseurs) vs SORTANT (Union paie aux adhérents).
+    Utilise BatchContractResolver pour charger tous les contrats en 3 requêtes (au lieu de N×3).
     """
     if len(import_data.by_client) == 0:
         compute_aggregations(import_data)
+
+    # Pré-charge tous les contrats et assignments en 3 requêtes pour éviter le N+1
+    from app.services.contract_resolver import BatchContractResolver
+    _batch_resolver = BatchContractResolver()
+
+    # Monkey-patch temporaire de resolve_contract pour cette analyse
+    import app.services.rfa_calculator as _calc_mod
+    import app.services.contract_resolver as _resolver_mod
+    _orig_resolve = _resolver_mod.resolve_contract
+    _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None: _batch_resolver.resolve(code_union, groupe_client)
+    _calc_mod.resolve_contract = _resolver_mod.resolve_contract
 
     # =====================================================================
     # 1) Analyser chaque ADHÉRENT (contrats sortants : ce que Union paie)
@@ -677,6 +689,10 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
         smart_plans.extend(_build_plans_for_entity(groupe_name, elabel, "group", all_group_rows))
 
     smart_plans.sort(key=lambda x: (-x["tiers_with_bonus"], -x["tiers_unlocked"], x["total_with_bonus"]))
+
+    # Restaure resolve_contract original
+    _resolver_mod.resolve_contract = _orig_resolve
+    _calc_mod.resolve_contract = _orig_resolve
 
     return {
         "summary": {

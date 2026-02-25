@@ -2635,7 +2635,7 @@ async def genie_query_endpoint(
     if not import_data:
         raise HTTPException(status_code=404, detail="Import non trouvé")
 
-    from app.services.genie_engine import genie_query_fast, genie_query
+    from app.services.genie_engine import genie_query
     params = {}
     if key:
         params["key"] = key
@@ -2644,16 +2644,6 @@ async def genie_query_endpoint(
     if limit:
         params["limit"] = limit
 
-    # Sur Vercel (timeout 10s) : version rapide sans requêtes DB par entité
-    is_vercel = os.environ.get("VERCEL") == "1"
-    if is_vercel:
-        try:
-            result = genie_query_fast(import_data, query_type, params)
-            return result
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Erreur Génie fast: {str(e)}")
-
-    # En local : version complète avec contrats
     try:
         result = genie_query(import_data, query_type, params)
         return result
