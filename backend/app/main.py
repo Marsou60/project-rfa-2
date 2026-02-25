@@ -23,13 +23,16 @@ def on_startup():
     seed_base_standard()
 
 # CORS pour le frontend
+_extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:3000",
         "http://localhost",
-        "tauri://localhost"
+        "tauri://localhost",
+        *_extra_origins,
     ],
     allow_credentials=True,
     allow_methods=["*"],
