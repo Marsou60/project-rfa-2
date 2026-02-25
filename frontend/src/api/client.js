@@ -70,6 +70,11 @@ export const getRfaSheetsCurrent = async () => {
   return response.data
 }
 
+export const getRfaSheetsKpis = async (importId = 'sheets_live') => {
+  const response = await api.get('/rfa-sheets/kpis', { params: { import_id: importId } })
+  return response.data
+}
+
 export const getEntities = async (importId, mode = 'client') => {
   const response = await api.get(`/imports/${importId}/entities`, {
     params: { mode }

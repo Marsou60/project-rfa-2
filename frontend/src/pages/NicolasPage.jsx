@@ -3,7 +3,7 @@ import {
   Loader2, RefreshCw, TrendingUp, Users, Euro, Target,
   ChevronUp, ChevronDown, Send, RotateCcw, AlertTriangle,
 } from 'lucide-react'
-import { genieQuery, getUnionEntity, getEntities } from '../api/client'
+import { genieQuery, getUnionEntity, getEntities, getRfaSheetsKpis } from '../api/client'
 
 /* ── Formatage ──────────────────────────────────────────────── */
 const fmt = (n) =>
@@ -118,9 +118,10 @@ function formatChatResult(data) {
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function NicolasPage({ importId }) {
-  const [dashboard, setDashboard] = useState(null)
-  const [union, setUnion]         = useState(null)
-  const [clients, setClients]     = useState([])
+  const [dashboard, setDashboard]       = useState(null)
+  const [union, setUnion]               = useState(null)
+  const [clients, setClients]           = useState([])
+  const [kpiSuppliers, setKpiSuppliers] = useState({})
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
 
@@ -140,14 +141,35 @@ export default function NicolasPage({ importId }) {
     setLoading(true)
     setError(null)
     try {
-      const [dash, unionData, clientList] = await Promise.all([
-        genieQuery(importId, 'dashboard').catch(() => null),
+      const [kpis, unionData, clientList] = await Promise.all([
+        getRfaSheetsKpis(importId).catch(() => null),
         getUnionEntity(importId).catch(() => null),
         getEntities(importId, 'client').catch(() => []),
       ])
-      setDashboard(dash)
+      // Convertit les KPIs en format dashboard compatible
+      if (kpis) {
+        setDashboard({
+          data: {
+            total_clients: kpis.nb_clients,
+            total_near: null,
+            total_achieved: null,
+            total_gain_potential: null,
+          },
+          alerts: [],
+        })
+        setClients(kpis.top_clients?.map(c => ({
+          id: c.id, label: c.label, rfa_total: null,
+          global_total: c.ca, tri_total: 0, grand_total: c.ca,
+        })) || [])
+        // Construit globalRows depuis ca_by_supplier
+        if (kpis.ca_by_supplier) {
+          setKpiSuppliers(kpis.ca_by_supplier)
+        }
+      }
       setUnion(unionData)
-      setClients(Array.isArray(clientList) ? clientList : [])
+      if (clientList && Array.isArray(clientList) && clientList.length > 0) {
+        setClients(clientList)
+      }
     } catch (e) {
       setError(e?.response?.data?.detail || e.message || 'Erreur de chargement')
     } finally {
@@ -169,9 +191,16 @@ export default function NicolasPage({ importId }) {
   const gainPotentiel= dashboard?.data?.total_gain_potential ?? null
   const nbProches    = dashboard?.data?.total_near ?? null
 
-  const globalRows = Array.isArray(rfa.global_items)
-    ? rfa.global_items
-    : rfa.global ? Object.entries(rfa.global).map(([key, v]) => ({ key, ...(typeof v === 'object' ? v : { ca: 0 }) })) : []
+  // Données fournisseurs : depuis Union Space (rfa) ou depuis KPIs directs
+  const globalRows = (() => {
+    if (Array.isArray(rfa.global_items) && rfa.global_items.length > 0) return rfa.global_items
+    if (rfa.global && Object.keys(rfa.global).length > 0)
+      return Object.entries(rfa.global).map(([key, v]) => ({ key, ...(typeof v === 'object' ? v : { ca: 0 }) }))
+    // Fallback : KPIs depuis le nouvel endpoint
+    return Object.entries(kpiSuppliers).map(([label, ca]) => ({
+      key: `GLOBAL_${label}`, ca, rfa: { value: 0, rate: 0 }, bonus: { value: 0 }
+    }))
+  })()
 
   const topClients = [...clients]
     .filter(c => c.rfa_total > 0)
