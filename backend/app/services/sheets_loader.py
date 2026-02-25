@@ -27,14 +27,25 @@ def _get_sheets_client(credentials_path: Optional[str] = None):
         raise ImportError(
             "Pour utiliser Google Sheets, installez : pip install google-api-python-client google-auth"
         ) from e
-    path = credentials_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not path or not os.path.isfile(path):
-        raise ValueError(
-            "Indiquez GOOGLE_APPLICATION_CREDENTIALS ou credentials_path vers le JSON du compte de service"
-        )
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    creds = service_account.Credentials.from_service_account_file(path, scopes=scopes)
-    return build("sheets", "v4", credentials=creds)
+
+    # Priorité 1 : variable d'env JSON (Vercel)
+    raw_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "").strip()
+    if raw_json:
+        import json as _json
+        info = _json.loads(raw_json)
+        creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+        return build("sheets", "v4", credentials=creds)
+
+    # Priorité 2 : fichier local (dev)
+    path = credentials_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+    if path and os.path.isfile(path):
+        creds = service_account.Credentials.from_service_account_file(path, scopes=scopes)
+        return build("sheets", "v4", credentials=creds)
+
+    raise ValueError(
+        "Credentials Google manquants : GOOGLE_CREDENTIALS_JSON ou GOOGLE_APPLICATION_CREDENTIALS"
+    )
 
 
 def _values_to_dataframe(values: List[List[Any]]):
