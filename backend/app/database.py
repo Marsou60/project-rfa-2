@@ -7,15 +7,22 @@ import os
 import sqlite3
 import hashlib
 
-# Chemin de la base de données
-DATABASE_URL = "sqlite:///./rfa_contracts.db"
-DATABASE_PATH = "./rfa_contracts.db"
+# Sur Vercel le filesystem est en lecture seule — on utilise /tmp
+# En local, on garde le fichier dans le répertoire courant
+_IS_VERCEL = os.environ.get("VERCEL") == "1"
+if _IS_VERCEL:
+    DATABASE_URL  = "sqlite:////tmp/rfa_contracts.db"
+    DATABASE_PATH = "/tmp/rfa_contracts.db"
+else:
+    DATABASE_URL  = "sqlite:///./rfa_contracts.db"
+    DATABASE_PATH = "./rfa_contracts.db"
 
 # Dossiers pour les uploads
-UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads", "ads")
-AVATARS_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads", "avatars")
-LOGOS_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads", "logos")
-SUPPLIER_LOGOS_DIR = os.path.join(os.path.dirname(__file__), "..", "uploads", "supplier_logos")
+_UPLOAD_BASE = "/tmp/uploads" if _IS_VERCEL else os.path.join(os.path.dirname(__file__), "..", "uploads")
+UPLOADS_DIR        = os.path.join(_UPLOAD_BASE, "ads")
+AVATARS_DIR        = os.path.join(_UPLOAD_BASE, "avatars")
+LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
+SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Créer le moteur
 engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
