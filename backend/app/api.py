@@ -501,38 +501,11 @@ async def get_entities(import_id: str, mode: str = "client", session: Session = 
             )
     
     entities = []
-    
+
     if mode == "client":
         for code_union, data in import_data.by_client.items():
             nom = data.get("nom_client") or ""
-            label = f"{code_union}"
-            if nom:
-                label = f"{code_union} - {nom}"
-            
-            # Calculer le RFA pour cette entité
-            rfa_total = None
-            try:
-                # Résoudre le contrat
-                code_union_norm = code_union.strip().upper() if code_union else None
-                groupe_client_norm = data.get("groupe_client", "").strip().upper() if data.get("groupe_client") else None
-                contract = resolve_contract(
-                    code_union=code_union_norm if code_union_norm else None,
-                    groupe_client=groupe_client_norm if groupe_client_norm else None
-                )
-                
-                # Préparer les données CA pour le calculateur RFA
-                recap_ca = {
-                    "global": data["global"],
-                    "tri": data["tri"]
-                }
-                
-                # Calculer RFA
-                rfa_result = calculate_rfa(recap_ca, contract=contract)
-                rfa_total = rfa_result["totals"].get("grand_total", 0)
-            except Exception as e:
-                # En cas d'erreur, on laisse rfa_total à None
-                print(f"Erreur calcul RFA pour {code_union}: {e}")
-            
+            label = f"{code_union} - {nom}" if nom else code_union
             entities.append(EntitySummary(
                 id=code_union,
                 label=label,
@@ -540,35 +513,12 @@ async def get_entities(import_id: str, mode: str = "client", session: Session = 
                 global_total=data["global_total"],
                 tri_total=data["tri_total"],
                 grand_total=data["grand_total"],
-                rfa_total=rfa_total,
+                rfa_total=None,  # calculé à la demande (fiche client)
             ))
-        entities.sort(key=lambda x: x.id)
+        entities.sort(key=lambda x: x.label)
     
     else:  # mode == "group"
         for groupe, data in import_data.by_group.items():
-            # Calculer le RFA pour ce groupe
-            rfa_total = None
-            try:
-                # Résoudre le contrat
-                groupe_norm = groupe.strip().upper() if groupe else None
-                contract = resolve_contract(
-                    code_union=None,
-                    groupe_client=groupe_norm if groupe_norm else None
-                )
-                
-                # Préparer les données CA pour le calculateur RFA
-                recap_ca = {
-                    "global": data["global"],
-                    "tri": data["tri"]
-                }
-                
-                # Calculer RFA
-                rfa_result = calculate_rfa(recap_ca, contract=contract)
-                rfa_total = rfa_result["totals"].get("grand_total", 0)
-            except Exception as e:
-                # En cas d'erreur, on laisse rfa_total à None
-                print(f"Erreur calcul RFA pour groupe {groupe}: {e}")
-            
             entities.append(EntitySummary(
                 id=groupe,
                 label=groupe,
@@ -576,7 +526,7 @@ async def get_entities(import_id: str, mode: str = "client", session: Session = 
                 global_total=data["global_total"],
                 tri_total=data["tri_total"],
                 grand_total=data["grand_total"],
-                rfa_total=rfa_total,
+                rfa_total=None,  # calculé à la demande (fiche groupe)
             ))
         entities.sort(key=lambda x: x.label)
     
