@@ -2635,7 +2635,7 @@ async def genie_query_endpoint(
     if not import_data:
         raise HTTPException(status_code=404, detail="Import non trouvé")
 
-    from app.services.genie_engine import genie_query, genie_full_analysis
+    from app.services.genie_engine import genie_query_fast, genie_query
     params = {}
     if key:
         params["key"] = key
@@ -2644,18 +2644,16 @@ async def genie_query_endpoint(
     if limit:
         params["limit"] = limit
 
-    # Tente d'utiliser l'analyse Génie pré-calculée (cache Supabase)
-    try:
-        import json as _json
-        st_genie = session.exec(select(AppSettings).where(AppSettings.key == _CACHE_KEY_GENIE)).first()
-        if st_genie and st_genie.value:
-            cached_analysis = _json.loads(st_genie.value)
-            from app.services.genie_engine import _apply_query_to_analysis
-            result = _apply_query_to_analysis(cached_analysis, query_type, params, import_data)
+    # Sur Vercel (timeout 10s) : version rapide sans requêtes DB par entité
+    is_vercel = os.environ.get("VERCEL") == "1"
+    if is_vercel:
+        try:
+            result = genie_query_fast(import_data, query_type, params)
             return result
-    except Exception:
-        pass  # Fallback sur calcul en temps réel
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erreur Génie fast: {str(e)}")
 
+    # En local : version complète avec contrats
     try:
         result = genie_query(import_data, query_type, params)
         return result

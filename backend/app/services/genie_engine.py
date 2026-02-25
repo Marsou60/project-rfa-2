@@ -1215,3 +1215,123 @@ def genie_query(import_data: ImportData, query_type: str, params: Dict = None) -
     params = params or {}
     analysis = genie_full_analysis(import_data)
     return _dispatch_query(analysis, query_type, params, import_data)
+
+
+def genie_fast_analysis(import_data: ImportData) -> Dict:
+    """
+    Analyse rapide basée sur les données agrégées uniquement.
+    Pas de résolution de contrat individuelle → pas de requêtes DB → < 1 seconde.
+    Utilisé sur Vercel pour Union Intelligence.
+    """
+    by_client = import_data.by_client or {}
+    by_group  = import_data.by_group  or {}
+
+    from app.core.fields import get_global_fields, get_tri_fields
+    global_fields = get_global_fields()
+    tri_fields    = get_tri_fields()
+
+    # Totaux CA par fournisseur
+    ca_by_field: Dict[str, float] = {}
+    for f in global_fields + tri_fields:
+        ca_by_field[f] = sum(c.get("global", {}).get(f, 0) + c.get("tri", {}).get(f, 0) for c in by_client.values())
+
+    ca_total = sum(c.get("grand_total", 0) for c in by_client.values())
+
+    # Top clients par CA
+    top_clients = sorted(
+        [{"id": k, "label": f"{k} - {v.get('nom_client', '')}", "ca": v.get("grand_total", 0), "groupe": v.get("groupe_client", "")}
+         for k, v in by_client.items()],
+        key=lambda x: -x["ca"]
+    )
+
+    # Balance simplifiée par plateforme (CA uniquement, sans contrats)
+    balance = []
+    for f in global_fields:
+        label = f.replace("GLOBAL_", "")
+        ca = ca_by_field.get(f, 0)
+        balance.append({"key": f, "label": label, "ca": ca, "inbound": 0, "outbound": ca, "balance": 0})
+
+    # Groupes
+    groupes = sorted(
+        [{"label": g, "nb": v.get("nb_comptes", 0), "ca": v.get("grand_total", 0)} for g, v in by_group.items()],
+        key=lambda x: -x["ca"]
+    )
+
+    summary = {
+        "total_clients": len(by_client),
+        "total_groupes": len(by_group),
+        "ca_total": ca_total,
+        "ca_by_supplier": {f.replace("GLOBAL_", ""): ca_by_field.get(f, 0) for f in global_fields},
+        "total_entrant": 0,
+        "total_sortant": ca_total,
+        "total_margin": 0,
+        "nb_losses": 0,
+        "total_near": 0,
+        "total_achieved": 0,
+        "total_gain_potential": 0,
+        "union_near_count": 0,
+    }
+
+    return {
+        "summary": summary,
+        "alerts": [],
+        "balance": balance,
+        "top_clients": top_clients[:20],
+        "groupes": groupes,
+        "near_by_objective": {},
+        "union_opportunities": [],
+        "smart_plans": [],
+        "cascade": [],
+        "_fast_mode": True,
+    }
+
+
+def genie_query_fast(import_data: ImportData, query_type: str, params: Dict = None) -> Dict:
+    """Version rapide de genie_query utilisant genie_fast_analysis (sans DB)."""
+    params   = params or {}
+    analysis = genie_fast_analysis(import_data)
+
+    if query_type == "dashboard":
+        s   = analysis["summary"]
+        top = analysis["top_clients"][:5]
+        top_lines = "\n".join(f"  {i+1}. **{t['label']}** — {_fmt(t['ca'])}" for i, t in enumerate(top))
+        sup_lines = "\n".join(f"  - {k}: {_fmt(v)}" for k, v in s["ca_by_supplier"].items() if v > 0)
+        return {
+            "resultType": "dashboard",
+            "type": "dashboard",
+            "message": (
+                f"Analyse de **{s['total_clients']} adhérents** ({s['total_groupes']} groupes).\n\n"
+                f"💰 **CA total : {_fmt(s['ca_total'])}**\n\n"
+                f"📊 CA par plateforme :\n{sup_lines}\n\n"
+                f"🏆 Top adhérents :\n{top_lines}"
+            ),
+            "data": s,
+            "alerts": [],
+        }
+
+    elif query_type == "top_gains":
+        top = analysis["top_clients"][:int(params.get("limit", 10))]
+        return {
+            "resultType": "top_gains",
+            "type": "top_gains",
+            "message": f"Top {len(top)} adhérents par CA :",
+            "data": [{"id": t["id"], "label": t["label"], "rfa_total": t["ca"], "value": t["ca"]} for t in top],
+        }
+
+    elif query_type == "balance":
+        bal = analysis["balance"]
+        return {
+            "resultType": "balance",
+            "type": "balance",
+            "message": "Balance CA par plateforme :",
+            "data": bal,
+        }
+
+    else:
+        return {
+            "resultType": query_type,
+            "type": query_type,
+            "message": f"Analyse CA ({query_type}) — {analysis['summary']['total_clients']} adhérents, CA {_fmt(analysis['summary']['ca_total'])}",
+            "data": analysis.get(query_type, analysis["summary"]),
+            "alerts": [],
+        }
