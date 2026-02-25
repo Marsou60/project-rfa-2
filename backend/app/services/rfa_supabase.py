@@ -42,43 +42,43 @@ _ALL_COLS = ["code_union", "nom_client", "groupe_client"] + _NUMERIC_COLS
 
 def write_rfa_to_supabase(session, data_list: List[Dict[str, Any]]) -> int:
     """
-    UPSERT de toutes les lignes RFA dans la table `rfa_data`.
-    Retourne le nombre de lignes insérées/mises à jour.
+    UPSERT batch de toutes les lignes RFA dans `rfa_data`.
+    Utilise une seule requête SQL avec VALUES multiples pour minimiser la latence réseau.
     """
     from sqlalchemy import text
     if not data_list:
         return 0
 
-    # Colonnes numériques pour le SET dans ON CONFLICT
     set_clauses = ", ".join(
         f"{col} = EXCLUDED.{col}" for col in ["nom_client", "groupe_client"] + _NUMERIC_COLS
     ) + ", updated_at = NOW()"
 
     col_list = ", ".join(_ALL_COLS)
-    val_list = ", ".join(f":{col.replace('-', '_')}" for col in _ALL_COLS)
+
+    # Construire VALUES en une seule requête
+    rows_values = []
+    params: Dict[str, Any] = {}
+    for i, row in enumerate(data_list):
+        ph = ", ".join(f":p{i}_{col}" for col in _ALL_COLS)
+        rows_values.append(f"({ph})")
+        params[f"p{i}_code_union"]   = str(row.get("code_union", "") or "")
+        params[f"p{i}_nom_client"]   = str(row.get("nom_client", "") or "")
+        params[f"p{i}_groupe_client"] = str(row.get("groupe_client", "") or "Sans groupe")
+        for field, col in FIELD_TO_COL.items():
+            params[f"p{i}_{col}"] = float(row.get(field, 0) or 0)
 
     sql = text(f"""
         INSERT INTO rfa_data ({col_list})
-        VALUES ({val_list})
+        VALUES {', '.join(rows_values)}
         ON CONFLICT (code_union) DO UPDATE SET {set_clauses}
     """)
+    try:
+        session.execute(sql, params)
+    except Exception as e:
+        print(f"[RFA_SUPABASE] Erreur batch upsert: {e}")
+        raise
 
-    count = 0
-    for row in data_list:
-        params = {
-            "code_union":   str(row.get("code_union", "") or ""),
-            "nom_client":   str(row.get("nom_client", "") or ""),
-            "groupe_client": str(row.get("groupe_client", "") or ""),
-        }
-        for field, col in FIELD_TO_COL.items():
-            params[col] = float(row.get(field, 0) or 0)
-        try:
-            session.execute(sql, params)
-            count += 1
-        except Exception as e:
-            print(f"[RFA_SUPABASE] Erreur upsert {row.get('code_union')}: {e}")
-
-    # Supprime les anciens codes qui ne sont plus dans la feuille
+    # Supprime les codes obsolètes
     current_codes = [r.get("code_union") for r in data_list if r.get("code_union")]
     if current_codes:
         placeholders = ", ".join(f":c{i}" for i in range(len(current_codes)))
@@ -86,7 +86,7 @@ def write_rfa_to_supabase(session, data_list: List[Dict[str, Any]]) -> int:
         session.execute(text(f"DELETE FROM rfa_data WHERE code_union NOT IN ({placeholders})"), del_params)
 
     session.commit()
-    return count
+    return len(data_list)
 
 
 def read_rfa_from_supabase(session) -> Optional[List[Dict[str, Any]]]:
