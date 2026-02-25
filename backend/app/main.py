@@ -58,25 +58,4 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/api/debug")
-async def debug():
-    """Endpoint de diagnostic — à supprimer après résolution."""
-    import sys
-    db_url = os.environ.get("DATABASE_URL", "NON DEFINI")
-    db_url_masked = db_url[:30] + "..." if len(db_url) > 30 else db_url
-    result = {
-        "python": sys.version,
-        "database_url_set": bool(db_url and db_url != "NON DEFINI"),
-        "database_url_preview": db_url_masked,
-        "vercel": os.environ.get("VERCEL", "non"),
-    }
-    try:
-        from sqlmodel import Session, select, text
-        from app.database import engine
-        with Session(engine) as session:
-            session.exec(text("SELECT 1"))
-            result["db_connection"] = "OK"
-    except Exception as e:
-        result["db_connection"] = f"ERREUR: {str(e)}"
-    return result
 
