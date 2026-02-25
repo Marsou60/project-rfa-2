@@ -48,6 +48,28 @@ export const uploadExcel = async (file) => {
   return response.data
 }
 
+// ── RFA Sheets (feuille connectée = source de données pour tous) ─────────────────
+export const getRfaSheetsConfig = async () => {
+  const response = await api.get('/rfa-sheets/config')
+  return response.data
+}
+
+export const setRfaSheetsConfig = async (spreadsheetId, sheetName) => {
+  const response = await api.put('/rfa-sheets/config', { spreadsheet_id: spreadsheetId, sheet_name: sheetName || '' })
+  return response.data
+}
+
+export const refreshRfaSheets = async (spreadsheetId = null, sheetName = null) => {
+  const body = spreadsheetId ? { spreadsheet_id: spreadsheetId, sheet_name: sheetName || '' } : {}
+  const response = await api.post('/rfa-sheets/refresh', body)
+  return response.data
+}
+
+export const getRfaSheetsCurrent = async () => {
+  const response = await api.get('/rfa-sheets/current')
+  return response.data
+}
+
 export const getEntities = async (importId, mode = 'client') => {
   const response = await api.get(`/imports/${importId}/entities`, {
     params: { mode }
@@ -516,6 +538,57 @@ export const exportSmartPlansExcel = async (importId) => {
   link.remove()
   window.URL.revokeObjectURL(url)
 }
+
+// ==================== NATHALIE — Ouverture de comptes ====================
+
+export const nathalieGetClients = async (ouvertureOnly = false) => {
+  const response = await api.get('/nathalie/clients', { params: { ouverture_only: ouvertureOnly } })
+  return response.data
+}
+
+export const nathalieGetSuppliers = async () => {
+  const response = await api.get('/nathalie/suppliers')
+  return response.data
+}
+
+export const nathalieGetTasks = async (codeUnion = null) => {
+  const params = codeUnion ? { code_union: codeUnion } : {}
+  const response = await api.get('/nathalie/tasks', { params })
+  return response.data
+}
+
+export const nathalieGenerateEmails = async (codeUnion, supplierNames) => {
+  const response = await api.post('/nathalie/generate-emails', {
+    code_union: codeUnion,
+    supplier_names: supplierNames,
+  })
+  return response.data
+}
+
+/** Envoi réel des emails via Gmail (avec pièces jointes RIB/Kbis/pièce d'identité). */
+export const nathalieSendEmails = async (codeUnion, supplierNames, ccEmails = null) => {
+  const body = { code_union: codeUnion, supplier_names: supplierNames }
+  if (ccEmails && ccEmails.length) body.cc_emails = ccEmails
+  const response = await api.post('/nathalie/send-emails', body)
+  return response.data
+}
+
+export const nathalieGetClientDetail = async (codeUnion) => {
+  const response = await api.get(`/nathalie/client/${codeUnion}`)
+  return response.data
+}
+
+export const nathalieCreateClient = async (formData) => {
+  // formData doit être un objet FormData avec les champs + fichiers
+  const response = await api.post('/nathalie/create-client', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return response.data
+}
+
+// ==================== PURE DATA ====================
 
 export const getPureDataCommercialDetail = async ({ pureDataId, commercial, yearCurrent, yearPrevious, month, fournisseur }) => {
   const response = await api.get('/pure-data/commercial-detail', {

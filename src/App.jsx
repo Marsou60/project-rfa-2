@@ -15,7 +15,9 @@ import {
   Briefcase,
   Calculator,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  Home,
+  Bot,
 } from 'lucide-react'
 import UploadPage from './pages/UploadPage'
 import ClientsPage from './pages/ClientsPage'
@@ -32,17 +34,20 @@ import MarginSimulatorPage from './pages/MarginSimulatorPage'
 import GeniePage from './pages/GeniePage'
 import PureDataPage from './pages/PureDataPage'
 import LoginPage from './pages/LoginPage'
+import HubPage from './pages/HubPage'
+import NathaliePage from './pages/NathaliePage'
+import NicolasPage from './pages/NicolasPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SupplierFilterProvider, useSupplierFilter } from './context/SupplierFilterContext'
 import { SUPPLIER_KEYS, SUPPLIER_LABELS } from './constants/suppliers'
-import { getSetting, getImageUrl } from './api/client'
+import { getSetting, getImageUrl, getRfaSheetsCurrent } from './api/client'
 
 function AppContent() {
   const { user, loading, logout, isAdmin, isAdherent, isAuthenticated } = useAuth()
   const { supplierFilter, setSupplierFilter } = useSupplierFilter()
   const [currentImportId, setCurrentImportId] = useState(null)
-  const [currentPage, setCurrentPage] = useState('upload')
+  const [currentPage, setCurrentPage] = useState('hub')
   const [companyLogo, setCompanyLogo] = useState(null)
   const [openMenu, setOpenMenu] = useState(null)
   const [openSupplierFilter, setOpenSupplierFilter] = useState(false)
@@ -52,6 +57,15 @@ function AppContent() {
     const savedPage = localStorage.getItem('currentPage')
     if (savedImportId) {
       setCurrentImportId(savedImportId)
+    } else {
+      getRfaSheetsCurrent()
+        .then((r) => {
+          if (r && r.has_data) {
+            setCurrentImportId('sheets_live')
+            localStorage.setItem('currentImportId', 'sheets_live')
+          }
+        })
+        .catch(() => {})
     }
     if (savedPage) {
       setCurrentPage(savedPage)
@@ -77,6 +91,12 @@ function AppContent() {
   useEffect(() => {
     if (isAdherent && isAuthenticated) {
       setCurrentPage('client-space')
+    } else if (isAuthenticated && !isAdherent) {
+      // Admin : charger la dernière page sauvegardée ou le Hub
+      const savedPage = localStorage.getItem('currentPage')
+      if (!savedPage || savedPage === 'upload') {
+        setCurrentPage('hub')
+      }
     }
   }, [isAdherent, isAuthenticated])
 
@@ -110,7 +130,7 @@ function AppContent() {
   const handleUploadSuccess = (importId) => {
     if (!importId) return
     setCurrentImportId(importId)
-    setCurrentPage('clients')
+    setCurrentPage('union-space')
     localStorage.setItem('lastImportId', importId)
   }
 
@@ -133,10 +153,10 @@ function AppContent() {
     return <LoginPage />
   }
 
-  const needsImport = ['clients', 'client-space', 'recap', 'genie'].includes(currentPage)
+  const needsImport = ['clients', 'client-space', 'recap', 'genie', 'union-space'].includes(currentPage)
   const effectivePage = needsImport && !currentImportId ? 'upload' : currentPage
 
-  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'pure-data']
+  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'pure-data', 'hub', 'nathalie', 'nicolas']
 
   if (isAdherent && adminOnlyPages.includes(effectivePage)) {
     setCurrentPage('client-space')
@@ -176,7 +196,7 @@ function AppContent() {
                   Groupement Union
                 </h1>
                 <p className="text-[10px] text-blue-300/70 uppercase tracking-wider">
-                  Plateforme RFA
+                  Hub Interne
                 </p>
               </div>
             </div>
@@ -185,253 +205,179 @@ function AppContent() {
             <nav className="flex items-center gap-1">
               {isAdmin && (
                 <>
+                  {/* Accueil */}
                   <NavButton
-                    active={currentPage === 'upload'}
-                    onClick={() => {
-                      setCurrentPage('upload')
-                      setOpenMenu(null)
-                    }}
-                    icon={<Upload className="w-4 h-4" />}
-                    label="Import"
+                    active={effectivePage === 'hub'}
+                    onClick={() => { setCurrentPage('hub'); setOpenMenu(null) }}
+                    icon={<Home className="w-4 h-4" />}
+                    label="Accueil"
                   />
 
-                  {currentImportId && (
-                    <>
-                      <NavButton
-                        active={effectivePage === 'recap'}
-                        onClick={() => {
-                          setCurrentPage('recap')
-                          setOpenMenu(null)
-                        }}
-                        icon={<BarChart3 className="w-4 h-4" />}
-                        label="Récap"
-                      />
-
-                      {/* Menu Clients */}
-                      <div className="relative dropdown-container">
-                        <NavButton
-                          active={effectivePage === 'clients' || effectivePage === 'client-space'}
-                          onClick={() => setOpenMenu(openMenu === 'clients' ? null : 'clients')}
-                          icon={<Users className="w-4 h-4" />}
-                          label="Clients"
-                          hasDropdown={true}
-                        />
-                        {openMenu === 'clients' && (
-                          <div className="glass-dropdown absolute top-full left-0 mt-2 w-48 z-50 dropdown-menu">
-                            <button
-                              onClick={() => {
-                                setCurrentPage('clients')
-                                setOpenMenu(null)
-                              }}
-                              className={`glass-dropdown-item w-full text-left text-sm ${
-                                effectivePage === 'clients' ? 'active' : ''
-                              }`}
-                            >
-                              <Users className="w-4 h-4" />
-                              <span>Liste Clients</span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                setCurrentPage('client-space')
-                                setOpenMenu(null)
-                              }}
-                              className={`glass-dropdown-item w-full text-left text-sm ${
-                                effectivePage === 'client-space' ? 'active' : ''
-                              }`}
-                            >
-                              <Briefcase className="w-4 h-4" />
-                              <span>Espace Client</span>
-                            </button>
-                            {isAdmin && (
-                              <button
-                                onClick={() => {
-                                  setCurrentPage('pure-data')
-                                  setOpenMenu(null)
-                                }}
-                                className={`glass-dropdown-item w-full text-left text-sm ${
-                                  effectivePage === 'pure-data' ? 'active' : ''
-                                }`}
-                              >
-                                <TrendingUp className="w-4 h-4" />
-                                <span>Pure Data (N-1)</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Bouton DAF doré */}
-                      {isAdmin && (
-                        <button
-                          onClick={() => {
-                            setCurrentPage('union-space')
-                            setOpenMenu(null)
-                          }}
-                          className={`group relative overflow-hidden px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-300 ${
-                            effectivePage === 'union-space'
-                              ? 'bg-gradient-to-r from-yellow-400 via-yellow-500 to-amber-500 text-gray-900 shadow-lg shadow-yellow-500/50'
-                              : 'bg-gradient-to-r from-yellow-500/20 via-amber-500/20 to-yellow-600/20 text-yellow-200 hover:from-yellow-400 hover:via-yellow-500 hover:to-amber-500 hover:text-gray-900 hover:shadow-lg hover:shadow-yellow-500/50'
-                          }`}
-                        >
-                          <div className="relative flex items-center gap-2">
-                            <Briefcase className="w-4 h-4" />
-                            <span className="hidden md:inline font-bold">DAF</span>
-                            {effectivePage === 'union-space' && (
-                              <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                            )}
-                          </div>
-                          {effectivePage !== 'union-space' && (
-                            <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/0 via-yellow-300/30 to-yellow-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-shimmer" />
-                          )}
-                        </button>
-                      )}
-                    </>
-                  )}
-
-                      {/* Bouton Union Intelligence */}
-                      {isAdmin && currentImportId && (
-                        <button
-                          onClick={() => {
-                            setCurrentPage('genie')
-                            setOpenMenu(null)
-                          }}
-                          className={`group relative overflow-hidden px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-300 ${
-                            effectivePage === 'genie'
-                              ? 'bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500 text-white shadow-lg shadow-indigo-500/50'
-                              : 'bg-gradient-to-r from-violet-500/20 via-indigo-500/20 to-cyan-500/20 text-cyan-200 hover:from-violet-500 hover:via-indigo-500 hover:to-cyan-500 hover:text-white hover:shadow-lg hover:shadow-indigo-500/50'
-                          }`}
-                        >
-                          <div className="relative flex items-center gap-2">
-                            <Sparkles className="w-4 h-4" />
-                            <span className="hidden md:inline font-bold">U.I.</span>
-                            {effectivePage === 'genie' && (
-                              <span className="absolute -top-1 -right-1 w-2 h-2 bg-cyan-400 rounded-full animate-pulse" />
-                            )}
-                          </div>
-                          {effectivePage !== 'genie' && (
-                            <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/0 via-cyan-300/20 to-cyan-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-shimmer" />
-                          )}
-                        </button>
-                      )}
-
-                  {/* Menu Contrats */}
+                  {/* ── Agents ── */}
                   <div className="relative dropdown-container">
-                    <NavButton
-                      active={effectivePage === 'contracts' || effectivePage === 'assignments'}
-                      onClick={() => setOpenMenu(openMenu === 'contracts' ? null : 'contracts')}
-                      icon={<FileText className="w-4 h-4" />}
-                      label="Contrats"
-                      hasDropdown={true}
-                    />
-                    {openMenu === 'contracts' && (
-                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-48 z-50 dropdown-menu">
+                    <button
+                      onClick={() => setOpenMenu(openMenu === 'agents' ? null : 'agents')}
+                      className={`glass-nav-item text-sm flex items-center gap-1.5 ${
+                        ['nicolas', 'nathalie', 'genie'].includes(effectivePage) ? 'active' : ''
+                      }`}
+                    >
+                      <Bot className="w-4 h-4" />
+                      <span className="hidden md:inline">Agents</span>
+                      <ChevronDown className="w-3 h-3 opacity-60" />
+                    </button>
+                    {openMenu === 'agents' && (
+                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-52 z-50 dropdown-menu">
+                        {/* Nicolas */}
                         <button
-                          onClick={() => {
-                            setCurrentPage('contracts')
-                            setOpenMenu(null)
-                          }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${
-                            effectivePage === 'contracts' ? 'active' : ''
-                          }`}
+                          onClick={() => { setCurrentPage('nicolas'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'nicolas' ? 'active' : ''}`}
                         >
-                          <FileText className="w-4 h-4" />
-                          <span>Gestion Contrats</span>
+                          <span className="text-base">📊</span>
+                          <div>
+                            <div className="font-semibold">Nicolas</div>
+                            <div className="text-[10px] text-white/40">Chiffres & RFA</div>
+                          </div>
                         </button>
+                        {/* Union Intelligence */}
                         <button
-                          onClick={() => {
-                            setCurrentPage('assignments')
-                            setOpenMenu(null)
-                          }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${
-                            effectivePage === 'assignments' ? 'active' : ''
-                          }`}
+                          onClick={() => { setCurrentPage(currentImportId ? 'genie' : 'upload'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'genie' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
                         >
-                          <Link2 className="w-4 h-4" />
-                          <span>Affectations</span>
+                          <Sparkles className="w-4 h-4 text-violet-400" />
+                          <div>
+                            <div className="font-semibold">Union Intelligence</div>
+                            <div className="text-[10px] text-white/40">Analyse avancée</div>
+                          </div>
                         </button>
+                        <div className="border-t border-white/10 my-1" />
+                        {/* Nathalie */}
+                        <button
+                          onClick={() => { setCurrentPage('nathalie'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'nathalie' ? 'active' : ''}`}
+                        >
+                          <span className="text-base">🤝</span>
+                          <div>
+                            <div className="font-semibold">Nathalie</div>
+                            <div className="text-[10px] text-white/40">Ouverture de comptes</div>
+                          </div>
+                        </button>
+                        {/* Alex — bientôt */}
+                        <div className="glass-dropdown-item opacity-30 cursor-not-allowed text-sm">
+                          <span className="text-base">📧</span>
+                          <div>
+                            <div className="font-semibold">Alex</div>
+                            <div className="text-[10px] text-white/40">Mail & RDV — bientôt</div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
 
-                  <NavButton
-                    active={effectivePage === 'ads'}
-                    onClick={() => {
-                      setCurrentPage('ads')
-                      setOpenMenu(null)
-                    }}
-                    icon={<Megaphone className="w-4 h-4" />}
-                    label="Publicités"
-                  />
+                  {/* DAF */}
+                  {currentImportId && (
+                    <button
+                      onClick={() => { setCurrentPage('union-space'); setOpenMenu(null) }}
+                      className={`group relative overflow-hidden px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-300 ${
+                        effectivePage === 'union-space'
+                          ? 'bg-gradient-to-r from-yellow-400 via-yellow-500 to-amber-500 text-gray-900 shadow-lg shadow-yellow-500/50'
+                          : 'bg-gradient-to-r from-yellow-500/20 via-amber-500/20 to-yellow-600/20 text-yellow-200 hover:from-yellow-400 hover:via-yellow-500 hover:to-amber-500 hover:text-gray-900 hover:shadow-lg hover:shadow-yellow-500/50'
+                      }`}
+                    >
+                      <div className="relative flex items-center gap-2">
+                        <Briefcase className="w-4 h-4" />
+                        <span className="hidden md:inline font-bold">DAF</span>
+                        {effectivePage === 'union-space' && (
+                          <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                        )}
+                      </div>
+                      {effectivePage !== 'union-space' && (
+                        <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/0 via-yellow-300/30 to-yellow-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-shimmer" />
+                      )}
+                    </button>
+                  )}
 
-                  {/* Menu Administration */}
+                  {/* ── Menu contextuel (Clients, Contrats, Admin) ── */}
                   <div className="relative dropdown-container">
                     <NavButton
-                      active={effectivePage === 'users' || effectivePage === 'settings' || effectivePage === 'margin-simulator' || effectivePage === 'pure-data' || effectivePage === 'test-raw-import'}
-                      onClick={() => setOpenMenu(openMenu === 'admin' ? null : 'admin')}
+                      active={['clients','client-space','recap','contracts','assignments','ads','users','settings','margin-simulator','pure-data','upload','test-raw-import'].includes(effectivePage)}
+                      onClick={() => setOpenMenu(openMenu === 'more' ? null : 'more')}
                       icon={<Settings className="w-4 h-4" />}
-                      label="Admin"
+                      label="Plus"
                       hasDropdown={true}
                     />
-                    {openMenu === 'admin' && (
-                      <div className="glass-dropdown absolute top-full right-0 mt-2 w-48 z-50 dropdown-menu">
-                        <button
-                          onClick={() => {
-                            setCurrentPage('users')
-                            setOpenMenu(null)
-                          }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${
-                            effectivePage === 'users' ? 'active' : ''
-                          }`}
-                        >
+                    {openMenu === 'more' && (
+                      <div className="glass-dropdown absolute top-full right-0 mt-2 w-52 z-50 dropdown-menu">
+                        {/* Import */}
+                        <button onClick={() => { setCurrentPage('upload'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'upload' ? 'active' : ''}`}>
+                          <Upload className="w-4 h-4" />
+                          <span>Import données</span>
+                        </button>
+                        {/* Récap */}
+                        {currentImportId && (
+                          <button onClick={() => { setCurrentPage('recap'); setOpenMenu(null) }}
+                            className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'recap' ? 'active' : ''}`}>
+                            <BarChart3 className="w-4 h-4" />
+                            <span>Récap général</span>
+                          </button>
+                        )}
+                        {/* Clients */}
+                        {currentImportId && (
+                          <>
+                            <button onClick={() => { setCurrentPage('client-space'); setOpenMenu(null) }}
+                              className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'client-space' ? 'active' : ''}`}>
+                              <Briefcase className="w-4 h-4" />
+                              <span>Espace client</span>
+                            </button>
+                            <button onClick={() => { setCurrentPage('clients'); setOpenMenu(null) }}
+                              className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'clients' ? 'active' : ''}`}>
+                              <Users className="w-4 h-4" />
+                              <span>Liste adhérents</span>
+                            </button>
+                            <button onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
+                              className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}>
+                              <TrendingUp className="w-4 h-4" />
+                              <span>Pure Data (N-1)</span>
+                            </button>
+                          </>
+                        )}
+                        <div className="border-t border-white/10 my-1" />
+                        {/* Contrats */}
+                        <button onClick={() => { setCurrentPage('contracts'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'contracts' ? 'active' : ''}`}>
+                          <FileText className="w-4 h-4" />
+                          <span>Contrats</span>
+                        </button>
+                        <button onClick={() => { setCurrentPage('assignments'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'assignments' ? 'active' : ''}`}>
+                          <Link2 className="w-4 h-4" />
+                          <span>Affectations</span>
+                        </button>
+                        <div className="border-t border-white/10 my-1" />
+                        {/* Admin */}
+                        <button onClick={() => { setCurrentPage('users'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'users' ? 'active' : ''}`}>
                           <UserCog className="w-4 h-4" />
                           <span>Utilisateurs</span>
                         </button>
-                        <button
-                          onClick={() => {
-                            setCurrentPage('settings')
-                            setOpenMenu(null)
-                          }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${
-                            effectivePage === 'settings' ? 'active' : ''
-                          }`}
-                        >
+                        <button onClick={() => { setCurrentPage('settings'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'settings' ? 'active' : ''}`}>
                           <Settings className="w-4 h-4" />
                           <span>Paramètres</span>
                         </button>
-                        <button
-                          onClick={() => {
-                            setCurrentPage('margin-simulator')
-                            setOpenMenu(null)
-                          }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${
-                            effectivePage === 'margin-simulator' ? 'active' : ''
-                          }`}
-                        >
+                        <button onClick={() => { setCurrentPage('margin-simulator'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'margin-simulator' ? 'active' : ''}`}>
                           <Calculator className="w-4 h-4" />
                           <span>Simulateur Marge</span>
                         </button>
-                        <button
-                          onClick={() => {
-                            setCurrentPage('pure-data')
-                            setOpenMenu(null)
-                          }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${
-                            effectivePage === 'pure-data' ? 'active' : ''
-                          }`}
-                        >
-                          <TrendingUp className="w-4 h-4" />
-                          <span>Pure Data (N-1)</span>
+                        <button onClick={() => { setCurrentPage('ads'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'ads' ? 'active' : ''}`}>
+                          <Megaphone className="w-4 h-4" />
+                          <span>Publicités</span>
                         </button>
                         <div className="border-t border-white/10 my-1" />
-                        <button
-                          onClick={() => {
-                            setCurrentPage('test-raw-import')
-                            setOpenMenu(null)
-                          }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${
-                            effectivePage === 'test-raw-import' ? 'active' : ''
-                          }`}
-                        >
+                        <button onClick={() => { setCurrentPage('test-raw-import'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm opacity-50 ${effectivePage === 'test-raw-import' ? 'active' : ''}`}>
                           <FlaskConical className="w-4 h-4" />
                           <span>Test Import Brut</span>
                         </button>
@@ -520,6 +466,22 @@ function AppContent() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
+        {effectivePage === 'hub' && isAdmin && (
+          <HubPage
+            user={user}
+            currentImportId={currentImportId}
+            onNavigate={(page) => {
+              setCurrentPage(page)
+              setOpenMenu(null)
+            }}
+          />
+        )}
+        {effectivePage === 'nicolas' && isAdmin && (
+          <NicolasPage importId={currentImportId} />
+        )}
+        {effectivePage === 'nathalie' && isAdmin && (
+          <NathaliePage />
+        )}
         {effectivePage === 'upload' && isAdmin && (
           <UploadPage onUploadSuccess={handleUploadSuccess} />
         )}
@@ -532,6 +494,7 @@ function AppContent() {
             linkedCodeUnion={user?.linkedCodeUnion}
             linkedGroupe={user?.linkedGroupe}
             isAdherent={isAdherent}
+            isAdmin={isAdmin}
           />
         )}
         {effectivePage === 'recap' && currentImportId && isAdmin && (

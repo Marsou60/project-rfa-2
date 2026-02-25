@@ -691,20 +691,25 @@ function GeniePage({ importId }) {
 
                       {/* Chat view: Near by objective (Expandable) */}
                       {(viewMode === 'chat' || viewMode === 'parle_moi_de') && msg.data && Array.isArray(msg.data) && msg.resultType === 'near_by_objective' && (
-                        <div className="mt-3 space-y-2">
+                        <div className="mt-4 space-y-3">
+                          <div className="text-[10px] text-blue-300/40 uppercase tracking-wider font-bold ml-1">Détail par catégorie (cliquez pour voir les adhérents)</div>
                           {msg.data.map((obj, i) => (
                             <ExpandableSection key={i} title={
                               <div className="flex items-center justify-between w-full pr-2">
-                                <span className="font-semibold text-white/90">{obj.label || obj.key}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-white/90">{obj.label || obj.key}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/60">
+                                    Voir les {obj.count} adh.
+                                  </span>
+                                </div>
                                 <div className="flex items-center gap-2 text-[10px]">
-                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/20">{obj.count} adh.</span>
                                   <span className="text-emerald-400 font-bold">{fmt(obj.total_gain)}</span>
                                 </div>
                               </div>
                             }>
-                              <div className="overflow-x-auto rounded-lg border border-white/[0.06] bg-white/[0.02]">
+                              <div className="overflow-x-auto rounded-lg border border-white/[0.06] bg-white/[0.02] max-h-[400px] overflow-y-auto custom-scrollbar">
                                 <table className="w-full text-[10px]">
-                                  <thead><tr className="bg-white/[0.03] border-b border-white/[0.06]">
+                                  <thead className="sticky top-0 bg-[#0a0a1a] z-10"><tr className="border-b border-white/[0.06]">
                                     <th className="px-2 py-1.5 text-left text-blue-300/40">Adhérent</th>
                                     <th className="px-2 py-1.5 text-right text-blue-300/40">CA</th>
                                     <th className="px-2 py-1.5 text-center text-blue-300/40">%</th>
@@ -809,6 +814,10 @@ function GeniePage({ importId }) {
         .animate-genie-expand { animation: genie-expand 0.3s ease-out; overflow: hidden; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
       `}</style>
     </div>
   )

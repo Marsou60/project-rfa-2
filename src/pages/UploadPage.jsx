@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, FileSpreadsheet, Check, X, Loader2, FolderOpen } from 'lucide-react'
-import { uploadExcel } from '../api/client'
+import { Upload, FileSpreadsheet, Check, X, Loader2, FolderOpen, RefreshCw, Link2 } from 'lucide-react'
+import { uploadExcel, getRfaSheetsConfig, setRfaSheetsConfig, refreshRfaSheets } from '../api/client'
 
 function UploadPage({ onUploadSuccess }) {
   const [file, setFile] = useState(null)
@@ -8,6 +8,23 @@ function UploadPage({ onUploadSuccess }) {
   const [error, setError] = useState(null)
   const [uploadResult, setUploadResult] = useState(null)
   const fileInputRef = useRef(null)
+
+  const [sheetsConfig, setSheetsConfig] = useState({ spreadsheet_id: '', sheet_name: '', configured: false })
+  const [sheetsSpreadsheetId, setSheetsSpreadsheetId] = useState('')
+  const [sheetsSheetName, setSheetsSheetName] = useState('')
+  const [sheetsSaving, setSheetsSaving] = useState(false)
+  const [sheetsRefreshing, setSheetsRefreshing] = useState(false)
+  const [sheetsError, setSheetsError] = useState(null)
+
+  useEffect(() => {
+    getRfaSheetsConfig()
+      .then((c) => {
+        setSheetsConfig(c)
+        setSheetsSpreadsheetId(c.spreadsheet_id || '')
+        setSheetsSheetName(c.sheet_name || '')
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     console.log('State file a changé:', file ? file.name : 'null')
@@ -70,6 +87,39 @@ function UploadPage({ onUploadSuccess }) {
     }
   }
 
+  const handleSheetsSaveConfig = async () => {
+    setSheetsSaving(true)
+    setSheetsError(null)
+    try {
+      await setRfaSheetsConfig(sheetsSpreadsheetId.trim(), sheetsSheetName.trim())
+      setSheetsConfig({ ...sheetsConfig, spreadsheet_id: sheetsSpreadsheetId.trim(), sheet_name: sheetsSheetName.trim(), configured: true })
+    } catch (e) {
+      setSheetsError(e?.response?.data?.detail || e.message || 'Erreur')
+    } finally {
+      setSheetsSaving(false)
+    }
+  }
+
+  const handleSheetsRefresh = async () => {
+    const id = sheetsSpreadsheetId.trim()
+    if (!id) {
+      setSheetsError('Saisissez l’ID du tableur Google.')
+      return
+    }
+    setSheetsRefreshing(true)
+    setSheetsError(null)
+    try {
+      const result = await refreshRfaSheets(id, sheetsSheetName.trim() || null)
+      if (onUploadSuccess) onUploadSuccess('sheets_live')
+      setSheetsConfig({ ...sheetsConfig, spreadsheet_id: id, sheet_name: sheetsSheetName.trim(), configured: true })
+      setUploadResult(result)
+    } catch (e) {
+      setSheetsError(e?.response?.data?.detail || e.message || 'Erreur lors de la mise à jour')
+    } finally {
+      setSheetsRefreshing(false)
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="glass-card p-8">
@@ -78,16 +128,74 @@ function UploadPage({ onUploadSuccess }) {
             <FileSpreadsheet className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white">Import Excel</h2>
-            <p className="text-sm text-glass-secondary">Importez votre fichier Excel pour commencer</p>
+            <h2 className="text-2xl font-bold text-white">Import & source RFA</h2>
+            <p className="text-sm text-glass-secondary">Feuille Google Sheets connectée ou import Excel</p>
           </div>
         </div>
 
+        {/* Feuille RFA connectée (source pour tous) */}
+        <div className="mb-8 p-6 rounded-2xl bg-white/5 border border-white/10 space-y-4">
+          <h3 className="font-bold text-white flex items-center gap-2">
+            <Link2 className="w-5 h-5 text-emerald-400" />
+            Feuille RFA connectée
+          </h3>
+          <p className="text-sm text-glass-secondary">
+            Une fois configurée, les données sont disponibles pour tous sans import. Mettez à jour quand la feuille a changé (ex. une fois par mois).
+          </p>
+          <div className="grid gap-3">
+            <div>
+              <label className="block text-xs font-medium text-glass-secondary mb-1">ID du tableur Google</label>
+              <input
+                type="text"
+                value={sheetsSpreadsheetId}
+                onChange={(e) => setSheetsSpreadsheetId(e.target.value)}
+                placeholder="ex: 16Hog9Dc43vwj_JmjRBLlIPaYoHoxLKVB7eSrBVXOLM0"
+                className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/20 text-white placeholder-white/30 text-sm focus:outline-none focus:border-emerald-400/50"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-glass-secondary mb-1">Nom de la feuille (optionnel)</label>
+              <input
+                type="text"
+                value={sheetsSheetName}
+                onChange={(e) => setSheetsSheetName(e.target.value)}
+                placeholder="ex: RFA - Format Large V48"
+                className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/20 text-white placeholder-white/30 text-sm focus:outline-none focus:border-emerald-400/50"
+              />
+            </div>
+          </div>
+          {sheetsError && (
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">{sheetsError}</div>
+          )}
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleSheetsSaveConfig}
+              disabled={sheetsSaving || !sheetsSpreadsheetId.trim()}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium disabled:opacity-50"
+            >
+              {sheetsSaving ? 'Enregistrement…' : 'Enregistrer la config'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSheetsRefresh}
+              disabled={sheetsRefreshing || !sheetsSpreadsheetId.trim()}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {sheetsRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Mettre à jour les données depuis le Sheet
+            </button>
+          </div>
+          <p className="text-white/50 text-xs">
+            Saisissez l’ID du tableur et le nom de la feuille (optionnel), puis cliquez sur « Mettre à jour ». La config est enregistrée automatiquement.
+          </p>
+        </div>
+
         <div className="space-y-6">
-          {/* Upload */}
+          {/* Upload Excel (optionnel) */}
           <div>
             <label className="block text-sm font-medium text-glass-secondary mb-3">
-              Fichier Excel (.xlsx)
+              Ou importer un fichier Excel (.xlsx)
             </label>
             <div className="relative">
               <input
