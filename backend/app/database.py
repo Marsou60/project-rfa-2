@@ -11,16 +11,25 @@ import hashlib
 # Sinon on reste sur SQLite en local.
 _SUPABASE_URL = os.environ.get("DATABASE_URL", "")
 if _SUPABASE_URL:
-    _base = _SUPABASE_URL
-    for prefix in ("postgresql://", "postgres://"):
-        if _base.startswith(prefix):
-            _base = _base.replace(prefix, "postgresql+pg8000://", 1)
-            break
-    DATABASE_URL  = _base
+    DATABASE_URL  = "postgresql+pg8000://"  # URL minimale, params passés via connect_args
     DATABASE_PATH = None
+    # Décompose l'URL manuellement pour gérer le username avec point (postgres.xxxxx)
+    import re as _re
+    _m = _re.match(
+        r"(?:postgresql|postgres)://([^:]+):([^@]+)@([^:/]+):(\d+)/(.+)",
+        _SUPABASE_URL
+    )
+    if _m:
+        _PG_USER, _PG_PASS, _PG_HOST, _PG_PORT, _PG_DB = (
+            _m.group(1), _m.group(2), _m.group(3), int(_m.group(4)), _m.group(5)
+        )
+    else:
+        _PG_USER, _PG_PASS, _PG_HOST, _PG_PORT, _PG_DB = "postgres", "", "localhost", 5432, "postgres"
 else:
     DATABASE_URL  = "sqlite:///./rfa_contracts.db"
     DATABASE_PATH = "./rfa_contracts.db"
+    _PG_USER = _PG_PASS = _PG_HOST = _PG_DB = None
+    _PG_PORT = 5432
 
 # Dossiers pour les uploads
 _IS_VERCEL = os.environ.get("VERCEL") == "1"
@@ -31,18 +40,23 @@ LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
 SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Créer le moteur
-# check_same_thread uniquement pour SQLite
-# SSL requis pour Supabase (pg8000)
 if DATABASE_URL.startswith("sqlite"):
     _connect_args = {"check_same_thread": False}
+    engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
 else:
     import ssl as _ssl
     _ssl_ctx = _ssl.create_default_context()
     _ssl_ctx.check_hostname = False
     _ssl_ctx.verify_mode = _ssl.CERT_NONE
-    _connect_args = {"ssl_context": _ssl_ctx}
-
-engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
+    _connect_args = {
+        "host": _PG_HOST,
+        "port": _PG_PORT,
+        "database": _PG_DB,
+        "user": _PG_USER,
+        "password": _PG_PASS,
+        "ssl_context": _ssl_ctx,
+    }
+    engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
 
 
 def hash_password(password: str) -> str:
