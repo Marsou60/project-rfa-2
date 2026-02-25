@@ -11,9 +11,15 @@ import hashlib
 # Sinon on reste sur SQLite en local.
 _SUPABASE_URL = os.environ.get("DATABASE_URL", "")
 if _SUPABASE_URL:
-    # SQLAlchemy attend postgresql+psycopg2:// (pas postgresql://)
-    DATABASE_URL  = _SUPABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
-    DATABASE_PATH = None  # pas de fichier local
+    # pg8000 = driver PostgreSQL pur Python (pas de dépendance binaire)
+    _base = _SUPABASE_URL
+    for prefix in ("postgresql://", "postgres://"):
+        if _base.startswith(prefix):
+            _base = _base.replace(prefix, "postgresql+pg8000://", 1)
+            break
+    # Ajoute SSL requis par Supabase
+    DATABASE_URL  = _base + ("&" if "?" in _base else "?") + "ssl_context=true"
+    DATABASE_PATH = None
 else:
     DATABASE_URL  = "sqlite:///./rfa_contracts.db"
     DATABASE_PATH = "./rfa_contracts.db"
