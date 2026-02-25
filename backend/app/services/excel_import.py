@@ -1,13 +1,12 @@
 """
 Service d'import Excel (et base commune pour Google Sheets).
 """
-import pandas as pd
 from typing import Dict, List, Tuple, Any
 from app.core.normalize import normalize_header, sanitize_amount
 from app.core.fields import get_field_mapping, FIELD_DEFINITIONS
 
 
-def build_data_from_dataframe(df: pd.DataFrame) -> Tuple[List[Dict[str, Any]], List[str], Dict[str, str]]:
+def build_data_from_dataframe(df) -> Tuple[List[Dict[str, Any]], List[str], Dict[str, str]]:
     """
     À partir d'un DataFrame (en-têtes = colonnes), produit les mêmes sorties que load_excel.
     Permet de réutiliser la logique pour Excel ou Google Sheets.
@@ -35,7 +34,8 @@ def build_data_from_dataframe(df: pd.DataFrame) -> Tuple[List[Dict[str, Any]], L
                 except (KeyError, IndexError):
                     value = None
                 if key in ["code_union", "nom_client", "groupe_client"]:
-                    row_dict[key] = str(value).strip() if pd.notna(value) else ""
+                    import pandas as _pd
+                    row_dict[key] = str(value).strip() if _pd.notna(value) else ""
                 else:
                     row_dict[key] = sanitize_amount(value)
             else:
@@ -57,6 +57,7 @@ def load_excel(file_path: str) -> Tuple[List[Dict], List[str], Dict[str, str]]:
     - raw_columns: liste des noms de colonnes bruts
     - column_mapping: mapping clé interne -> nom colonne Excel reconnue
     """
+    import pandas as pd
     df = pd.read_excel(file_path, engine="openpyxl")
     return build_data_from_dataframe(df)
 

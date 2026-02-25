@@ -15,8 +15,6 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Tuple, Any, Optional
 
-import pandas as pd
-
 from app.services.excel_import import build_data_from_dataframe
 
 
@@ -39,8 +37,9 @@ def _get_sheets_client(credentials_path: Optional[str] = None):
     return build("sheets", "v4", credentials=creds)
 
 
-def _values_to_dataframe(values: List[List[Any]]) -> pd.DataFrame:
+def _values_to_dataframe(values: List[List[Any]]):
     """Première ligne = en-têtes, lignes suivantes = données."""
+    import pandas as pd
     if not values or len(values) < 2:
         return pd.DataFrame()
     headers = [str(h) for h in values[0]]
