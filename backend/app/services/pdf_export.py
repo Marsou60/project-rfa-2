@@ -6,7 +6,12 @@ import json
 from typing import Dict, Optional, List, Tuple, Any
 from io import BytesIO
 from jinja2 import Template
-from xhtml2pdf import pisa
+try:
+    from xhtml2pdf import pisa
+    XHTML2PDF_AVAILABLE = True
+except ImportError:
+    pisa = None
+    XHTML2PDF_AVAILABLE = False
 from app.services.compute import get_entity_detail_with_rfa
 from app.services.contract_resolver import get_contract_by_id
 from app.services.rfa_calculator import load_contract_rules, load_entity_overrides
@@ -776,6 +781,9 @@ def generate_pdf_report(
 
     # Générer le HTML (identique à la page Espace Client)
     html_content = generate_espace_client_pdf_html(entity_dict, mode)
+
+    if not XHTML2PDF_AVAILABLE:
+        raise RuntimeError("Export PDF non disponible dans cet environnement (xhtml2pdf non installé).")
 
     # Générer le PDF avec xhtml2pdf
     pdf_buffer = BytesIO()

@@ -769,7 +769,10 @@ async def export_union_excel(import_id: str, session: Session = Depends(get_sess
 @router.get("/imports/{import_id}/union/export-pdf")
 async def export_union_pdf(import_id: str, session: Session = Depends(get_session)):
     """Export PDF du rapport Union RFA."""
-    from xhtml2pdf import pisa
+    try:
+        from xhtml2pdf import pisa
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Export PDF non disponible dans cet environnement.")
     from io import BytesIO
     
     import_data = _resolve_import_data(import_id, session)
