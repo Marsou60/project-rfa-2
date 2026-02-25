@@ -168,6 +168,12 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
     if len(import_data.by_client) == 0:
         compute_aggregations(import_data)
 
+    # Sur Vercel (VERCEL=1), limite aux top N clients par CA pour tenir dans le timeout
+    import os as _os
+    _max_clients = int(_os.environ.get("GENIE_MAX_CLIENTS", "225"))
+    if _os.environ.get("VERCEL") == "1":
+        _max_clients = 30
+
     # Pré-charge tous les contrats et assignments en 3 requêtes pour éviter le N+1
     from app.services.contract_resolver import BatchContractResolver
     _batch_resolver = BatchContractResolver()
@@ -187,7 +193,14 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
     client_rfa_by_key = {}  # key -> total RFA payée à tous les adhérents
     client_details = {}  # code_union -> analysis
 
-    for code_union in list(import_data.by_client.keys()):
+    # Tri par CA décroissant — top N clients sur Vercel, tous en local
+    _sorted_clients = sorted(
+        import_data.by_client.keys(),
+        key=lambda cu: import_data.by_client[cu].get("grand_total", 0),
+        reverse=True
+    )[:_max_clients]
+
+    for code_union in _sorted_clients:
         try:
             detail = get_entity_detail_with_rfa(import_data, "client", code_union)
             entity_dict = detail.model_dump(by_alias=True, mode="json")
