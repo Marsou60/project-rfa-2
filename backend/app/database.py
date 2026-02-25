@@ -11,29 +11,26 @@ import hashlib
 # Sinon on reste sur SQLite en local.
 _SUPABASE_URL = os.environ.get("DATABASE_URL", "")
 if _SUPABASE_URL:
-    # Parse l'URL manuellement et utilise le builder SQLAlchemy
-    # pour gérer correctement le username avec un point (postgres.project_ref)
     import re as _re
-    from sqlalchemy.engine import URL as _SAURL
     _m = _re.match(
         r"(?:postgresql|postgres)://([^:]+):([^@]+)@([^:/]+):(\d+)/(.+)",
         _SUPABASE_URL
     )
     if _m:
-        _DB_URL = _SAURL.create(
-            drivername="postgresql+psycopg2",
-            username=_m.group(1),
-            password=_m.group(2),
-            host=_m.group(3),
-            port=int(_m.group(4)),
-            database=_m.group(5),
-            query={"sslmode": "require"},
-        )
+        _PG = {
+            "host":    _m.group(3),
+            "port":    int(_m.group(4)),
+            "dbname":  _m.group(5),
+            "user":    _m.group(1),
+            "password":_m.group(2),
+            "sslmode": "require",
+        }
     else:
-        _DB_URL = _SUPABASE_URL
-    DATABASE_URL  = _DB_URL
+        _PG = None
+    DATABASE_URL  = "sqlite:///./rfa_contracts.db"   # fallback si parse échoue
     DATABASE_PATH = None
 else:
+    _PG = None
     DATABASE_URL  = "sqlite:///./rfa_contracts.db"
     DATABASE_PATH = "./rfa_contracts.db"
 
@@ -46,9 +43,17 @@ LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
 SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Créer le moteur
-_is_sqlite = isinstance(DATABASE_URL, str) and DATABASE_URL.startswith("sqlite")
-_connect_args = {"check_same_thread": False} if _is_sqlite else {}
-engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
+if _PG:
+    # Connexion directe psycopg2 — contourne tout parsing d'URL
+    try:
+        import psycopg2 as _psycopg2
+        def _pg_creator():
+            return _psycopg2.connect(**_PG)
+        engine = create_engine("postgresql+psycopg2://", creator=_pg_creator, echo=False)
+    except ImportError:
+        engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
 
 def hash_password(password: str) -> str:
