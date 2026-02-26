@@ -18,7 +18,7 @@ import {
 import { getUnionEntity, getEntities } from '../api/client'
 
 /* ── Compteur animé (ease-out quintic — lent et théâtral) ────── */
-function useAnimatedCounter(target, duration = 8000, delay = 0) {
+function useAnimatedCounter(target, duration = 20000, delay = 0) {
   const [value, setValue] = useState(0)
   useEffect(() => {
     if (!target) return
@@ -56,32 +56,32 @@ function injectKpiCss() {
   document.head.appendChild(style)
 }
 
-/* ── Carte KPI 3D (tilt au survol) ─────────────────────────── */
-function KpiCard3D({ label, value, icon, color, prefix = '', suffix = '', delay = 0, decimals = 0 }) {
+/* ── Tilt handler partagé ───────────────────────────────────── */
+function useTilt(color) {
   const ref = useRef(null)
-  const animated = useAnimatedCounter(value, 1800, delay)
-  useEffect(() => { injectKpiCss() }, [])
-
   const handleMouseMove = (e) => {
-    const el = ref.current
-    if (!el) return
+    const el = ref.current; if (!el) return
     const rect = el.getBoundingClientRect()
     const x = (e.clientX - rect.left) / rect.width - 0.5
     const y = (e.clientY - rect.top) / rect.height - 0.5
     el.style.transform = `perspective(500px) rotateY(${x * 30}deg) rotateX(${-y * 30}deg) scale(1.1) translateZ(30px)`
     el.style.boxShadow = `${-x * 30}px ${y * 30}px 60px rgba(0,0,0,0.6), 0 0 50px ${color}70`
   }
-
   const handleMouseLeave = () => {
-    const el = ref.current
-    if (!el) return
+    const el = ref.current; if (!el) return
     el.style.transform = 'perspective(500px) rotateY(0deg) rotateX(0deg) scale(1) translateZ(0)'
     el.style.boxShadow = ''
   }
+  return { ref, handleMouseMove, handleMouseLeave }
+}
 
-  const displayValue = decimals > 0
-    ? animated.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-    : animated.toLocaleString('fr-FR')
+/* ── Carte "Score à battre" (CA 2025) ───────────────────────── */
+function ScoreCard({ value, delay = 0 }) {
+  const { ref, handleMouseMove, handleMouseLeave } = useTilt('#f59e0b')
+  const animated = useAnimatedCounter(value, 20000, delay)
+  useEffect(() => { injectKpiCss() }, [])
+
+  const pct = value > 0 ? Math.round((animated / value) * 100) : 0
 
   return (
     <div
@@ -90,26 +90,83 @@ function KpiCard3D({ label, value, icon, color, prefix = '', suffix = '', delay 
       onMouseLeave={handleMouseLeave}
       style={{
         transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
-        animation: `kpiEntrance 0.7s cubic-bezier(0.34,1.56,0.64,1) ${delay}ms both`,
+        animation: `kpiEntrance 0.9s cubic-bezier(0.34,1.56,0.64,1) ${delay}ms both`,
       }}
       className="relative rounded-2xl overflow-hidden cursor-default select-none"
     >
-      {/* Fond glassmorphism */}
-      <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/20 rounded-2xl" />
-      {/* Reflet lumineux */}
+      <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-yellow-600/10 backdrop-blur-xl border border-amber-400/30 rounded-2xl" />
       <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl" />
-      {/* Halo coloré */}
-      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-30" style={{ background: color }} />
+      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-25" style={{ background: '#f59e0b' }} />
 
-      <div className="relative p-5 space-y-3">
+      <div className="relative p-6 space-y-4">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🏆</span>
+            <div>
+              <div className="text-amber-300 text-xs font-black uppercase tracking-widest">Score à battre</div>
+              <div className="text-white/50 text-[10px] uppercase tracking-wider">CA Groupement Union 2025</div>
+            </div>
+          </div>
+          <span className="text-xs font-black px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 animate-pulse">
+            OBJECTIF
+          </span>
+        </div>
+
+        {/* Chiffre animé */}
+        <div className="text-5xl font-black text-white leading-none tracking-tight">
+          {animated.toLocaleString('fr-FR')} <span className="text-2xl text-amber-300">€</span>
+        </div>
+
+        {/* Barre de progression */}
+        <div className="space-y-1.5">
+          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 transition-all duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] text-white/40 font-semibold">
+            <span>0 €</span>
+            <span className="text-amber-300/70">{pct}% comptabilisé</span>
+            <span>{value > 0 ? value.toLocaleString('fr-FR') : '—'} €</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Carte KPI 3D standard ──────────────────────────────────── */
+function KpiCard3D({ label, value, icon, color, suffix = '', delay = 0 }) {
+  const { ref, handleMouseMove, handleMouseLeave } = useTilt(color)
+  const animated = useAnimatedCounter(value, 20000, delay)
+  useEffect(() => { injectKpiCss() }, [])
+
+  return (
+    <div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
+        animation: `kpiEntrance 0.9s cubic-bezier(0.34,1.56,0.64,1) ${delay}ms both`,
+      }}
+      className="relative rounded-2xl overflow-hidden cursor-default select-none"
+    >
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/20 rounded-2xl" />
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl" />
+      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-25" style={{ background: color }} />
+
+      <div className="relative p-6 space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-white/50 text-xs font-bold uppercase tracking-widest">{label}</span>
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `${color}30` }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}30` }}>
             <span style={{ color }}>{icon}</span>
           </div>
         </div>
-        <div className="text-4xl font-black text-white leading-none tracking-tight mt-1">
-          {prefix}{displayValue}{suffix}
+        <div className="text-5xl font-black text-white leading-none tracking-tight">
+          {animated.toLocaleString('fr-FR')}{suffix}
         </div>
       </div>
     </div>
@@ -178,20 +235,13 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
             Chiffres clés — Groupement Union
           </h2>
           <div className="grid grid-cols-2 gap-6">
-            <KpiCard3D
-              label="CA Total Groupement Union"
-              value={kpis.caTotal}
-              suffix=" €"
-              icon={<TrendingUp className="w-5 h-5" />}
-              color="#3b82f6"
-              delay={0}
-            />
+            <ScoreCard value={kpis.caTotal} delay={0} />
             <KpiCard3D
               label="Adhérents actifs"
               value={kpis.nbClients}
               icon={<Users className="w-5 h-5" />}
               color="#8b5cf6"
-              delay={800}
+              delay={1500}
             />
           </div>
         </div>
