@@ -1068,9 +1068,20 @@ async def get_global_recap(
     dissolved_set = set()
     if dissolved_groups:
         dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
-    
+
     try:
-        return get_global_recap_rfa(import_data, dissolved_groups=dissolved_set)
+        # Utiliser BatchContractResolver pour charger tous les contrats en 3 requêtes
+        # au lieu de N requêtes (une par client) — critique pour les perfs sur Vercel
+        from app.services.contract_resolver import BatchContractResolver
+        import app.services.contract_resolver as _resolver_mod
+        _batch = BatchContractResolver()
+        _orig_resolve = _resolver_mod.resolve_contract
+        _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None: _batch.resolve(code_union, groupe_client)
+        try:
+            result = get_global_recap_rfa(import_data, dissolved_groups=dissolved_set)
+        finally:
+            _resolver_mod.resolve_contract = _orig_resolve
+        return result
     except Exception as e:
         import traceback
         print(f"Erreur lors du calcul du récapitulatif: {e}")
