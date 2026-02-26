@@ -43,7 +43,7 @@ import { SUPPLIER_KEYS, SUPPLIER_LABELS } from './constants/suppliers'
 import { getSetting, getImageUrl, getRfaSheetsCurrent } from './api/client'
 
 function AppContent() {
-  const { user, loading, logout, isAdmin, isAdherent, isAuthenticated } = useAuth()
+  const { user, loading, logout, isAdmin, isCommercial, isAdherent, isAuthenticated } = useAuth()
   const { supplierFilter, setSupplierFilter } = useSupplierFilter()
   const [currentImportId, setCurrentImportId] = useState(null)
   const [currentPage, setCurrentPage] = useState('hub')
@@ -155,10 +155,17 @@ function AppContent() {
   const needsImport = ['clients', 'client-space', 'recap', 'genie', 'union-space'].includes(currentPage)
   const effectivePage = needsImport && !currentImportId ? 'upload' : currentPage
 
-  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'pure-data', 'hub', 'nathalie', 'paul']
+  // Pages accessibles uniquement aux admins
+  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'paul', 'union-space']
+  // Pages accessibles aux commerciaux (Nicolas + Nathalie)
+  const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'nathalie']
 
-  if (isAdherent && adminOnlyPages.includes(effectivePage)) {
+  if (isAdherent && effectivePage !== 'client-space') {
     setCurrentPage('client-space')
+    return null
+  }
+  if (isCommercial && adminOnlyPages.includes(effectivePage)) {
+    setCurrentPage('hub')
     return null
   }
 
@@ -202,6 +209,70 @@ function AppContent() {
 
             {/* Navigation */}
             <nav className="flex items-center gap-1">
+              {/* Navigation COMMERCIAL : Nicolas + Nathalie uniquement */}
+              {isCommercial && (
+                <>
+                  <NavButton
+                    active={effectivePage === 'hub'}
+                    onClick={() => { setCurrentPage('hub'); setOpenMenu(null) }}
+                    icon={<Home className="w-4 h-4" />}
+                    label="Accueil"
+                  />
+                  <div className="relative dropdown-container">
+                    <button
+                      onClick={() => setOpenMenu(openMenu === 'nicolas' ? null : 'nicolas')}
+                      className={`glass-nav-item text-sm flex items-center gap-1.5 ${
+                        ['client-space', 'genie', 'pure-data'].includes(effectivePage) ? 'active' : ''
+                      }`}
+                    >
+                      <span className="text-base leading-none">📊</span>
+                      <span className="hidden md:inline font-semibold">Nicolas</span>
+                      <ChevronDown className="w-3 h-3 opacity-60" />
+                    </button>
+                    {openMenu === 'nicolas' && (
+                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-56 z-50 dropdown-menu">
+                        <button
+                          onClick={() => { setCurrentPage(currentImportId ? 'client-space' : 'hub'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'client-space' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
+                        >
+                          <Briefcase className="w-4 h-4 text-indigo-400" />
+                          <div>
+                            <div className="font-semibold">Espace client</div>
+                            <div className="text-[10px] text-white/40">Fiche détaillée adhérent</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage(currentImportId ? 'genie' : 'hub'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'genie' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
+                        >
+                          <Sparkles className="w-4 h-4 text-violet-400" />
+                          <div>
+                            <div className="font-semibold">Union Intelligence</div>
+                            <div className="text-[10px] text-white/40">Analyse avancée IA</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}
+                        >
+                          <TrendingUp className="w-4 h-4 text-teal-400" />
+                          <div>
+                            <div className="font-semibold">Pure Data</div>
+                            <div className="text-[10px] text-white/40">Données brutes N-1</div>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <NavButton
+                    active={effectivePage === 'nathalie'}
+                    onClick={() => { setCurrentPage('nathalie'); setOpenMenu(null) }}
+                    icon={<span className="text-base leading-none">🤝</span>}
+                    label="Nathalie"
+                  />
+                </>
+              )}
+
               {isAdmin && (
                 <>
                   {/* ── Accueil ── */}
@@ -471,10 +542,11 @@ function AppContent() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-        {effectivePage === 'hub' && isAdmin && (
+        {effectivePage === 'hub' && (isAdmin || isCommercial) && (
           <HubPage
             user={user}
             currentImportId={currentImportId}
+            isCommercial={isCommercial}
             onNavigate={(page) => {
               setCurrentPage(page)
               setOpenMenu(null)
@@ -487,7 +559,7 @@ function AppContent() {
             onNavigate={(page) => { setCurrentPage(page); setOpenMenu(null) }}
           />
         )}
-        {effectivePage === 'nathalie' && isAdmin && (
+        {effectivePage === 'nathalie' && (isAdmin || isCommercial) && (
           <NathaliePage />
         )}
         {effectivePage === 'upload' && isAdmin && (
@@ -496,7 +568,7 @@ function AppContent() {
         {effectivePage === 'clients' && currentImportId && isAdmin && (
           <ClientsPage importId={currentImportId} />
         )}
-        {effectivePage === 'client-space' && currentImportId && (
+        {effectivePage === 'client-space' && currentImportId && (isAdmin || isCommercial || isAdherent) && (
           <ClientSpacePage
             importId={currentImportId}
             linkedCodeUnion={user?.linkedCodeUnion}
@@ -526,13 +598,13 @@ function AppContent() {
         {effectivePage === 'margin-simulator' && isAdmin && (
           <MarginSimulatorPage />
         )}
-        {effectivePage === 'pure-data' && isAdmin && (
+        {effectivePage === 'pure-data' && (isAdmin || isCommercial) && (
           <PureDataPage />
         )}
         {effectivePage === 'union-space' && isAdmin && currentImportId && (
           <UnionSpacePage importId={currentImportId} />
         )}
-        {effectivePage === 'genie' && isAdmin && currentImportId && (
+        {effectivePage === 'genie' && (isAdmin || isCommercial) && currentImportId && (
           <GeniePage importId={currentImportId} />
         )}
         {effectivePage === 'test-raw-import' && isAdmin && (

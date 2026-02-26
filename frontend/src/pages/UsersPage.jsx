@@ -177,12 +177,14 @@ function UsersPage() {
                 </td>
                 <td>
                   <span className={`glass-badge flex items-center gap-1 ${
-                    user.role === 'ADMIN'
-                      ? 'glass-badge-purple'
-                      : 'glass-badge-blue'
+                    user.role === 'ADMIN'      ? 'glass-badge-purple' :
+                    user.role === 'COMMERCIAL' ? 'glass-badge-blue' :
+                    'glass-badge-emerald'
                   }`}>
-                    {user.role === 'ADMIN' ? <Crown className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
-                    {user.role === 'ADMIN' ? 'Admin' : 'Adhérent'}
+                    {user.role === 'ADMIN'      ? <Crown className="w-3 h-3" /> :
+                     user.role === 'COMMERCIAL' ? <span className="text-xs">📊</span> :
+                     <Briefcase className="w-3 h-3" />}
+                    {user.role === 'ADMIN' ? 'Admin' : user.role === 'COMMERCIAL' ? 'Commercial' : 'Adhérent'}
                   </span>
                 </td>
                 <td className="text-glass-secondary">
@@ -401,15 +403,40 @@ function UserForm({ user, availableEntities, onSubmit, onCancel }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-glass-secondary mb-2">Rôle</label>
-            <select
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-              className="glass-select"
-            >
-              <option value="ADMIN">Administrateur</option>
-              <option value="ADHERENT">Adhérent</option>
-            </select>
+            <label className="block text-sm font-medium text-glass-secondary mb-2">Rôle & accès</label>
+            <div className="space-y-2">
+              {[
+                { value: 'ADMIN',      emoji: '👑', label: 'Administrateur', desc: 'Accès complet à toute l\'application' },
+                { value: 'COMMERCIAL', emoji: '📊', label: 'Commercial',      desc: 'Nicolas + Nathalie uniquement' },
+                { value: 'ADHERENT',   emoji: '🏢', label: 'Adhérent',        desc: 'Espace client uniquement (bientôt)' },
+              ].map((r) => (
+                <label
+                  key={r.value}
+                  className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer border transition-all ${
+                    formData.role === r.value
+                      ? 'border-blue-500/60 bg-blue-500/15'
+                      : 'border-white/10 bg-white/5 hover:bg-white/10'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="role"
+                    value={r.value}
+                    checked={formData.role === r.value}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="hidden"
+                  />
+                  <span className="text-xl">{r.emoji}</span>
+                  <div className="flex-1">
+                    <div className="text-white font-semibold text-sm">{r.label}</div>
+                    <div className="text-white/40 text-xs">{r.desc}</div>
+                  </div>
+                  {formData.role === r.value && (
+                    <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                  )}
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 

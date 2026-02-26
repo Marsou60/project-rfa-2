@@ -128,8 +128,9 @@ class Ad(SQLModel, table=True):
 
 class UserRole(str, Enum):
     """Rôle utilisateur."""
-    ADMIN = "ADMIN"
-    ADHERENT = "ADHERENT"
+    ADMIN      = "ADMIN"       # Accès complet
+    COMMERCIAL = "COMMERCIAL"  # Nicolas + Nathalie uniquement
+    ADHERENT   = "ADHERENT"    # Espace client uniquement (futur)
 
 
 class User(SQLModel, table=True):

@@ -73,8 +73,9 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  const isAdmin = user?.role === 'ADMIN'
-  const isAdherent = user?.role === 'ADHERENT'
+  const isAdmin      = user?.role === 'ADMIN'
+  const isCommercial = user?.role === 'COMMERCIAL'
+  const isAdherent   = user?.role === 'ADHERENT'
 
   return (
     <AuthContext.Provider value={{ 
@@ -82,7 +83,8 @@ export function AuthProvider({ children }) {
       loading, 
       login, 
       logout, 
-      isAdmin, 
+      isAdmin,
+      isCommercial,
       isAdherent,
       isAuthenticated: !!user 
     }}>
