@@ -160,7 +160,9 @@ function AppContent() {
   // Pages accessibles aux commerciaux (Nicolas + Nathalie)
   const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'nathalie']
 
-  if (isAdherent && effectivePage !== 'client-space') {
+  // Adhérent : redirige vers espace client seulement si les données sont prêtes
+  // (sans données, on laisse afficher le message de bienvenue)
+  if (isAdherent && currentImportId && effectivePage !== 'client-space') {
     setCurrentPage('client-space')
     return null
   }
