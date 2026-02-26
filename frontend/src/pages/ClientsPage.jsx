@@ -230,8 +230,20 @@ function ClientsPage({ importId }) {
     }).format(amount)
   }
 
+  // Groupes dont on affiche quand même les clients individuellement
+  const GROUP_EXCEPTIONS = ['independant union', 'les lyonnais']
+
+  const isFromExceptionGroup = (entity) => {
+    if (!entity.groupe_client) return true
+    const g = entity.groupe_client.toLowerCase().trim()
+    return GROUP_EXCEPTIONS.some((ex) => g.includes(ex))
+  }
+
   const filteredEntities = entities
     .filter((entity) => {
+      // En mode client, masquer les clients appartenant à un vrai groupe
+      if (mode === 'client' && !isFromExceptionGroup(entity)) return false
+
       const isCalculated = calculatedClients.has(entity.id)
       if (filterStatus === 'calculated' && !isCalculated) return false
       if (filterStatus === 'pending' && isCalculated) return false

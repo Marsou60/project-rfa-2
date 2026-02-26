@@ -11,13 +11,12 @@ import {
   LogOut,
   ChevronDown,
   FlaskConical,
-  User,
   Briefcase,
   Calculator,
   TrendingUp,
   Sparkles,
   Home,
-  Bot,
+  MoreHorizontal,
 } from 'lucide-react'
 import UploadPage from './pages/UploadPage'
 import ClientsPage from './pages/ClientsPage'
@@ -36,7 +35,7 @@ import PureDataPage from './pages/PureDataPage'
 import LoginPage from './pages/LoginPage'
 import HubPage from './pages/HubPage'
 import NathaliePage from './pages/NathaliePage'
-import NicolasPage from './pages/NicolasPage'
+import PaulPage from './pages/PaulPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SupplierFilterProvider, useSupplierFilter } from './context/SupplierFilterContext'
@@ -156,7 +155,7 @@ function AppContent() {
   const needsImport = ['clients', 'client-space', 'recap', 'genie', 'union-space'].includes(currentPage)
   const effectivePage = needsImport && !currentImportId ? 'upload' : currentPage
 
-  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'pure-data', 'hub', 'nathalie', 'nicolas']
+  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'pure-data', 'hub', 'nathalie', 'paul']
 
   if (isAdherent && adminOnlyPages.includes(effectivePage)) {
     setCurrentPage('client-space')
@@ -205,7 +204,7 @@ function AppContent() {
             <nav className="flex items-center gap-1">
               {isAdmin && (
                 <>
-                  {/* Accueil */}
+                  {/* ── Accueil ── */}
                   <NavButton
                     active={effectivePage === 'hub'}
                     onClick={() => { setCurrentPage('hub'); setOpenMenu(null) }}
@@ -213,32 +212,30 @@ function AppContent() {
                     label="Accueil"
                   />
 
-                  {/* ── Agents ── */}
+                  {/* ── Nicolas ── */}
                   <div className="relative dropdown-container">
                     <button
-                      onClick={() => setOpenMenu(openMenu === 'agents' ? null : 'agents')}
+                      onClick={() => setOpenMenu(openMenu === 'nicolas' ? null : 'nicolas')}
                       className={`glass-nav-item text-sm flex items-center gap-1.5 ${
-                        ['nicolas', 'nathalie', 'genie'].includes(effectivePage) ? 'active' : ''
+                        ['nicolas', 'client-space', 'genie', 'pure-data'].includes(effectivePage) ? 'active' : ''
                       }`}
                     >
-                      <Bot className="w-4 h-4" />
-                      <span className="hidden md:inline">Agents</span>
+                      <span className="text-base leading-none">📊</span>
+                      <span className="hidden md:inline font-semibold">Nicolas</span>
                       <ChevronDown className="w-3 h-3 opacity-60" />
                     </button>
-                    {openMenu === 'agents' && (
-                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-52 z-50 dropdown-menu">
-                        {/* Nicolas */}
+                    {openMenu === 'nicolas' && (
+                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-56 z-50 dropdown-menu">
                         <button
-                          onClick={() => { setCurrentPage('nicolas'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'nicolas' ? 'active' : ''}`}
+                          onClick={() => { setCurrentPage(currentImportId ? 'client-space' : 'upload'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'client-space' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
                         >
-                          <span className="text-base">📊</span>
+                          <Briefcase className="w-4 h-4 text-indigo-400" />
                           <div>
-                            <div className="font-semibold">Nicolas</div>
-                            <div className="text-[10px] text-white/40">Chiffres & RFA</div>
+                            <div className="font-semibold">Espace client</div>
+                            <div className="text-[10px] text-white/40">Fiche détaillée adhérent</div>
                           </div>
                         </button>
-                        {/* Union Intelligence */}
                         <button
                           onClick={() => { setCurrentPage(currentImportId ? 'genie' : 'upload'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'genie' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
@@ -246,103 +243,117 @@ function AppContent() {
                           <Sparkles className="w-4 h-4 text-violet-400" />
                           <div>
                             <div className="font-semibold">Union Intelligence</div>
-                            <div className="text-[10px] text-white/40">Analyse avancée</div>
+                            <div className="text-[10px] text-white/40">Analyse avancée IA</div>
                           </div>
                         </button>
-                        <div className="border-t border-white/10 my-1" />
-                        {/* Nathalie */}
                         <button
-                          onClick={() => { setCurrentPage('nathalie'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'nathalie' ? 'active' : ''}`}
+                          onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}
                         >
-                          <span className="text-base">🤝</span>
+                          <TrendingUp className="w-4 h-4 text-teal-400" />
                           <div>
-                            <div className="font-semibold">Nathalie</div>
-                            <div className="text-[10px] text-white/40">Ouverture de comptes</div>
+                            <div className="font-semibold">Pure Data</div>
+                            <div className="text-[10px] text-white/40">Données brutes N-1</div>
                           </div>
                         </button>
-                        {/* Alex — bientôt */}
-                        <div className="glass-dropdown-item opacity-30 cursor-not-allowed text-sm">
-                          <span className="text-base">📧</span>
-                          <div>
-                            <div className="font-semibold">Alex</div>
-                            <div className="text-[10px] text-white/40">Mail & RDV — bientôt</div>
-                          </div>
-                        </div>
                       </div>
                     )}
                   </div>
 
-                  {/* DAF */}
-                  {currentImportId && (
+                  {/* ── Paul ── */}
+                  <div className="relative dropdown-container">
                     <button
-                      onClick={() => { setCurrentPage('union-space'); setOpenMenu(null) }}
-                      className={`group relative overflow-hidden px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-300 ${
-                        effectivePage === 'union-space'
-                          ? 'bg-gradient-to-r from-yellow-400 via-yellow-500 to-amber-500 text-gray-900 shadow-lg shadow-yellow-500/50'
-                          : 'bg-gradient-to-r from-yellow-500/20 via-amber-500/20 to-yellow-600/20 text-yellow-200 hover:from-yellow-400 hover:via-yellow-500 hover:to-amber-500 hover:text-gray-900 hover:shadow-lg hover:shadow-yellow-500/50'
+                      onClick={() => setOpenMenu(openMenu === 'paul' ? null : 'paul')}
+                      className={`glass-nav-item text-sm flex items-center gap-1.5 ${
+                        ['paul', 'union-space', 'recap', 'margin-simulator', 'clients'].includes(effectivePage) ? 'active' : ''
                       }`}
                     >
-                      <div className="relative flex items-center gap-2">
-                        <Briefcase className="w-4 h-4" />
-                        <span className="hidden md:inline font-bold">DAF</span>
-                        {effectivePage === 'union-space' && (
-                          <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                        )}
-                      </div>
-                      {effectivePage !== 'union-space' && (
-                        <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/0 via-yellow-300/30 to-yellow-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-shimmer" />
-                      )}
+                      <span className="text-base leading-none">💼</span>
+                      <span className="hidden md:inline font-semibold">Paul</span>
+                      <ChevronDown className="w-3 h-3 opacity-60" />
                     </button>
-                  )}
+                    {openMenu === 'paul' && (
+                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-56 z-50 dropdown-menu">
+                        <button
+                          onClick={() => { setCurrentPage('paul'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'paul' ? 'active' : ''}`}
+                        >
+                          <span className="text-base">💼</span>
+                          <div>
+                            <div className="font-semibold">Accueil Paul</div>
+                            <div className="text-[10px] text-white/40">Hub pilotage financier</div>
+                          </div>
+                        </button>
+                        <div className="border-t border-white/10 my-1" />
+                        <button
+                          onClick={() => { setCurrentPage(currentImportId ? 'union-space' : 'upload'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'union-space' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
+                        >
+                          <Briefcase className="w-4 h-4 text-amber-400" />
+                          <div>
+                            <div className="font-semibold">Tableau de bord DAF</div>
+                            <div className="text-[10px] text-white/40">Vue consolidée plateformes</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage(currentImportId ? 'recap' : 'upload'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'recap' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
+                        >
+                          <BarChart3 className="w-4 h-4 text-blue-400" />
+                          <div>
+                            <div className="font-semibold">Récap général</div>
+                            <div className="text-[10px] text-white/40">RFA globales</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage(currentImportId ? 'clients' : 'upload'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'clients' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
+                        >
+                          <Users className="w-4 h-4 text-orange-400" />
+                          <div>
+                            <div className="font-semibold">Liste adhérents</div>
+                            <div className="text-[10px] text-white/40">Tous les comptes & RFA</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage('margin-simulator'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'margin-simulator' ? 'active' : ''}`}
+                        >
+                          <Calculator className="w-4 h-4 text-violet-400" />
+                          <div>
+                            <div className="font-semibold">Simulateur de marge</div>
+                            <div className="text-[10px] text-white/40">Scénarios & projections</div>
+                          </div>
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                  {/* ── Menu contextuel (Clients, Contrats, Admin) ── */}
+                  {/* ── Nathalie ── */}
+                  <NavButton
+                    active={effectivePage === 'nathalie'}
+                    onClick={() => { setCurrentPage('nathalie'); setOpenMenu(null) }}
+                    icon={<span className="text-base leading-none">🤝</span>}
+                    label="Nathalie"
+                  />
+
+                  {/* ── Plus ── */}
                   <div className="relative dropdown-container">
                     <NavButton
-                      active={['clients','client-space','recap','contracts','assignments','ads','users','settings','margin-simulator','pure-data','upload','test-raw-import'].includes(effectivePage)}
+                      active={['contracts','assignments','ads','users','settings','upload','test-raw-import'].includes(effectivePage)}
                       onClick={() => setOpenMenu(openMenu === 'more' ? null : 'more')}
-                      icon={<Settings className="w-4 h-4" />}
+                      icon={<MoreHorizontal className="w-4 h-4" />}
                       label="Plus"
                       hasDropdown={true}
                     />
                     {openMenu === 'more' && (
                       <div className="glass-dropdown absolute top-full right-0 mt-2 w-52 z-50 dropdown-menu">
-                        {/* Import */}
                         <button onClick={() => { setCurrentPage('upload'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'upload' ? 'active' : ''}`}>
                           <Upload className="w-4 h-4" />
-                          <span>Import données</span>
+                          <span>Import & source RFA</span>
                         </button>
-                        {/* Récap */}
-                        {currentImportId && (
-                          <button onClick={() => { setCurrentPage('recap'); setOpenMenu(null) }}
-                            className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'recap' ? 'active' : ''}`}>
-                            <BarChart3 className="w-4 h-4" />
-                            <span>Récap général</span>
-                          </button>
-                        )}
-                        {/* Clients */}
-                        {currentImportId && (
-                          <>
-                            <button onClick={() => { setCurrentPage('client-space'); setOpenMenu(null) }}
-                              className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'client-space' ? 'active' : ''}`}>
-                              <Briefcase className="w-4 h-4" />
-                              <span>Espace client</span>
-                            </button>
-                            <button onClick={() => { setCurrentPage('clients'); setOpenMenu(null) }}
-                              className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'clients' ? 'active' : ''}`}>
-                              <Users className="w-4 h-4" />
-                              <span>Liste adhérents</span>
-                            </button>
-                            <button onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
-                              className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}>
-                              <TrendingUp className="w-4 h-4" />
-                              <span>Pure Data (N-1)</span>
-                            </button>
-                          </>
-                        )}
                         <div className="border-t border-white/10 my-1" />
-                        {/* Contrats */}
                         <button onClick={() => { setCurrentPage('contracts'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'contracts' ? 'active' : ''}`}>
                           <FileText className="w-4 h-4" />
@@ -354,7 +365,6 @@ function AppContent() {
                           <span>Affectations</span>
                         </button>
                         <div className="border-t border-white/10 my-1" />
-                        {/* Admin */}
                         <button onClick={() => { setCurrentPage('users'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'users' ? 'active' : ''}`}>
                           <UserCog className="w-4 h-4" />
@@ -365,11 +375,6 @@ function AppContent() {
                           <Settings className="w-4 h-4" />
                           <span>Paramètres</span>
                         </button>
-                        <button onClick={() => { setCurrentPage('margin-simulator'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'margin-simulator' ? 'active' : ''}`}>
-                          <Calculator className="w-4 h-4" />
-                          <span>Simulateur Marge</span>
-                        </button>
                         <button onClick={() => { setCurrentPage('ads'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'ads' ? 'active' : ''}`}>
                           <Megaphone className="w-4 h-4" />
@@ -377,7 +382,7 @@ function AppContent() {
                         </button>
                         <div className="border-t border-white/10 my-1" />
                         <button onClick={() => { setCurrentPage('test-raw-import'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm opacity-50 ${effectivePage === 'test-raw-import' ? 'active' : ''}`}>
+                          className={`glass-dropdown-item w-full text-left text-sm opacity-40 ${effectivePage === 'test-raw-import' ? 'active' : ''}`}>
                           <FlaskConical className="w-4 h-4" />
                           <span>Test Import Brut</span>
                         </button>
@@ -476,8 +481,11 @@ function AppContent() {
             }}
           />
         )}
-        {effectivePage === 'nicolas' && isAdmin && (
-          <NicolasPage importId={currentImportId} />
+        {effectivePage === 'paul' && isAdmin && (
+          <PaulPage
+            importId={currentImportId}
+            onNavigate={(page) => { setCurrentPage(page); setOpenMenu(null) }}
+          />
         )}
         {effectivePage === 'nathalie' && isAdmin && (
           <NathaliePage />

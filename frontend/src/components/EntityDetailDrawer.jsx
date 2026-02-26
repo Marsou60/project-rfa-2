@@ -1,12 +1,88 @@
 import { useState, useEffect } from 'react'
-import { X, FileText, User, Users, Pencil, Check, Link2 } from 'lucide-react'
-import { getContracts, exportEntityPdf, getContractRules } from '../api/client'
+import { X, FileText, User, Users, Pencil, Check, Link2, TrendingUp } from 'lucide-react'
+import { getContracts, exportEntityPdf, getContractRules, getUnionEntity } from '../api/client'
+import { SUPPLIER_KEYS, getKeysForSupplier } from '../constants/suppliers'
 import TierOverrideEditor from './TierOverrideEditor'
+
+// Taux fournisseurs par défaut (ce que les fournisseurs reversent à GU)
+const DEFAULT_SUPPLIER_RATES = {
+  GLOBAL_ACR:      { label: 'ACR',      rate: 18, emoji: '🔵', color: 'from-blue-500 to-blue-700',       badge: 'bg-blue-500/20 text-blue-300' },
+  GLOBAL_DCA:      { label: 'DCA',      rate: 16, emoji: '🟣', color: 'from-purple-500 to-purple-700',   badge: 'bg-purple-500/20 text-purple-300' },
+  GLOBAL_ALLIANCE: { label: 'ALLIANCE', rate: 14, emoji: '🟡', color: 'from-yellow-500 to-amber-600',    badge: 'bg-yellow-500/20 text-yellow-300' },
+  GLOBAL_EXADIS:   { label: 'EXADIS',  rate: 13, emoji: '🟢', color: 'from-emerald-500 to-teal-600',    badge: 'bg-emerald-500/20 text-emerald-300' },
+}
 
 function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContractChange, onAssignContract, cotisationAmount = 0, onCotisationChange, onRefresh }) {
   const [editingOverride, setEditingOverride] = useState(null)
   const [contractRules, setContractRules] = useState({})
   const [marginRateReceived, setMarginRateReceived] = useState('')
+  const defaultRates = Object.fromEntries(
+    Object.entries(DEFAULT_SUPPLIER_RATES).map(([k, v]) => [k, v.rate])
+  )
+  const [supplierRates, setSupplierRates] = useState(defaultRates)
+  const [unionRatesLoaded, setUnionRatesLoaded] = useState(false)
+
+  // Charge les taux effectifs réels depuis l'entité Union (global + tri-partites inclus)
+  useEffect(() => {
+    if (!importId) return
+    setUnionRatesLoaded(false)
+    getUnionEntity(importId)
+      .then((unionEntity) => {
+        const globalItems = unionEntity?.rfa?.global || {}
+        const triItems   = unionEntity?.rfa?.tri   || {}
+        const computed   = { ...defaultRates }
+
+        // Reproduction exacte du calcul de UnionSpacePage "Récapitulatif par Fournisseur" :
+        //   totalCa  = CA du GLOBAL uniquement (ex: GLOBAL_ACR.ca)
+        //   totalRfa = RFA global + RFA de tous les tri-partites du fournisseur
+        //   taux effectif = totalRfa / totalCa
+        const GLOBAL_KEY_MAP = {
+          ACR: 'GLOBAL_ACR', DCA: 'GLOBAL_DCA',
+          EXADIS: 'GLOBAL_EXADIS', ALLIANCE: 'GLOBAL_ALLIANCE',
+        }
+
+        SUPPLIER_KEYS.forEach((supplier) => {
+          const globalKey = `GLOBAL_${supplier}`
+          const globalItem = globalItems[globalKey]
+
+          // CA = seulement le CA global (pas les CA tri-partites — identique à UnionSpacePage l.261)
+          const totalCa = globalItem?.ca || 0
+          if (totalCa === 0) return
+
+          // RFA global
+          let totalRfa = globalItem
+            ? (globalItem.total?.value ?? ((globalItem.rfa?.value || 0) + (globalItem.bonus?.value || 0)))
+            : 0
+
+          // RFA tri-partites (valeur directe dans item.value pour les tri)
+          getKeysForSupplier(supplier)
+            .filter(k => k.startsWith('TRI_'))
+            .forEach((key) => {
+              const triItem = triItems[key]
+              if (!triItem) return
+              // Les items tri ont soit .value direct, soit .rfa.value
+              totalRfa += triItem.value ?? triItem.rfa?.value ?? 0
+            })
+
+          if (totalRfa > 0) {
+            const effectiveRate = (totalRfa / totalCa) * 100
+            const mappedKey = GLOBAL_KEY_MAP[supplier]
+            if (mappedKey) computed[mappedKey] = parseFloat(effectiveRate.toFixed(2))
+          }
+        })
+
+        setSupplierRates(computed)
+        setUnionRatesLoaded(true)
+      })
+      .catch(() => {
+        // Fallback : config Paul/DAF ou défauts
+        try {
+          const paul = localStorage.getItem('gu_supplier_rates')
+          if (paul) setSupplierRates({ ...defaultRates, ...JSON.parse(paul) })
+        } catch {}
+        setUnionRatesLoaded(true)
+      })
+  }, [importId])
 
   useEffect(() => {
     if (entity?.contract_applied?.id) {
@@ -164,6 +240,142 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
               </div>
             ) : entity ? (
               <div className="space-y-6">
+
+                {/* ── Analyse Marge Groupement Union ── */}
+                {(() => {
+                  // Calcul par plateforme
+                  const globalItems = entity?.rfa?.global || {}
+                  const platforms = Object.entries(globalItems)
+                    .filter(([key]) => DEFAULT_SUPPLIER_RATES[key])
+                    .map(([key, item]) => {
+                      const meta = DEFAULT_SUPPLIER_RATES[key]
+                      const tauxFournisseur = (supplierRates[key] ?? meta.rate) / 100
+                      const ca = item.ca || 0
+                      const recu = ca * tauxFournisseur
+                      const reverse = item.total?.value ?? (item.rfa?.value || 0) + (item.bonus?.value || 0)
+                      const delta = recu - reverse
+                      const margePct = recu > 0 ? delta / recu : 0
+                      return { key, meta, ca, recu, reverse, delta, margePct, item }
+                    })
+
+                  const totalRecu    = platforms.reduce((s, p) => s + p.recu, 0)
+                  const totalReverse = adjustedGrandTotal   // RFA nette reversée adhérent (après cotisation)
+                  const totalDelta   = totalRecu - totalReverse
+                  const totalMarge   = totalRecu > 0 ? totalDelta / totalRecu : 0
+
+                  return (
+                    <div className="space-y-4">
+                      {/* ── Résumé global ── */}
+                      <div className="rounded-2xl bg-gradient-to-r from-slate-700 via-slate-800 to-slate-900 p-5 relative overflow-hidden shadow-xl border border-white/10">
+                        <div className="absolute inset-0 bg-black/10" />
+                        <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-white/5 blur-2xl" />
+                        <div className="relative space-y-4">
+                          {/* CA total — bien visible */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <TrendingUp className="w-4 h-4 text-emerald-400" />
+                              <p className="text-white/60 text-xs font-semibold uppercase tracking-widest">
+                                Analyse marge Groupement Union
+                              </p>
+                            </div>
+                            <div className="text-right flex flex-col items-end gap-1">
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${unionRatesLoaded ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-white/30'}`}>
+                                {unionRatesLoaded ? '✓ Taux Union réels' : 'Calcul…'}
+                              </span>
+                              <p className="text-white/40 text-[10px] uppercase tracking-wider">CA réalisé</p>
+                              <p className="text-2xl font-black text-white">{formatAmount(totalCa)}</p>
+                            </div>
+                          </div>
+                          {/* 3 métriques */}
+                          <div className="grid grid-cols-3 gap-4 pt-2 border-t border-white/10">
+                            <div className="text-center">
+                              <p className="text-blue-300/70 text-[10px] uppercase tracking-wider mb-1">Reçu fournisseurs</p>
+                              <p className="text-xl font-black text-white">{formatAmount(totalRecu)}</p>
+                            </div>
+                            <div className="text-center border-x border-white/10">
+                              <p className="text-orange-300/70 text-[10px] uppercase tracking-wider mb-1">Reversé adhérent</p>
+                              <p className="text-xl font-black text-orange-300">{formatAmount(totalReverse)}</p>
+                              {cotisationAmount > 0 && (
+                                <p className="text-white/30 text-[10px] mt-0.5">cotis. -{formatAmount(cotisationAmount)}</p>
+                              )}
+                            </div>
+                            <div className="text-center">
+                              <p className="text-emerald-300/70 text-[10px] uppercase tracking-wider mb-1">Marge GU</p>
+                              <p className="text-xl font-black text-emerald-400">{formatAmount(totalDelta)}</p>
+                              <p className="text-emerald-300/60 text-xs font-semibold mt-0.5">
+                                {(totalMarge * 100).toFixed(1)} %
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ── Détail par plateforme ── */}
+                      {platforms.length > 0 && (
+                        <div className="space-y-3">
+                          <p className="text-white/40 text-[10px] font-semibold uppercase tracking-widest px-1">
+                            Détail par plateforme — taux fournisseur modifiable
+                          </p>
+                          {platforms.map(({ key, meta, ca, recu, reverse, delta, margePct, item }) => (
+                            <div key={key} className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+                              {/* Header plateforme */}
+                              <div className={`bg-gradient-to-r ${meta.color} px-4 py-2.5 flex items-center justify-between`}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">{meta.emoji}</span>
+                                  <span className="text-white font-bold text-sm">{meta.label}</span>
+                                  <span className="text-white/60 text-xs">CA : {formatAmount(ca)}</span>
+                                </div>
+                                {/* Taux fournisseur éditable */}
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-white/60 text-xs">Taux four. :</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      step="0.1"
+                                      inputMode="decimal"
+                                      value={supplierRates[key] ?? meta.rate}
+                                      onChange={(e) => setSupplierRates(r => ({ ...r, [key]: parseFloat(e.target.value) || 0 }))}
+                                      className="w-16 bg-white/20 text-white text-xs font-bold rounded px-1.5 py-0.5 text-center border border-white/20 focus:outline-none focus:ring-1 focus:ring-white/40"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    <span className="text-white/60 text-xs">%</span>
+                                  </div>
+                                  {/* Taux client effectif (lecture seule) */}
+                                  {item.ca > 0 && (
+                                    <span className="text-white/40 text-[10px]">
+                                      client : {((item.total?.value ?? 0) / item.ca * 100).toFixed(2)} %
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Métriques */}
+                              <div className="grid grid-cols-3 divide-x divide-white/10 px-0">
+                                <div className="px-4 py-3 text-center">
+                                  <p className="text-blue-300/60 text-[10px] uppercase tracking-wider mb-0.5">Reçu GU</p>
+                                  <p className="text-white font-bold text-sm">{formatAmount(recu)}</p>
+                                </div>
+                                <div className="px-4 py-3 text-center">
+                                  <p className="text-orange-300/60 text-[10px] uppercase tracking-wider mb-0.5">Reversé adhérent</p>
+                                  <p className="text-orange-300 font-bold text-sm">{formatAmount(reverse)}</p>
+                                </div>
+                                <div className="px-4 py-3 text-center">
+                                  <p className="text-emerald-300/60 text-[10px] uppercase tracking-wider mb-0.5">Marge GU</p>
+                                  <p className={`font-bold text-sm ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {formatAmount(delta)}
+                                  </p>
+                                  <p className="text-white/40 text-[10px]">{(margePct * 100).toFixed(1)} %</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 {/* Info entité */}
                 <div className="glass-card p-5">
                   {mode === 'client' ? (

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { BarChart3, Eye, X, AlertTriangle } from 'lucide-react'
-import { getGlobalRecap } from '../api/client'
+import { getGlobalRecap, getUnionEntity } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
+import { SUPPLIER_KEYS, getKeysForSupplier } from '../constants/suppliers'
 
 const FIELD_LABELS = {
   'GLOBAL_ACR': 'ACR (global)',
@@ -134,23 +135,79 @@ function RecapPage({ importId }) {
     'GLOBAL_DCA': '',
     'GLOBAL_EXADIS': ''
   })
+  const [ratesAutoLoaded, setRatesAutoLoaded] = useState(false)
+
+  // Calcule les taux effectifs depuis l'entité Union (même formule que le Récapitulatif par Fournisseur)
+  const computeUnionRates = (unionEntity) => {
+    const globalItems = unionEntity?.rfa?.global || {}
+    const triItems    = unionEntity?.rfa?.tri   || {}
+    const GLOBAL_KEY_MAP = {
+      ACR: 'GLOBAL_ACR', DCA: 'GLOBAL_DCA',
+      EXADIS: 'GLOBAL_EXADIS', ALLIANCE: 'GLOBAL_ALLIANCE',
+    }
+    const rates = {}
+    SUPPLIER_KEYS.forEach((supplier) => {
+      const globalKey  = `GLOBAL_${supplier}`
+      const globalItem = globalItems[globalKey]
+      const totalCa    = globalItem?.ca || 0
+      if (totalCa === 0) return
+
+      let totalRfa = globalItem
+        ? (globalItem.total?.value ?? ((globalItem.rfa?.value || 0) + (globalItem.bonus?.value || 0)))
+        : 0
+
+      getKeysForSupplier(supplier)
+        .filter(k => k.startsWith('TRI_'))
+        .forEach((key) => {
+          const triItem = triItems[key]
+          if (!triItem) return
+          totalRfa += triItem.value ?? triItem.rfa?.value ?? 0
+        })
+
+      if (totalRfa > 0) {
+        const mappedKey = GLOBAL_KEY_MAP[supplier]
+        if (mappedKey) rates[mappedKey] = parseFloat(((totalRfa / totalCa) * 100).toFixed(2))
+      }
+    })
+    return rates
+  }
 
   useEffect(() => {
-    if (importId) {
-      const key = `rfa_rates_received_${importId}`
-      const stored = localStorage.getItem(key)
-      if (stored) {
-        try {
-          setRfaRatesReceived(JSON.parse(stored))
-        } catch (e) {
-          console.error('Erreur chargement taux RFA:', e)
-        }
-      }
-      loadRecap()
-    } else {
+    if (!importId) {
       setError('ID d\'import manquant')
       setLoading(false)
+      return
     }
+
+    // Charge les taux effectifs Union automatiquement
+    setRatesAutoLoaded(false)
+    getUnionEntity(importId)
+      .then((unionEntity) => {
+        const computed = computeUnionRates(unionEntity)
+        if (Object.keys(computed).length > 0) {
+          setRfaRatesReceived(prev => {
+            const merged = { ...prev }
+            Object.entries(computed).forEach(([k, v]) => {
+              // N'écrase que si la valeur calculée est > 0 (garde les surcharges manuelles vides)
+              merged[k] = String(v)
+            })
+            // Sauvegarder pour que EntityDetailDrawer puisse les lire aussi
+            localStorage.setItem(`rfa_rates_received_${importId}`, JSON.stringify(merged))
+            return merged
+          })
+        }
+        setRatesAutoLoaded(true)
+      })
+      .catch(() => {
+        // Fallback : valeurs localStorage
+        const stored = localStorage.getItem(`rfa_rates_received_${importId}`)
+        if (stored) {
+          try { setRfaRatesReceived(JSON.parse(stored)) } catch {}
+        }
+        setRatesAutoLoaded(true)
+      })
+
+    loadRecap()
   }, [importId])
 
   useEffect(() => {
@@ -279,24 +336,31 @@ function RecapPage({ importId }) {
               </div>
             </div>
             <div className="flex items-center gap-4 flex-wrap">
-              <span className="text-sm font-medium text-glass-secondary">Taux RFA perçu (%):</span>
-              <div className="flex items-center gap-3 flex-wrap">
-                {Object.entries(FIELD_LABELS).map(([key, label]) => (
-                  <div key={key} className="flex items-center gap-2">
-                    <label className="text-xs text-glass-muted whitespace-nowrap">{label.split(' ')[0]}:</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      value={rfaRatesReceived[key] || ''}
-                      onChange={(e) => handleRfaRateChange(key, e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      placeholder="15"
-                      className="glass-input w-20 py-2 text-sm"
-                    />
-                  </div>
-                ))}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-glass-secondary">Taux RFA perçu (%):</span>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${ratesAutoLoaded ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-white/30'}`}>
+                    {ratesAutoLoaded ? '✓ Calculés depuis Union' : 'Calcul…'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {Object.entries(FIELD_LABELS).map(([key, label]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <label className="text-xs text-glass-muted whitespace-nowrap">{label.split(' ')[0]}:</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        value={rfaRatesReceived[key] || ''}
+                        onChange={(e) => handleRfaRateChange(key, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        placeholder="—"
+                        className="glass-input w-20 py-2 text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
