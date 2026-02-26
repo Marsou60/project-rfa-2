@@ -457,6 +457,17 @@ export const getPureDataSheetsStatus = async () => {
   return response.data
 }
 
+export const loadPureDataFromSupabase = async ({ yearCurrent, yearPrevious, month } = {}) => {
+  const response = await api.get('/pure-data/load-from-supabase', {
+    params: {
+      year_current: yearCurrent || undefined,
+      year_previous: yearPrevious || undefined,
+      month: month || undefined,
+    }
+  })
+  return response.data
+}
+
 export const syncPureDataFromSheets = async () => {
   const response = await api.post('/pure-data/sync-sheets')
   return response.data

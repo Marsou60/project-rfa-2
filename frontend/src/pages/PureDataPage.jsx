@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Upload, Users, X, ChevronDown, RefreshCw, CheckCircle2, Database } from 'lucide-react'
-import { comparePureData, getPureDataComparison, getPureDataClientDetail, getPureDataPlatformDetail, getPureDataMarqueDetail, getPureDataCommercialDetail, getPureDataSheetsStatus, syncPureDataFromSheets } from '../api/client'
+import { comparePureData, getPureDataComparison, getPureDataClientDetail, getPureDataPlatformDetail, getPureDataMarqueDetail, getPureDataCommercialDetail, getPureDataSheetsStatus, loadPureDataFromSupabase, syncPureDataFromSheets } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 
 const formatCurrency = (value) =>
@@ -91,7 +91,12 @@ function PureDataPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await comparePureData({ yearCurrent, yearPrevious, month: month === '' ? null : Number(month) })
+      // Utilise le endpoint GET dédié (pas de multipart, pas de fichier)
+      const data = await loadPureDataFromSupabase({
+        yearCurrent,
+        yearPrevious,
+        month: month === '' ? null : Number(month),
+      })
       setResult(data)
       setPureDataExpiredMessage(null)
       const meta = { yearCurrent, yearPrevious, month: month === '' ? null : Number(month), pureDataId: data.pure_data_id, savedAt: new Date().toISOString(), source: 'sheets' }

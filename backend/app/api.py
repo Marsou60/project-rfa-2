@@ -2406,6 +2406,42 @@ async def test_upload_raw(file: UploadFile = File(...), year_filter: Optional[in
                 pass
 
 
+@router.get("/pure-data/load-from-supabase")
+async def load_pure_data_from_supabase_endpoint(
+    year_current: Optional[int] = None,
+    year_previous: Optional[int] = None,
+    month: Optional[int] = None,
+):
+    """
+    Charge les données Pure Data depuis Supabase (sans upload fichier).
+    Utilisé quand Google Sheets a déjà été synchronisé vers Supabase.
+    """
+    try:
+        from app.services.pure_data_import import filter_rows, aggregate_rows, build_comparison
+        pd_import = _resolve_pure_data("sheets_live")
+        if not pd_import:
+            raise HTTPException(status_code=404, detail="Aucune donnée Pure Data dans Supabase. Cliquez sur 'Synchroniser depuis Sheets'.")
+
+        current_rows = pd_import.rows
+        current_filtered  = filter_rows(current_rows, year_current, month)
+        previous_filtered = filter_rows(current_rows, year_previous, month)
+        current_agg  = aggregate_rows(current_filtered)
+        previous_agg = aggregate_rows(previous_filtered)
+        comparison   = build_comparison(current_agg, previous_agg)
+
+        return {
+            "pure_data_id": "sheets_live",
+            "current":  {"year": year_current, "month": month, "total_ca": current_agg["total_ca"], "row_count": len(current_filtered)},
+            "previous": {"year": year_previous, "month": month, "total_ca": previous_agg["total_ca"], "row_count": len(previous_filtered)},
+            "comparison": comparison,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback; print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur chargement Pure Data: {str(e)}")
+
+
 @router.get("/pure-data/sheets-status")
 async def pure_data_sheets_status():
     """Vérifie si des données Pure Data sont disponibles dans Supabase."""
@@ -2482,7 +2518,7 @@ def _resolve_pure_data(pure_data_id: str):
 
 @router.post("/pure-data/compare")
 async def compare_pure_data(
-    file: Optional[UploadFile] = File(None),
+    file: UploadFile = File(...),
     year_current: Optional[int] = Form(None),
     year_previous: Optional[int] = Form(None),
     month: Optional[int] = Form(None)
@@ -2495,24 +2531,13 @@ async def compare_pure_data(
 
     tmp_current = None
     try:
-        # ── Mode Sheets Live (pas de fichier) ──────────────────────────
-        if file is None:
-            pd_import = _resolve_pure_data("sheets_live")
-            if not pd_import:
-                raise HTTPException(status_code=400, detail="Aucune donnée Pure Data dans Supabase. Lancez d'abord une synchronisation depuis Google Sheets.")
-            current_rows = pd_import.rows
-            current_cols = pd_import.raw_columns
-            current_mapping = pd_import.column_mapping
-            pure_data_id = "sheets_live"
-        else:
-            # ── Mode upload Excel ──────────────────────────────────────
-            if not file.filename.endswith(('.xlsx', '.xls')):
-                raise HTTPException(status_code=400, detail="Fichier .xlsx ou .xls requis")
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-                tmp.write(await file.read())
-                tmp_current = tmp.name
-            current_rows, current_cols, current_mapping = load_pure_data(tmp_current)
-            pure_data_id = create_pure_data_import(current_cols, current_mapping, current_rows)
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            raise HTTPException(status_code=400, detail="Fichier .xlsx ou .xls requis")
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            tmp.write(await file.read())
+            tmp_current = tmp.name
+        current_rows, current_cols, current_mapping = load_pure_data(tmp_current)
+        pure_data_id = create_pure_data_import(current_cols, current_mapping, current_rows)
 
         current_filtered  = filter_rows(current_rows, year_current, month)
         previous_filtered = filter_rows(current_rows, year_previous, month)
