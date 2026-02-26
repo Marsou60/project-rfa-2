@@ -15,10 +15,10 @@ import {
   Euro,
   Target,
 } from 'lucide-react'
-import { getUnionEntity } from '../api/client'
+import { getUnionEntity, getEntities } from '../api/client'
 
-/* ── Compteur animé (ease-out cubique) ──────────────────────── */
-function useAnimatedCounter(target, duration = 1800, delay = 0) {
+/* ── Compteur animé (ease-out quintic — lent et théâtral) ────── */
+function useAnimatedCounter(target, duration = 3500, delay = 0) {
   const [value, setValue] = useState(0)
   useEffect(() => {
     if (!target) return
@@ -28,7 +28,8 @@ function useAnimatedCounter(target, duration = 1800, delay = 0) {
       const animate = (now) => {
         const elapsed = now - start
         const progress = Math.min(elapsed / duration, 1)
-        const eased = 1 - Math.pow(1 - progress, 3)
+        // ease-out quintic : démarre vite, ralentit dramatiquement à la fin
+        const eased = 1 - Math.pow(1 - progress, 5)
         setValue(Math.round(target * eased))
         if (progress < 1) raf = requestAnimationFrame(animate)
       }
@@ -47,8 +48,9 @@ function injectKpiCss() {
   const style = document.createElement('style')
   style.textContent = `
     @keyframes kpiEntrance {
-      from { opacity: 0; transform: perspective(700px) translateZ(-80px) scale(0.85); }
-      to   { opacity: 1; transform: perspective(700px) translateZ(0) scale(1); }
+      0%   { opacity: 0; transform: perspective(500px) translateZ(-300px) scale(0.5) rotateX(20deg); }
+      60%  { opacity: 1; transform: perspective(500px) translateZ(20px) scale(1.05) rotateX(-2deg); }
+      100% { opacity: 1; transform: perspective(500px) translateZ(0) scale(1) rotateX(0deg); }
     }
   `
   document.head.appendChild(style)
@@ -66,14 +68,14 @@ function KpiCard3D({ label, value, icon, color, prefix = '', suffix = '', delay 
     const rect = el.getBoundingClientRect()
     const x = (e.clientX - rect.left) / rect.width - 0.5
     const y = (e.clientY - rect.top) / rect.height - 0.5
-    el.style.transform = `perspective(700px) rotateY(${x * 18}deg) rotateX(${-y * 18}deg) scale(1.06) translateZ(10px)`
-    el.style.boxShadow = `${-x * 20}px ${y * 20}px 40px rgba(0,0,0,0.4), 0 0 30px ${color}40`
+    el.style.transform = `perspective(500px) rotateY(${x * 30}deg) rotateX(${-y * 30}deg) scale(1.1) translateZ(30px)`
+    el.style.boxShadow = `${-x * 30}px ${y * 30}px 60px rgba(0,0,0,0.6), 0 0 50px ${color}70`
   }
 
   const handleMouseLeave = () => {
     const el = ref.current
     if (!el) return
-    el.style.transform = 'perspective(700px) rotateY(0deg) rotateX(0deg) scale(1) translateZ(0)'
+    el.style.transform = 'perspective(500px) rotateY(0deg) rotateX(0deg) scale(1) translateZ(0)'
     el.style.boxShadow = ''
   }
 
@@ -106,7 +108,7 @@ function KpiCard3D({ label, value, icon, color, prefix = '', suffix = '', delay 
             <span style={{ color }}>{icon}</span>
           </div>
         </div>
-        <div className="text-3xl font-black text-white leading-none tracking-tight">
+        <div className="text-4xl font-black text-white leading-none tracking-tight mt-1">
           {prefix}{displayValue}{suffix}
         </div>
       </div>
@@ -125,15 +127,14 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
 
   useEffect(() => {
     if (!currentImportId) return
-    getUnionEntity(currentImportId)
-      .then((union) => {
-        const caTotal      = union?.ca?.totals?.global_total || 0
-        const rfaTotal     = union?.rfa?.totals?.grand_total || 0
-        const nbClients    = Object.keys(union?.by_client || {}).length || 0
-        const tauxEffectif = caTotal > 0 ? (rfaTotal / caTotal) * 100 : 0
-        setKpis({ caTotal, rfaTotal, nbClients, tauxEffectif })
-      })
-      .catch(() => {})
+    Promise.all([
+      getUnionEntity(currentImportId).catch(() => null),
+      getEntities(currentImportId, 'client').catch(() => []),
+    ]).then(([union, clients]) => {
+      const caTotal   = union?.ca?.totals?.global_total || 0
+      const nbClients = Array.isArray(clients) ? clients.length : 0
+      setKpis({ caTotal, nbClients })
+    })
   }, [currentImportId])
 
   const hour = time.getHours()
@@ -176,38 +177,21 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
           <h2 className="text-xs font-semibold uppercase tracking-widest text-blue-300/50 mb-4">
             Chiffres clés — Groupement Union
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-6">
             <KpiCard3D
-              label="CA Total"
+              label="CA Total Groupement Union"
               value={kpis.caTotal}
               suffix=" €"
-              icon={<TrendingUp className="w-4 h-4" />}
+              icon={<TrendingUp className="w-5 h-5" />}
               color="#3b82f6"
               delay={0}
             />
             <KpiCard3D
-              label="RFA Totale"
-              value={kpis.rfaTotal}
-              suffix=" €"
-              icon={<Euro className="w-4 h-4" />}
-              color="#10b981"
-              delay={150}
-            />
-            <KpiCard3D
-              label="Adhérents"
+              label="Adhérents actifs"
               value={kpis.nbClients}
-              icon={<Users className="w-4 h-4" />}
+              icon={<Users className="w-5 h-5" />}
               color="#8b5cf6"
-              delay={300}
-            />
-            <KpiCard3D
-              label="Taux effectif"
-              value={kpis.tauxEffectif}
-              suffix=" %"
-              decimals={2}
-              icon={<Target className="w-4 h-4" />}
-              color="#f59e0b"
-              delay={450}
+              delay={400}
             />
           </div>
         </div>
