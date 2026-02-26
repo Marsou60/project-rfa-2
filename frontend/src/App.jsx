@@ -522,9 +522,9 @@ function AppContent() {
                     {user?.displayName || user?.username}
                   </div>
                   <div className={`text-xs font-medium ${
-                    isAdmin ? 'text-purple-300' : 'text-emerald-300'
+                    isAdmin ? 'text-purple-300' : isCommercial ? 'text-blue-300' : 'text-emerald-300'
                   }`}>
-                    {isAdmin ? 'Admin' : 'Adhérent'}
+                    {isAdmin ? 'Admin' : isCommercial ? 'Commercial' : 'Adhérent'}
                   </div>
                 </div>
                 <button

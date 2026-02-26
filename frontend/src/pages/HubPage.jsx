@@ -156,17 +156,21 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
         </div>
       </div>
 
-      {/* ── Accès rapide admin ── */}
+      {/* ── Accès rapide ── */}
       <div>
         <h2 className="text-xs font-semibold uppercase tracking-widest text-blue-300/50 mb-4">
           Accès rapide
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <QuickTile icon={<FileText    className="w-5 h-5" />} label="Contrats"     color="text-purple-400"  onClick={() => onNavigate('contracts')} />
-          <QuickTile icon={<TrendingUp  className="w-5 h-5" />} label="Pure Data"    color="text-teal-400"    onClick={() => onNavigate('pure-data')} />
-          <QuickTile icon={<Calculator  className="w-5 h-5" />} label="Simulateur"   color="text-amber-400"   onClick={() => onNavigate('margin-simulator')} />
-          <QuickTile icon={<Users       className="w-5 h-5" />} label="Utilisateurs" color="text-blue-400"    onClick={() => onNavigate('users')} />
-          <QuickTile icon={<Settings    className="w-5 h-5" />} label="Paramètres"   color="text-slate-400"   onClick={() => onNavigate('settings')} />
+          {/* Tuiles communes */}
+          <QuickTile icon={<TrendingUp className="w-5 h-5" />} label="Pure Data"  color="text-teal-400"  onClick={() => onNavigate('pure-data')} />
+          {/* Tuiles admin uniquement */}
+          {!isCommercial && <>
+            <QuickTile icon={<FileText   className="w-5 h-5" />} label="Contrats"     color="text-purple-400" onClick={() => onNavigate('contracts')} />
+            <QuickTile icon={<Calculator className="w-5 h-5" />} label="Simulateur"   color="text-amber-400"  onClick={() => onNavigate('margin-simulator')} />
+            <QuickTile icon={<Users      className="w-5 h-5" />} label="Utilisateurs" color="text-blue-400"   onClick={() => onNavigate('users')} />
+            <QuickTile icon={<Settings   className="w-5 h-5" />} label="Paramètres"   color="text-slate-400"  onClick={() => onNavigate('settings')} />
+          </>}
         </div>
       </div>
 
