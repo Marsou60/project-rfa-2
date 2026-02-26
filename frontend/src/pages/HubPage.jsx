@@ -14,7 +14,7 @@ import {
   Database,
 } from 'lucide-react'
 
-export default function HubPage({ user, currentImportId, onNavigate }) {
+export default function HubPage({ user, currentImportId, isCommercial = false, onNavigate }) {
   const [time, setTime] = useState(new Date())
 
   useEffect(() => {
@@ -61,7 +61,7 @@ export default function HubPage({ user, currentImportId, onNavigate }) {
         <h2 className="text-xs font-semibold uppercase tracking-widest text-blue-300/50 mb-5">
           Vos collaborateurs IA
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className={`grid grid-cols-1 gap-5 ${isCommercial ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
 
           {/* ── Nicolas ── */}
           <AgentCard
@@ -95,37 +95,39 @@ export default function HubPage({ user, currentImportId, onNavigate }) {
             ]}
           />
 
-          {/* ── Paul ── */}
-          <AgentCard
-            name="Paul"
-            role="Pilotage financier DAF"
-            description="Tableau de bord DAF, récapitulatif général des RFA et simulateur de marge pour optimiser la performance."
-            emoji="💼"
-            gradient="from-yellow-500 via-amber-600 to-orange-600"
-            glowColor="hover:shadow-amber-500/30"
-            badge="DAF"
-            badgeColor="bg-amber-500/20 text-amber-300"
-            actions={[
-              {
-                label: 'Tableau de bord DAF',
-                icon: <Briefcase className="w-4 h-4" />,
-                onClick: () => onNavigate(currentImportId ? 'paul' : 'upload'),
-                primary: true,
-              },
-              {
-                label: 'Liste adhérents',
-                icon: <BarChart3 className="w-4 h-4" />,
-                onClick: () => onNavigate(currentImportId ? 'clients' : 'upload'),
-                disabled: !currentImportId,
-              },
-              {
-                label: 'Récap général',
-                icon: <Calculator className="w-4 h-4" />,
-                onClick: () => onNavigate(currentImportId ? 'recap' : 'upload'),
-                disabled: !currentImportId,
-              },
-            ]}
-          />
+          {/* ── Paul (admin uniquement) ── */}
+          {!isCommercial && (
+            <AgentCard
+              name="Paul"
+              role="Pilotage financier DAF"
+              description="Tableau de bord DAF, récapitulatif général des RFA et simulateur de marge pour optimiser la performance."
+              emoji="💼"
+              gradient="from-yellow-500 via-amber-600 to-orange-600"
+              glowColor="hover:shadow-amber-500/30"
+              badge="DAF"
+              badgeColor="bg-amber-500/20 text-amber-300"
+              actions={[
+                {
+                  label: 'Tableau de bord DAF',
+                  icon: <Briefcase className="w-4 h-4" />,
+                  onClick: () => onNavigate(currentImportId ? 'paul' : 'upload'),
+                  primary: true,
+                },
+                {
+                  label: 'Liste adhérents',
+                  icon: <BarChart3 className="w-4 h-4" />,
+                  onClick: () => onNavigate(currentImportId ? 'clients' : 'upload'),
+                  disabled: !currentImportId,
+                },
+                {
+                  label: 'Récap général',
+                  icon: <Calculator className="w-4 h-4" />,
+                  onClick: () => onNavigate(currentImportId ? 'recap' : 'upload'),
+                  disabled: !currentImportId,
+                },
+              ]}
+            />
+          )}
 
           {/* ── Nathalie ── */}
           <AgentCard
