@@ -2406,9 +2406,83 @@ async def test_upload_raw(file: UploadFile = File(...), year_filter: Optional[in
                 pass
 
 
+@router.get("/pure-data/sheets-status")
+async def pure_data_sheets_status():
+    """Vérifie si des données Pure Data sont disponibles dans Supabase."""
+    try:
+        from app.services.pure_data_supabase import count_pure_data_rows
+        count = count_pure_data_rows()
+        return {
+            "has_data": count > 0,
+            "row_count": count,
+            "sheet_name": __import__("os").environ.get("PURE_DATA_SHEET_NAME", "global New"),
+            "spreadsheet_id": __import__("os").environ.get("RFA_SHEETS_SPREADSHEET_ID", "16Hog9Dc43vwj_JmjRBLlIPaYoHoxLKVB7eSrBVXOLM0"),
+        }
+    except Exception as e:
+        return {"has_data": False, "row_count": 0, "error": str(e)}
+
+
+@router.post("/pure-data/sync-sheets")
+async def sync_pure_data_from_sheets(admin: User = Depends(require_admin)):
+    """
+    Charge la feuille 'global New' depuis Google Sheets et stocke dans Supabase.
+    Déclenché manuellement par un admin.
+    """
+    try:
+        from app.services.pure_data_sheets import load_pure_data_from_sheets
+        from app.services.pure_data_supabase import write_pure_data_to_supabase
+
+        rows, columns, mapping = load_pure_data_from_sheets()
+        if not rows:
+            raise HTTPException(status_code=400, detail="Aucune donnée trouvée dans la feuille Google Sheets")
+
+        n = write_pure_data_to_supabase(rows)
+
+        # Invalider le cache mémoire
+        from app.storage import _pure_data_imports
+        _pure_data_imports.pop("sheets_live", None)
+
+        return {
+            "success": True,
+            "rows_imported": n,
+            "columns": columns[:10],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur sync Pure Data Sheets: {str(e)}")
+
+
+def _resolve_pure_data(pure_data_id: str):
+    """
+    Résout un import Pure Data : depuis la mémoire d'abord, puis Supabase si sheets_live.
+    """
+    from app.storage import get_pure_data_import, create_pure_data_import, _pure_data_imports
+    # 1. Mémoire (cache)
+    pd_import = _resolve_pure_data(pure_data_id)
+    if pd_import:
+        return pd_import
+    # 2. Supabase (pour sheets_live ou après redémarrage)
+    if pure_data_id == "sheets_live":
+        try:
+            from app.services.pure_data_supabase import read_pure_data_from_supabase
+            rows, columns, mapping = read_pure_data_from_supabase()
+            if rows:
+                # Mettre en cache mémoire pour les requêtes suivantes
+                _id = create_pure_data_import(columns, mapping, rows)
+                # Aliaser sous "sheets_live" pour les prochains appels
+                _pure_data_imports["sheets_live"] = _pure_data_imports[_id]
+                return _pure_data_imports["sheets_live"]
+        except Exception as e:
+            print(f"[PURE DATA] Erreur lecture Supabase: {e}")
+    return None
+
+
 @router.post("/pure-data/compare")
 async def compare_pure_data(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     year_current: Optional[int] = Form(None),
     year_previous: Optional[int] = Form(None),
     month: Optional[int] = Form(None)
@@ -2417,50 +2491,53 @@ async def compare_pure_data(
     Compare des données "pure data" (N vs N-1) à partir de 2 fichiers Excel.
     Filtre optionnel sur l'année et le mois.
     """
-    if not file.filename.endswith(('.xlsx', '.xls')):
-        raise HTTPException(status_code=400, detail="Les fichiers doivent être des .xlsx ou .xls")
+    from app.services.pure_data_import import load_pure_data, filter_rows, aggregate_rows, build_comparison
 
     tmp_current = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-            tmp.write(await file.read())
-            tmp_current = tmp.name
+        # ── Mode Sheets Live (pas de fichier) ──────────────────────────
+        if file is None:
+            pd_import = _resolve_pure_data("sheets_live")
+            if not pd_import:
+                raise HTTPException(status_code=400, detail="Aucune donnée Pure Data dans Supabase. Lancez d'abord une synchronisation depuis Google Sheets.")
+            current_rows = pd_import.rows
+            current_cols = pd_import.raw_columns
+            current_mapping = pd_import.column_mapping
+            pure_data_id = "sheets_live"
+        else:
+            # ── Mode upload Excel ──────────────────────────────────────
+            if not file.filename.endswith(('.xlsx', '.xls')):
+                raise HTTPException(status_code=400, detail="Fichier .xlsx ou .xls requis")
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+                tmp.write(await file.read())
+                tmp_current = tmp.name
+            current_rows, current_cols, current_mapping = load_pure_data(tmp_current)
+            pure_data_id = create_pure_data_import(current_cols, current_mapping, current_rows)
 
-        from app.services.pure_data_import import load_pure_data, filter_rows, aggregate_rows, build_comparison
-
-        current_rows, current_cols, current_mapping = load_pure_data(tmp_current)
-        previous_rows, previous_cols, previous_mapping = current_rows, current_cols, current_mapping
-
-        current_filtered = filter_rows(current_rows, year_current, month)
-        previous_filtered = filter_rows(previous_rows, year_previous, month)
-
-        current_agg = aggregate_rows(current_filtered)
+        current_filtered  = filter_rows(current_rows, year_current, month)
+        previous_filtered = filter_rows(current_rows, year_previous, month)
+        current_agg  = aggregate_rows(current_filtered)
         previous_agg = aggregate_rows(previous_filtered)
-
-        comparison = build_comparison(current_agg, previous_agg)
-
-        pure_data_id = create_pure_data_import(current_cols, current_mapping, current_rows)
+        comparison   = build_comparison(current_agg, previous_agg)
 
         return {
             "pure_data_id": pure_data_id,
             "current": {
-                "year": year_current,
-                "month": month,
+                "year": year_current, "month": month,
                 "total_ca": current_agg["total_ca"],
                 "row_count": len(current_filtered),
-                "columns": current_cols,
-                "mapping": current_mapping,
+                "columns": current_cols, "mapping": current_mapping,
             },
             "previous": {
-                "year": year_previous,
-                "month": month,
+                "year": year_previous, "month": month,
                 "total_ca": previous_agg["total_ca"],
                 "row_count": len(previous_filtered),
-                "columns": previous_cols,
-                "mapping": previous_mapping,
+                "columns": current_cols, "mapping": current_mapping,
             },
             "comparison": comparison,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur analyse pure data: {str(e)}")
     finally:
@@ -2483,7 +2560,7 @@ async def get_pure_data_comparison(
     Recalcule la comparaison N vs N-1 à partir des lignes stockées, avec filtre fournisseur optionnel.
     Utilisé pour afficher Pure Data filtré par plateforme (ACR, DCA, etc.).
     """
-    pure_data = get_pure_data_import(pure_data_id)
+    pure_data = _resolve_pure_data(pure_data_id)
     if not pure_data:
         raise HTTPException(status_code=404, detail="Import pure data introuvable. Relance l'analyse.")
     from app.services.pure_data_import import (
@@ -2516,7 +2593,7 @@ async def pure_data_client_detail(
     Détail N vs N-1 pour un client (fournisseur -> marque -> famille -> sous-famille).
     Si fournisseur est fourni, seul ce fournisseur est inclus.
     """
-    pure_data = get_pure_data_import(pure_data_id)
+    pure_data = _resolve_pure_data(pure_data_id)
     if not pure_data:
         raise HTTPException(status_code=404, detail="Import pure data introuvable. Relance l'analyse.")
 
@@ -2543,7 +2620,7 @@ async def pure_data_platform_detail(
     """
     Détail N vs N-1 pour une plateforme (liste clients).
     """
-    pure_data = get_pure_data_import(pure_data_id)
+    pure_data = _resolve_pure_data(pure_data_id)
     if not pure_data:
         raise HTTPException(status_code=404, detail="Import pure data introuvable. Relance l'analyse.")
 
@@ -2575,7 +2652,7 @@ async def pure_data_marque_detail(
     """
     Pour une plateforme et une marque, retourne les magasins (clients) qui contribuent à cette marque.
     """
-    pure_data = get_pure_data_import(pure_data_id)
+    pure_data = _resolve_pure_data(pure_data_id)
     if not pure_data:
         raise HTTPException(status_code=404, detail="Import pure data introuvable. Relance l'analyse.")
 
@@ -2608,7 +2685,7 @@ async def pure_data_commercial_detail(
     """
     Détail N vs N-1 pour un commercial (global + plateformes + clients).
     """
-    pure_data = get_pure_data_import(pure_data_id)
+    pure_data = _resolve_pure_data(pure_data_id)
     if not pure_data:
         raise HTTPException(status_code=404, detail="Import pure data introuvable. Relance l'analyse.")
 
@@ -3015,4 +3092,5 @@ async def nathalie_create_client(
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur création client : {str(e)}")
+
 

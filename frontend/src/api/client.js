@@ -70,11 +70,6 @@ export const getRfaSheetsCurrent = async () => {
   return response.data
 }
 
-export const getRfaSheetsKpis = async (importId = 'sheets_live') => {
-  const response = await api.get('/rfa-sheets/kpis', { params: { import_id: importId } })
-  return response.data
-}
-
 export const getEntities = async (importId, mode = 'client') => {
   const response = await api.get(`/imports/${importId}/entities`, {
     params: { mode }
@@ -446,16 +441,24 @@ export const uploadRawTest = async (file, yearFilter = null) => {
 
 export const comparePureData = async ({ file, yearCurrent, yearPrevious, month }) => {
   const formData = new FormData()
-  formData.append('file', file)
+  if (file) formData.append('file', file)
   if (yearCurrent) formData.append('year_current', yearCurrent)
   if (yearPrevious) formData.append('year_previous', yearPrevious)
   if (month) formData.append('month', month)
 
   const response = await api.post('/pure-data/compare', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+    headers: { 'Content-Type': 'multipart/form-data' }
   })
+  return response.data
+}
+
+export const getPureDataSheetsStatus = async () => {
+  const response = await api.get('/pure-data/sheets-status')
+  return response.data
+}
+
+export const syncPureDataFromSheets = async () => {
+  const response = await api.post('/pure-data/sync-sheets')
   return response.data
 }
 

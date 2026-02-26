@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { BarChart3, Upload, Users, X, ChevronDown } from 'lucide-react'
-import { comparePureData, getPureDataComparison, getPureDataClientDetail, getPureDataPlatformDetail, getPureDataMarqueDetail, getPureDataCommercialDetail } from '../api/client'
+import { BarChart3, Upload, Users, X, ChevronDown, RefreshCw, CheckCircle2, Database } from 'lucide-react'
+import { comparePureData, getPureDataComparison, getPureDataClientDetail, getPureDataPlatformDetail, getPureDataMarqueDetail, getPureDataCommercialDetail, getPureDataSheetsStatus, syncPureDataFromSheets } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 
 const formatCurrency = (value) =>
@@ -68,6 +68,57 @@ function PureDataPage() {
   const [filteredComparison, setFilteredComparison] = useState(null)
   const [filteredComparisonLoading, setFilteredComparisonLoading] = useState(false)
   const [pureDataExpiredMessage, setPureDataExpiredMessage] = useState(null)
+  const [sheetsStatus, setSheetsStatus] = useState(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncSuccess, setSyncSuccess] = useState(false)
+
+  // Vérifier si des données Sheets sont disponibles dans Supabase
+  useEffect(() => {
+    getPureDataSheetsStatus()
+      .then((status) => {
+        setSheetsStatus(status)
+        // Auto-charger si données Supabase disponibles et pas encore de résultat
+        if (status?.has_data && !result) {
+          handleCompareSheets()
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleCompareSheets = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await comparePureData({ yearCurrent, yearPrevious, month: month === '' ? null : Number(month) })
+      setResult(data)
+      setPureDataExpiredMessage(null)
+      const meta = { yearCurrent, yearPrevious, month: month === '' ? null : Number(month), pureDataId: data.pure_data_id, savedAt: new Date().toISOString(), source: 'sheets' }
+      setLastRunMeta(meta)
+      localStorage.setItem('pure_data_last', JSON.stringify({ meta, result: data }))
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || "Erreur lors du chargement")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSyncSheets = async () => {
+    setSyncing(true)
+    setSyncSuccess(false)
+    setError(null)
+    try {
+      const res = await syncPureDataFromSheets()
+      setSyncSuccess(true)
+      setSheetsStatus(s => ({ ...s, has_data: true, row_count: res.rows_imported }))
+      setTimeout(() => setSyncSuccess(false), 4000)
+      // Recharger la comparaison avec les nouvelles données
+      await handleCompareSheets()
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || "Erreur synchronisation")
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   useEffect(() => {
     const cached = localStorage.getItem('pure_data_last')
@@ -88,29 +139,17 @@ function PureDataPage() {
 
   const handleCompare = async () => {
     if (!file) {
-      setError("Sélectionne le fichier contenant N et N-1.")
+      setError("Sélectionne un fichier Excel.")
       return
     }
     setLoading(true)
     setError(null)
     setResult(null)
     try {
-      const data = await comparePureData({
-        file,
-        yearCurrent,
-        yearPrevious,
-        month: month === '' ? null : Number(month),
-      })
+      const data = await comparePureData({ file, yearCurrent, yearPrevious, month: month === '' ? null : Number(month) })
       setResult(data)
       setPureDataExpiredMessage(null)
-      const meta = {
-        fileName: file?.name || null,
-        yearCurrent,
-        yearPrevious,
-        month: month === '' ? null : Number(month),
-        pureDataId: data.pure_data_id,
-        savedAt: new Date().toISOString(),
-      }
+      const meta = { fileName: file?.name || null, yearCurrent, yearPrevious, month: month === '' ? null : Number(month), pureDataId: data.pure_data_id, savedAt: new Date().toISOString() }
       setLastRunMeta(meta)
       localStorage.setItem('pure_data_last', JSON.stringify({ meta, result: data }))
     } catch (err) {
@@ -312,6 +351,48 @@ function PureDataPage() {
 
   return (
     <div className="space-y-6">
+
+      {/* ── Bannière Google Sheets (source principale) ── */}
+      <div className={`glass-card p-4 border ${sheetsStatus?.has_data ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <Database className={`w-5 h-5 ${sheetsStatus?.has_data ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <div>
+              <div className="text-white font-semibold text-sm flex items-center gap-2">
+                Google Sheets — <span className="font-mono text-xs text-white/60">global New</span>
+                {sheetsStatus?.has_data && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
+                    ✓ {sheetsStatus.row_count?.toLocaleString('fr-FR')} lignes en base
+                  </span>
+                )}
+              </div>
+              <p className="text-white/40 text-xs">
+                {sheetsStatus?.has_data
+                  ? 'Données chargées automatiquement depuis Supabase'
+                  : 'Aucune donnée — synchronisez depuis Google Sheets'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleSyncSheets}
+            disabled={syncing}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+              syncSuccess
+                ? 'bg-emerald-500 text-white'
+                : 'bg-teal-600 hover:bg-teal-500 text-white'
+            }`}
+          >
+            {syncing ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Synchronisation…</>
+            ) : syncSuccess ? (
+              <><CheckCircle2 className="w-4 h-4" /> Synchronisé !</>
+            ) : (
+              <><RefreshCw className="w-4 h-4" /> Synchroniser depuis Sheets</>
+            )}
+          </button>
+        </div>
+      </div>
+
       <div className="glass-card p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white">
