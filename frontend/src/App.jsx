@@ -463,13 +463,19 @@ function AppContent() {
                 </>
               )}
 
-              {isAdherent && currentImportId && (
-                <NavButton
-                  active={true}
-                  onClick={() => {}}
-                  icon={<Briefcase className="w-4 h-4" />}
-                  label="Mon Espace"
-                />
+              {isAdherent && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30">
+                  <span className="text-base">🏢</span>
+                  <div className="hidden sm:block">
+                    <div className="text-emerald-300 text-xs font-bold leading-tight">Mon Espace Client</div>
+                    {user?.linkedCodeUnion && (
+                      <div className="text-white/40 text-[10px]">{user.linkedCodeUnion}</div>
+                    )}
+                    {user?.linkedGroupe && (
+                      <div className="text-white/40 text-[10px]">{user.linkedGroupe}</div>
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* Filtre fournisseur (mode ACR, DCA, etc.) — visible avec un import ou sur Pure Data */}
@@ -613,17 +619,21 @@ function AppContent() {
 
         {/* Message si adhérent sans import */}
         {isAdherent && !currentImportId && (
-          <div className="text-center py-20">
-            <div className="glass-card inline-block p-6 mb-6">
-              <BarChart3 className="w-16 h-16 text-blue-400 mx-auto" />
+          <div className="text-center py-24 space-y-6">
+            <div className="text-6xl animate-bounce">🏢</div>
+            <div className="glass-card inline-block px-8 py-6 max-w-md">
+              <h2 className="text-2xl font-black text-white mb-2">
+                Bonjour, {user?.displayName || user?.username} !
+              </h2>
+              <p className="text-white/50 text-sm leading-relaxed">
+                Votre espace client est en cours de préparation.<br />
+                Les données RFA seront disponibles très prochainement.
+              </p>
+              <div className="mt-4 flex items-center justify-center gap-2 text-emerald-400 text-xs font-semibold">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Groupement Union Hub
+              </div>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">
-              Bienvenue dans votre espace
-            </h2>
-            <p className="text-glass-secondary">
-              Les données ne sont pas encore disponibles. <br />
-              Veuillez contacter votre administrateur.
-            </p>
           </div>
         )}
       </main>
