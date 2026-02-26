@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   BarChart3,
   Users,
@@ -39,12 +39,28 @@ function useAnimatedCounter(target, duration = 1800, delay = 0) {
   return value
 }
 
+// Injection CSS animation une seule fois
+let _kpiCssInjected = false
+function injectKpiCss() {
+  if (_kpiCssInjected) return
+  _kpiCssInjected = true
+  const style = document.createElement('style')
+  style.textContent = `
+    @keyframes kpiEntrance {
+      from { opacity: 0; transform: perspective(700px) translateZ(-80px) scale(0.85); }
+      to   { opacity: 1; transform: perspective(700px) translateZ(0) scale(1); }
+    }
+  `
+  document.head.appendChild(style)
+}
+
 /* ── Carte KPI 3D (tilt au survol) ─────────────────────────── */
 function KpiCard3D({ label, value, icon, color, prefix = '', suffix = '', delay = 0, decimals = 0 }) {
   const ref = useRef(null)
   const animated = useAnimatedCounter(value, 1800, delay)
+  useEffect(() => { injectKpiCss() }, [])
 
-  const handleMouseMove = useCallback((e) => {
+  const handleMouseMove = (e) => {
     const el = ref.current
     if (!el) return
     const rect = el.getBoundingClientRect()
@@ -52,14 +68,14 @@ function KpiCard3D({ label, value, icon, color, prefix = '', suffix = '', delay 
     const y = (e.clientY - rect.top) / rect.height - 0.5
     el.style.transform = `perspective(700px) rotateY(${x * 18}deg) rotateX(${-y * 18}deg) scale(1.06) translateZ(10px)`
     el.style.boxShadow = `${-x * 20}px ${y * 20}px 40px rgba(0,0,0,0.4), 0 0 30px ${color}40`
-  }, [color])
+  }
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = () => {
     const el = ref.current
     if (!el) return
     el.style.transform = 'perspective(700px) rotateY(0deg) rotateX(0deg) scale(1) translateZ(0)'
     el.style.boxShadow = ''
-  }, [])
+  }
 
   const displayValue = decimals > 0
     ? animated.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
@@ -127,12 +143,6 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
 
   return (
     <div className="min-h-screen space-y-10 pb-16">
-      <style>{`
-        @keyframes kpiEntrance {
-          from { opacity: 0; transform: perspective(700px) translateZ(-80px) scale(0.85); }
-          to   { opacity: 1; transform: perspective(700px) translateZ(0) scale(1); }
-        }
-      `}</style>
 
       {/* ── Hero greeting ── */}
       <div className="pt-2">
