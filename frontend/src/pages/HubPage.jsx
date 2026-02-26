@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   BarChart3,
   Users,
@@ -12,15 +12,114 @@ import {
   Activity,
   Briefcase,
   Database,
+  Euro,
+  Target,
 } from 'lucide-react'
+import { getUnionEntity, getRfaSheetsKpis } from '../api/client'
+
+/* ── Compteur animé (ease-out cubique) ──────────────────────── */
+function useAnimatedCounter(target, duration = 1800, delay = 0) {
+  const [value, setValue] = useState(0)
+  useEffect(() => {
+    if (!target) return
+    let raf
+    const timeout = setTimeout(() => {
+      const start = performance.now()
+      const animate = (now) => {
+        const elapsed = now - start
+        const progress = Math.min(elapsed / duration, 1)
+        const eased = 1 - Math.pow(1 - progress, 3)
+        setValue(Math.round(target * eased))
+        if (progress < 1) raf = requestAnimationFrame(animate)
+      }
+      raf = requestAnimationFrame(animate)
+    }, delay)
+    return () => { clearTimeout(timeout); cancelAnimationFrame(raf) }
+  }, [target, duration, delay])
+  return value
+}
+
+/* ── Carte KPI 3D (tilt au survol) ─────────────────────────── */
+function KpiCard3D({ label, value, icon, color, prefix = '', suffix = '', delay = 0, decimals = 0 }) {
+  const ref = useRef(null)
+  const animated = useAnimatedCounter(value, 1800, delay)
+
+  const handleMouseMove = useCallback((e) => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width - 0.5
+    const y = (e.clientY - rect.top) / rect.height - 0.5
+    el.style.transform = `perspective(700px) rotateY(${x * 18}deg) rotateX(${-y * 18}deg) scale(1.06) translateZ(10px)`
+    el.style.boxShadow = `${-x * 20}px ${y * 20}px 40px rgba(0,0,0,0.4), 0 0 30px ${color}40`
+  }, [color])
+
+  const handleMouseLeave = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.transform = 'perspective(700px) rotateY(0deg) rotateX(0deg) scale(1) translateZ(0)'
+    el.style.boxShadow = ''
+  }, [])
+
+  const displayValue = decimals > 0
+    ? animated.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+    : animated.toLocaleString('fr-FR')
+
+  return (
+    <div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
+        animation: `kpiEntrance 0.7s cubic-bezier(0.34,1.56,0.64,1) ${delay}ms both`,
+      }}
+      className="relative rounded-2xl overflow-hidden cursor-default select-none"
+    >
+      {/* Fond glassmorphism */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/20 rounded-2xl" />
+      {/* Reflet lumineux */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl" />
+      {/* Halo coloré */}
+      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-30" style={{ background: color }} />
+
+      <div className="relative p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-white/50 text-xs font-bold uppercase tracking-widest">{label}</span>
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `${color}30` }}>
+            <span style={{ color }}>{icon}</span>
+          </div>
+        </div>
+        <div className="text-3xl font-black text-white leading-none tracking-tight">
+          {prefix}{displayValue}{suffix}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function HubPage({ user, currentImportId, isCommercial = false, onNavigate }) {
   const [time, setTime] = useState(new Date())
+  const [kpis, setKpis] = useState(null)
 
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 60000)
     return () => clearInterval(t)
   }, [])
+
+  useEffect(() => {
+    if (!currentImportId) return
+    Promise.all([
+      getUnionEntity(currentImportId).catch(() => null),
+      getRfaSheetsKpis(currentImportId).catch(() => null),
+    ]).then(([union, kpiData]) => {
+      const caTotal    = union?.ca?.totals?.global_total || kpiData?.ca_total || 0
+      const rfaTotal   = union?.rfa?.totals?.grand_total || 0
+      const nbClients  = kpiData?.nb_clients || 0
+      const tauxEffectif = caTotal > 0 ? (rfaTotal / caTotal) * 100 : 0
+      setKpis({ caTotal, rfaTotal, nbClients, tauxEffectif })
+    })
+  }, [currentImportId])
 
   const hour = time.getHours()
   const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir'
@@ -28,6 +127,12 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
 
   return (
     <div className="min-h-screen space-y-10 pb-16">
+      <style>{`
+        @keyframes kpiEntrance {
+          from { opacity: 0; transform: perspective(700px) translateZ(-80px) scale(0.85); }
+          to   { opacity: 1; transform: perspective(700px) translateZ(0) scale(1); }
+        }
+      `}</style>
 
       {/* ── Hero greeting ── */}
       <div className="pt-2">
@@ -55,6 +160,49 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
           )}
         </div>
       </div>
+
+      {/* ── KPIs 3D animés ── */}
+      {currentImportId && kpis && (
+        <div>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-blue-300/50 mb-4">
+            Chiffres clés — Groupement Union
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard3D
+              label="CA Total"
+              value={kpis.caTotal}
+              suffix=" €"
+              icon={<TrendingUp className="w-4 h-4" />}
+              color="#3b82f6"
+              delay={0}
+            />
+            <KpiCard3D
+              label="RFA Totale"
+              value={kpis.rfaTotal}
+              suffix=" €"
+              icon={<Euro className="w-4 h-4" />}
+              color="#10b981"
+              delay={150}
+            />
+            <KpiCard3D
+              label="Adhérents"
+              value={kpis.nbClients}
+              icon={<Users className="w-4 h-4" />}
+              color="#8b5cf6"
+              delay={300}
+            />
+            <KpiCard3D
+              label="Taux effectif"
+              value={kpis.tauxEffectif}
+              suffix=" %"
+              decimals={2}
+              icon={<Target className="w-4 h-4" />}
+              color="#f59e0b"
+              delay={450}
+            />
+          </div>
+        </div>
+      )}
 
       {/* ── Les 3 agents ── */}
       <div>
