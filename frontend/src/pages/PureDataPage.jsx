@@ -73,12 +73,14 @@ function PureDataPage() {
   const [syncSuccess, setSyncSuccess] = useState(false)
 
   // Vérifier si des données Sheets sont disponibles dans Supabase
+  // On utilise une ref pour savoir si le cache localStorage a déjà été chargé
+  const cacheLoadedRef = useRef(false)
   useEffect(() => {
     getPureDataSheetsStatus()
       .then((status) => {
         setSheetsStatus(status)
-        // Auto-charger si données Supabase disponibles et pas encore de résultat
-        if (status?.has_data && !result) {
+        // Auto-charger uniquement si pas de données en cache local
+        if (status?.has_data && !cacheLoadedRef.current) {
           handleCompareSheets()
         }
       })
@@ -126,6 +128,7 @@ function PureDataPage() {
     try {
       const parsed = JSON.parse(cached)
       if (parsed?.result) {
+        cacheLoadedRef.current = true  // Marquer : cache dispo, pas besoin d'auto-load
         setResult(parsed.result)
         setLastRunMeta(parsed.meta || null)
         setYearCurrent(parsed.meta?.yearCurrent ?? yearCurrent)
