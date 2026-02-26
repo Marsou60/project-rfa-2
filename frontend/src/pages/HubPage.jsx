@@ -18,7 +18,7 @@ import {
 import { getUnionEntity, getEntities } from '../api/client'
 
 /* ── Compteur animé (ease-out quintic — lent et théâtral) ────── */
-function useAnimatedCounter(target, duration = 3500, delay = 0) {
+function useAnimatedCounter(target, duration = 8000, delay = 0) {
   const [value, setValue] = useState(0)
   useEffect(() => {
     if (!target) return
@@ -191,7 +191,7 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
               value={kpis.nbClients}
               icon={<Users className="w-5 h-5" />}
               color="#8b5cf6"
-              delay={400}
+              delay={800}
             />
           </div>
         </div>
