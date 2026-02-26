@@ -75,13 +75,12 @@ function useTilt(color) {
   return { ref, handleMouseMove, handleMouseLeave }
 }
 
-/* ── Carte "Score à battre" (CA 2025) ───────────────────────── */
-function ScoreCard({ value, delay = 0 }) {
+/* ── Carte "Score à battre" ──────────────────────────────────── */
+function ScoreCard({ value }) {
   const { ref, handleMouseMove, handleMouseLeave } = useTilt('#f59e0b')
-  const animated = useAnimatedCounter(value, 20000, delay)
+  const animated = useAnimatedCounter(value, 20000, 0)
   useEffect(() => { injectKpiCss() }, [])
-
-  const pct = value > 0 ? Math.round((animated / value) * 100) : 0
+  const pct = value > 0 ? Math.min(Math.round((animated / value) * 100), 100) : 0
 
   return (
     <div
@@ -90,46 +89,52 @@ function ScoreCard({ value, delay = 0 }) {
       onMouseLeave={handleMouseLeave}
       style={{
         transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
-        animation: `kpiEntrance 0.9s cubic-bezier(0.34,1.56,0.64,1) ${delay}ms both`,
+        animation: `kpiEntrance 0.9s cubic-bezier(0.34,1.56,0.64,1) both`,
       }}
       className="relative rounded-2xl overflow-hidden cursor-default select-none"
     >
       <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-yellow-600/10 backdrop-blur-xl border border-amber-400/30 rounded-2xl" />
-      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl" />
-      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-25" style={{ background: '#f59e0b' }} />
+      <div className="absolute inset-0 bg-gradient-to-br from-white/8 via-transparent to-transparent rounded-2xl" />
+      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-25 animate-pulse" style={{ background: '#f59e0b' }} />
 
       <div className="relative p-6 space-y-4">
-        {/* Header */}
+
+        {/* Badge OBJECTIF 2025 */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🏆</span>
-            <div>
-              <div className="text-amber-300 text-xs font-black uppercase tracking-widest">Score à battre</div>
-              <div className="text-white/50 text-[10px] uppercase tracking-wider">CA Groupement Union 2025</div>
-            </div>
-          </div>
-          <span className="text-xs font-black px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 animate-pulse">
-            OBJECTIF
+          <span className="text-[10px] font-black tracking-[0.3em] uppercase text-amber-300/70">
+            CA Groupement Union
+          </span>
+          <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-400 text-gray-900 tracking-widest animate-pulse">
+            🎯 OBJECTIF 2025
           </span>
         </div>
 
-        {/* Chiffre animé */}
-        <div className="text-5xl font-black text-white leading-none tracking-tight">
-          {animated.toLocaleString('fr-FR')} <span className="text-2xl text-amber-300">€</span>
+        {/* SCORE À BATTRE — le message */}
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">🏆</span>
+          <span className="text-2xl font-black text-amber-300 uppercase tracking-[0.15em] leading-tight">
+            Score à battre
+          </span>
         </div>
 
-        {/* Barre de progression */}
+        {/* Chiffre */}
+        <div className="text-5xl font-black text-white leading-none tracking-tight tabular-nums">
+          {animated.toLocaleString('fr-FR')}
+          <span className="text-2xl text-amber-300 ml-1">€</span>
+        </div>
+
+        {/* Barre */}
         <div className="space-y-1.5">
           <div className="h-2 rounded-full bg-white/10 overflow-hidden">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 transition-all duration-300"
+              className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-300 shadow shadow-amber-400/50 transition-all duration-500"
               style={{ width: `${pct}%` }}
             />
           </div>
-          <div className="flex justify-between text-[10px] text-white/40 font-semibold">
+          <div className="flex justify-between text-[10px] text-white/40 font-bold">
             <span>0 €</span>
-            <span className="text-amber-300/70">{pct}% comptabilisé</span>
-            <span>{value > 0 ? value.toLocaleString('fr-FR') : '—'} €</span>
+            <span className="text-amber-300 font-black">{pct} % décompté</span>
+            <span>{value > 0 ? value.toLocaleString('fr-FR') + ' €' : '—'}</span>
           </div>
         </div>
       </div>
@@ -235,7 +240,7 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
             Chiffres clés — Groupement Union
           </h2>
           <div className="grid grid-cols-2 gap-6">
-            <ScoreCard value={kpis.caTotal} delay={0} />
+            <ScoreCard value={kpis.caTotal} />
             <KpiCard3D
               label="Adhérents actifs"
               value={kpis.nbClients}
