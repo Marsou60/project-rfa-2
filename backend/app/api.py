@@ -1999,32 +1999,18 @@ async def upload_ad_image(
     admin: User = Depends(require_admin)
 ):
     """Upload une image pour une annonce (admin only)."""
-    # Vérifier le type de fichier
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/pjpeg"]
     if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Type de fichier non supporté: {file.content_type}. Utilisez: {', '.join(allowed_types)}"
-        )
-    
-    # Générer un nom unique
+        raise HTTPException(status_code=400, detail=f"Type non supporté: {file.content_type}")
     ext = os.path.splitext(file.filename)[1] if file.filename else ".png"
     filename = f"{uuid.uuid4().hex}{ext}"
-    filepath = os.path.join(UPLOADS_DIR, filename)
-    
-    # Sauvegarder le fichier
     try:
+        from app.services.supabase_storage import upload_image
         content = await file.read()
-        with open(filepath, "wb") as f:
-            f.write(content)
+        url = upload_image(content, filename, "ads", file.content_type or "image/jpeg")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload: {str(e)}")
-    
-    # Retourner l'URL relative
-    return {
-        "filename": filename,
-        "url": f"/api/uploads/ads/{filename}"
-    }
+        raise HTTPException(status_code=500, detail=f"Erreur upload: {str(e)}")
+    return {"filename": filename, "url": url}
 
 
 @router.get("/uploads/ads/{filename}")
@@ -2047,26 +2033,16 @@ async def upload_avatar(
     """Upload une photo de profil (admin only)."""
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/pjpeg"]
     if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Type de fichier non supporté: {file.content_type}. Utilisez: {', '.join(allowed_types)}"
-        )
-    
+        raise HTTPException(status_code=400, detail=f"Type non supporté: {file.content_type}")
     ext = os.path.splitext(file.filename)[1] if file.filename else ".png"
     filename = f"{uuid.uuid4().hex}{ext}"
-    filepath = os.path.join(AVATARS_DIR, filename)
-    
     try:
+        from app.services.supabase_storage import upload_image
         content = await file.read()
-        with open(filepath, "wb") as f:
-            f.write(content)
+        url = upload_image(content, filename, "avatars", file.content_type or "image/jpeg")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload: {str(e)}")
-    
-    return {
-        "filename": filename,
-        "url": f"/api/uploads/avatars/{filename}"
-    }
+        raise HTTPException(status_code=500, detail=f"Erreur upload: {str(e)}")
+    return {"filename": filename, "url": url}
 
 
 @router.get("/uploads/avatars/{filename}")
@@ -2089,26 +2065,16 @@ async def upload_logo(
     """Upload le logo de l'entreprise (admin only)."""
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/pjpeg"]
     if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Type de fichier non supporté: {file.content_type}. Utilisez: {', '.join(allowed_types)}"
-        )
-    
+        raise HTTPException(status_code=400, detail=f"Type non supporté: {file.content_type}")
     ext = os.path.splitext(file.filename)[1] if file.filename else ".png"
     filename = f"company_logo{ext}"
-    filepath = os.path.join(LOGOS_DIR, filename)
-    
     try:
+        from app.services.supabase_storage import upload_image
         content = await file.read()
-        with open(filepath, "wb") as f:
-            f.write(content)
+        url = upload_image(content, filename, "logos", file.content_type or "image/jpeg")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload: {str(e)}")
-    
-    return {
-        "filename": filename,
-        "url": f"/api/uploads/logos/{filename}"
-    }
+        raise HTTPException(status_code=500, detail=f"Erreur upload: {str(e)}")
+    return {"filename": filename, "url": url}
 
 
 @router.get("/uploads/logos/{filename}")
@@ -2152,16 +2118,15 @@ async def create_supplier_logo(
         select(SupplierLogo).where(SupplierLogo.supplier_key == supplier_key.upper())
     ).first()
     
-    # Sauvegarder l'image
+    # Sauvegarder l'image (Supabase Storage sur Vercel, disque en local)
     ext = os.path.splitext(file.filename)[1] or ".png"
     filename = f"{supplier_key.upper()}{ext}"
-    filepath = os.path.join(SUPPLIER_LOGOS_DIR, filename)
-    
     content = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(content)
-    
-    image_url = f"/api/uploads/supplier-logos/{filename}"
+    try:
+        from app.services.supabase_storage import upload_image
+        image_url = upload_image(content, filename, "supplier_logos", file.content_type or "image/jpeg")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur upload: {str(e)}")
     
     if existing:
         existing.supplier_name = supplier_name
