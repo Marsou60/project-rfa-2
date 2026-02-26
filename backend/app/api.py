@@ -1082,9 +1082,8 @@ async def get_global_recap(
         _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None: _batch.resolve(code_union, groupe_client)
 
         # ── Batch 2 : toutes les règles de contrats (1 requête) ─────────
-        with Session(engine) as _s:
-            _all_rules     = _s.exec(select(ContractRule)).all()
-            _all_overrides = _s.exec(select(ContractOverride).where(ContractOverride.is_active == True)).all()
+        _all_rules     = session.exec(select(ContractRule)).all()
+        _all_overrides = session.exec(select(ContractOverride).where(ContractOverride.is_active == True)).all()
 
         _rules_cache = {}
         for _r in _all_rules:
