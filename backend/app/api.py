@@ -1070,17 +1070,51 @@ async def get_global_recap(
         dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
 
     try:
-        # Utiliser BatchContractResolver pour charger tous les contrats en 3 requêtes
-        # au lieu de N requêtes (une par client) — critique pour les perfs sur Vercel
+        import json as _json
         from app.services.contract_resolver import BatchContractResolver
+        from app.models import ContractRule, ContractOverride
         import app.services.contract_resolver as _resolver_mod
+        import app.services.rfa_calculator as _rfa_calc
+
+        # ── Batch 1 : résolution des contrats (3 requêtes) ──────────────
         _batch = BatchContractResolver()
         _orig_resolve = _resolver_mod.resolve_contract
         _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None: _batch.resolve(code_union, groupe_client)
+
+        # ── Batch 2 : toutes les règles de contrats (1 requête) ─────────
+        with Session(engine) as _s:
+            _all_rules     = _s.exec(select(ContractRule)).all()
+            _all_overrides = _s.exec(select(ContractOverride).where(ContractOverride.is_active == True)).all()
+
+        _rules_cache = {}
+        for _r in _all_rules:
+            _rules_cache.setdefault(_r.contract_id, {})[_r.key] = _r
+
+        # ── Batch 3 : tous les overrides (1 requête) ────────────────────
+        _ov_cache = {}
+        for _ov in _all_overrides:
+            _tt = _ov.target_type.value if hasattr(_ov.target_type, 'value') else str(_ov.target_type)
+            _k  = (_tt, (_ov.target_value or "").strip().upper())
+            _ov_cache.setdefault(_k, {}).setdefault(_ov.field_key, {})
+            try:
+                _ov_cache[_k][_ov.field_key][_ov.tier_type.value if hasattr(_ov.tier_type,'value') else str(_ov.tier_type)] = _json.loads(_ov.custom_tiers)
+            except Exception:
+                pass
+
+        _orig_rules    = _rfa_calc.load_contract_rules
+        _orig_overrides = _rfa_calc.load_entity_overrides
+        _rfa_calc.load_contract_rules    = lambda c: _rules_cache.get(c.id, {})
+        _rfa_calc.load_entity_overrides  = lambda tt, tv: _ov_cache.get(
+            (str(tt) if not hasattr(tt,'value') else tt.value, (tv or "").strip().upper()), {}
+        )
+
         try:
             result = get_global_recap_rfa(import_data, dissolved_groups=dissolved_set)
         finally:
-            _resolver_mod.resolve_contract = _orig_resolve
+            _resolver_mod.resolve_contract   = _orig_resolve
+            _rfa_calc.load_contract_rules    = _orig_rules
+            _rfa_calc.load_entity_overrides  = _orig_overrides
+
         return result
     except Exception as e:
         import traceback
