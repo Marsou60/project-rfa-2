@@ -15,7 +15,7 @@ import {
   Euro,
   Target,
 } from 'lucide-react'
-import { getUnionEntity, getRfaSheetsKpis } from '../api/client'
+import { getUnionEntity } from '../api/client'
 
 /* ── Compteur animé (ease-out cubique) ──────────────────────── */
 function useAnimatedCounter(target, duration = 1800, delay = 0) {
@@ -125,16 +125,15 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
 
   useEffect(() => {
     if (!currentImportId) return
-    Promise.all([
-      getUnionEntity(currentImportId).catch(() => null),
-      getRfaSheetsKpis(currentImportId).catch(() => null),
-    ]).then(([union, kpiData]) => {
-      const caTotal    = union?.ca?.totals?.global_total || kpiData?.ca_total || 0
-      const rfaTotal   = union?.rfa?.totals?.grand_total || 0
-      const nbClients  = kpiData?.nb_clients || 0
-      const tauxEffectif = caTotal > 0 ? (rfaTotal / caTotal) * 100 : 0
-      setKpis({ caTotal, rfaTotal, nbClients, tauxEffectif })
-    })
+    getUnionEntity(currentImportId)
+      .then((union) => {
+        const caTotal      = union?.ca?.totals?.global_total || 0
+        const rfaTotal     = union?.rfa?.totals?.grand_total || 0
+        const nbClients    = Object.keys(union?.by_client || {}).length || 0
+        const tauxEffectif = caTotal > 0 ? (rfaTotal / caTotal) * 100 : 0
+        setKpis({ caTotal, rfaTotal, nbClients, tauxEffectif })
+      })
+      .catch(() => {})
   }, [currentImportId])
 
   const hour = time.getHours()
