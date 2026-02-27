@@ -63,14 +63,31 @@ def write_pure_data_to_supabase(rows: List[Dict]) -> int:
     return len(clean_rows)
 
 
-def read_pure_data_from_supabase() -> Tuple[List[Dict], List[str], Dict[str, str]]:
+def read_pure_data_from_supabase(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+) -> Tuple[List[Dict], List[str], Dict[str, str]]:
+    """Lit les données depuis Supabase avec filtres optionnels pour réduire le volume."""
     if not _table_exists():
         return [], list(COLUMNS), {col: col for col in COLUMNS}
 
     from sqlalchemy import text
     col_select = ", ".join(f'"{c}"' for c in COLUMNS)
+    where_parts = []
+    params: Dict = {}
+    if year is not None:
+        where_parts.append('"annee" = :year')
+        params["year"] = year
+    if month is not None:
+        where_parts.append('"mois" = :month')
+        params["month"] = month
+    where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
     with engine.connect() as conn:
-        result = conn.execute(text(f'SELECT {col_select} FROM "{PURE_DATA_TABLE}"'))
+        result = conn.execute(
+            text(f'SELECT {col_select} FROM "{PURE_DATA_TABLE}" {where_clause}'),
+            params,
+        )
         rows_raw = result.fetchall()
 
     rows = [dict(zip(COLUMNS, r)) for r in rows_raw]

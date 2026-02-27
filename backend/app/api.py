@@ -2417,22 +2417,36 @@ async def load_pure_data_from_supabase_endpoint(
     Utilisé quand Google Sheets a déjà été synchronisé vers Supabase.
     """
     try:
+        import sys
+        sys.setrecursionlimit(5000)  # hausse la limite pour les grandes listes JSON
+
         from app.services.pure_data_import import filter_rows, aggregate_rows, build_comparison
-        pd_import = _resolve_pure_data("sheets_live")
-        if not pd_import:
+        from app.services.pure_data_supabase import read_pure_data_from_supabase, count_pure_data_rows
+
+        if count_pure_data_rows() == 0:
             raise HTTPException(status_code=404, detail="Aucune donnée Pure Data dans Supabase. Cliquez sur 'Synchroniser depuis Sheets'.")
 
-        current_rows = pd_import.rows
-        current_filtered  = filter_rows(current_rows, year_current, month)
-        previous_filtered = filter_rows(current_rows, year_previous, month)
-        current_agg  = aggregate_rows(current_filtered)
-        previous_agg = aggregate_rows(previous_filtered)
+        # Lire directement depuis Supabase avec filtre pour ne charger que l'utile
+        # Si filtre sur mois : on charge year_current + year_previous seulement
+        # Sans filtre : on charge tout (nécessaire pour la vue globale)
+        current_rows_db, _, _ = read_pure_data_from_supabase(year=year_current, month=month)
+        previous_rows_db, _, _ = read_pure_data_from_supabase(year=year_previous, month=month)
+
+        current_agg  = aggregate_rows(current_rows_db)
+        previous_agg = aggregate_rows(previous_rows_db)
         comparison   = build_comparison(current_agg, previous_agg)
+
+        # Limiter les listes clients/commerciaux pour éviter des réponses JSON trop lourdes
+        MAX_ITEMS = 500
+        if "clients" in comparison:
+            comparison["clients"] = comparison["clients"][:MAX_ITEMS]
+        if "commercials" in comparison:
+            comparison["commercials"] = comparison["commercials"][:MAX_ITEMS]
 
         return {
             "pure_data_id": "sheets_live",
-            "current":  {"year": year_current, "month": month, "total_ca": current_agg["total_ca"], "row_count": len(current_filtered)},
-            "previous": {"year": year_previous, "month": month, "total_ca": previous_agg["total_ca"], "row_count": len(previous_filtered)},
+            "current":  {"year": year_current, "month": month, "total_ca": current_agg["total_ca"], "row_count": len(current_rows_db)},
+            "previous": {"year": year_previous, "month": month, "total_ca": previous_agg["total_ca"], "row_count": len(previous_rows_db)},
             "comparison": comparison,
         }
     except HTTPException:
@@ -2504,11 +2518,11 @@ def _resolve_pure_data(pure_data_id: str):
     if pure_data_id == "sheets_live":
         try:
             from app.services.pure_data_supabase import read_pure_data_from_supabase
+            # Charger TOUTES les données (le filtrage se fait ensuite en Python)
+            # sys.setrecursionlimit est géré dans l'endpoint appelant
             rows, columns, mapping = read_pure_data_from_supabase()
             if rows:
-                # Mettre en cache mémoire pour les requêtes suivantes
                 _id = create_pure_data_import(columns, mapping, rows)
-                # Aliaser sous "sheets_live" pour les prochains appels
                 _pure_data_imports["sheets_live"] = _pure_data_imports[_id]
                 return _pure_data_imports["sheets_live"]
         except Exception as e:
