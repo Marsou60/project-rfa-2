@@ -478,10 +478,17 @@ async def refresh_rfa_sheets(
                 status_code=500,
                 detail=f"Erreur agrégation: {str(agg_error)}",
             )
-        # Note: on invalide le cache Génie quand les données changent
+        # Invalide le cache Génie (mémoire + Supabase) quand les données changent
         try:
             from app.services.genie_engine import invalidate_genie_cache
             invalidate_genie_cache(LIVE_IMPORT_ID)
+            # Invalide aussi dans Supabase
+            cached = session.exec(
+                select(AppSettings).where(AppSettings.key == f"genie_cache_{LIVE_IMPORT_ID}")
+            ).first()
+            if cached:
+                session.delete(cached)
+                session.commit()
         except Exception:
             pass
     return UploadResponse(
@@ -2778,13 +2785,58 @@ async def genie_query_endpoint(
 
     try:
         if is_vercel:
-            # Vercel free tier : timeout 10s, version rapide (CA, sans résolution contrat)
             result = genie_query_fast(import_data, query_type, params)
             result["_limited_mode"] = True
-            result["_note"] = "Analyse CA (cloud). Ouvrez l'application locale pour l'analyse complète avec objectifs et contrats."
+            result["_note"] = "Analyse CA (cloud). Ouvrez l'application locale pour l'analyse complète."
             return result
         else:
-            return genie_query(import_data, query_type, params)
+            from app.services.genie_engine import genie_query, genie_full_analysis, invalidate_genie_cache
+            from app.services.genie_engine import _full_analysis_cache
+
+            # 1. Cache mémoire (Railway persistant)
+            cache_key = getattr(import_data, "import_id", None)
+            if cache_key and cache_key in _full_analysis_cache:
+                analysis = _full_analysis_cache[cache_key]
+                from app.services.genie_engine import _apply_query_to_analysis
+                return _apply_query_to_analysis(analysis, query_type, params, import_data)
+
+            # 2. Cache Supabase (survit aux redémarrages Railway)
+            supabase_cache_key = f"genie_cache_{cache_key}"
+            try:
+                cached_setting = session.exec(
+                    select(AppSettings).where(AppSettings.key == supabase_cache_key)
+                ).first()
+                if cached_setting and cached_setting.value:
+                    analysis = json.loads(cached_setting.value)
+                    if cache_key:
+                        _full_analysis_cache[cache_key] = analysis
+                    from app.services.genie_engine import _apply_query_to_analysis
+                    return _apply_query_to_analysis(analysis, query_type, params, import_data)
+            except Exception:
+                pass
+
+            # 3. Calcul complet + sauvegarde dans les deux caches
+            analysis = genie_full_analysis(import_data)
+
+            # Sauvegarder dans Supabase en arrière-plan (non bloquant)
+            try:
+                analysis_json = json.dumps(analysis, ensure_ascii=False, default=str)
+                existing = session.exec(
+                    select(AppSettings).where(AppSettings.key == supabase_cache_key)
+                ).first()
+                if existing:
+                    existing.value = analysis_json
+                    existing.updated_at = datetime.now()
+                    session.add(existing)
+                else:
+                    session.add(AppSettings(key=supabase_cache_key, value=analysis_json))
+                session.commit()
+            except Exception as e:
+                print(f"[GENIE] Erreur sauvegarde cache Supabase: {e}")
+
+            from app.services.genie_engine import _apply_query_to_analysis
+            return _apply_query_to_analysis(analysis, query_type, params, import_data)
+
     except Exception as e:
         import traceback
         traceback.print_exc()
