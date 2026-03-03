@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware  # gardé pour compatibilité
 from app.api import router
 from app.database import init_db
 from app.services.seed import seed_base_standard
@@ -31,23 +31,42 @@ def on_startup():
 # CORS pour le frontend
 _extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost",
-        "tauri://localhost",
-        # Vercel frontend (production)
-        "https://project-rfa-2.vercel.app",
-        "https://project-rfa-2-git-main-martials-projects-b184ebbc.vercel.app",
-        # Wildcard Vercel previews
-        *[o for o in _extra_origins if o],
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Origines statiques toujours autorisées
+_static_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost",
+    "tauri://localhost",
+    "https://project-rfa-2.vercel.app",
+    *_extra_origins,
+]
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
+
+class DynamicCORSMiddleware(BaseHTTPMiddleware):
+    """Accepte les origines statiques + tous les sous-domaines *.vercel.app"""
+    async def dispatch(self, request: StarletteRequest, call_next):
+        origin = request.headers.get("origin", "")
+        allowed = (
+            origin in _static_origins
+            or origin.endswith(".vercel.app")
+            or origin.startswith("http://localhost")
+        )
+        if request.method == "OPTIONS":
+            # Preflight
+            response = StarletteResponse(status_code=200)
+        else:
+            response = await call_next(request)
+        if allowed and origin:
+            response.headers["Access-Control-Allow-Origin"]  = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
+app.add_middleware(DynamicCORSMiddleware)
 
 app.include_router(router, prefix="/api", tags=["api"])
 
