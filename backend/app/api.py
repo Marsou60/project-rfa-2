@@ -478,7 +478,12 @@ async def refresh_rfa_sheets(
                 status_code=500,
                 detail=f"Erreur agrégation: {str(agg_error)}",
             )
-        # Note: genie_full_analysis est trop lent pour Vercel (>10s) — pas mis en cache ici
+        # Note: on invalide le cache Génie quand les données changent
+        try:
+            from app.services.genie_engine import invalidate_genie_cache
+            invalidate_genie_cache(LIVE_IMPORT_ID)
+        except Exception:
+            pass
     return UploadResponse(
         import_id=LIVE_IMPORT_ID,
         meta={"source": "google_sheets", "spreadsheet_id": spreadsheet_id, "nb_lignes": len(data)},

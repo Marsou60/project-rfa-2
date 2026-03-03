@@ -10,6 +10,18 @@ from app.services.compute import compute_aggregations, get_entity_detail_with_rf
 from app.services.pdf_export import _parse_tiers, _get_tier_progress, _get_rate_for_threshold, _load_rules_map
 from app.storage import ImportData
 
+# ── Cache module-level (survit entre les requêtes sur Railway/local) ──────────
+# Clé : import_id — Valeur : résultat de genie_full_analysis
+_full_analysis_cache: Dict[str, Dict] = {}
+
+def invalidate_genie_cache(import_id: str = None):
+    """Invalide le cache Génie pour un import donné (ou tout le cache)."""
+    global _full_analysis_cache
+    if import_id:
+        _full_analysis_cache.pop(import_id, None)
+    else:
+        _full_analysis_cache.clear()
+
 
 def _fmt(v: float) -> str:
     return f"{v:,.0f} €".replace(",", " ")
@@ -164,7 +176,13 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
     """
     Analyse complète : compare ENTRANT (Union reçoit des fournisseurs) vs SORTANT (Union paie aux adhérents).
     Utilise BatchContractResolver pour charger tous les contrats en 3 requêtes (au lieu de N×3).
+    Le résultat est mis en cache en mémoire (Railway/local) — premier appel lent, suivants instantanés.
     """
+    # ── Vérification cache ────────────────────────────────────────────────────
+    cache_key = getattr(import_data, "import_id", None)
+    if cache_key and cache_key in _full_analysis_cache:
+        return _full_analysis_cache[cache_key]
+
     if len(import_data.by_client) == 0:
         compute_aggregations(import_data)
 
@@ -726,6 +744,57 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
             _pe_mod._load_rules_map = _orig_load_rules_map
         except Exception:
             pass
+
+    return {
+        "summary": {
+            "total_clients": len(import_data.by_client),
+            "total_near": len(all_near),
+            "total_achieved": len(all_achieved),
+            "total_gain_potential": sum(e.get("projected_gain") or 0 for e in all_near),
+            "union_near_count": len(union_near),
+            "total_entrant": total_entrant,
+            "total_sortant": total_sortant,
+            "total_margin": total_margin,
+            "nb_losses": len(losses),
+            "nb_gains": len(gains),
+        },
+        "balance": balance_sorted,
+        "alerts": alerts[:15],
+        "top_gains": top_gains,
+        "near_by_objective": near_by_key_sorted,
+        "union_opportunities": union_opportunities,
+        "union_near": union_near,
+        "union_achieved": union_achieved,
+        "cascade": cascade_opportunities,
+        "smart_plans": smart_plans,
+    }
+
+    # ── Mise en cache (Railway/local : survit entre requêtes) ─────────────────
+    if cache_key:
+        _full_analysis_cache[cache_key] = {
+            "summary": {
+                "total_clients": len(import_data.by_client),
+                "total_near": len(all_near),
+                "total_achieved": len(all_achieved),
+                "total_gain_potential": sum(e.get("projected_gain") or 0 for e in all_near),
+                "union_near_count": len(union_near),
+                "total_entrant": total_entrant,
+                "total_sortant": total_sortant,
+                "total_margin": total_margin,
+                "nb_losses": len(losses),
+                "nb_gains": len(gains),
+            },
+            "balance": balance_sorted,
+            "alerts": alerts[:15],
+            "top_gains": top_gains,
+            "near_by_objective": near_by_key_sorted,
+            "union_opportunities": union_opportunities,
+            "union_near": union_near,
+            "union_achieved": union_achieved,
+            "cascade": cascade_opportunities,
+            "smart_plans": smart_plans,
+        }
+        return _full_analysis_cache[cache_key]
 
     return {
         "summary": {
