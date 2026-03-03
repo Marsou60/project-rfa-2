@@ -1,0 +1,8 @@
+[build]
+# Railway build le backend depuis le dossier backend/
+dockerfile = "backend/Dockerfile"
+
+[deploy]
+# Redémarre automatiquement en cas d'erreur
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

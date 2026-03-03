@@ -38,7 +38,11 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost",
         "tauri://localhost",
-        *_extra_origins,
+        # Vercel frontend (production)
+        "https://project-rfa-2.vercel.app",
+        "https://project-rfa-2-git-main-martials-projects-b184ebbc.vercel.app",
+        # Wildcard Vercel previews
+        *[o for o in _extra_origins if o],
     ],
     allow_credentials=True,
     allow_methods=["*"],
