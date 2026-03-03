@@ -1,7 +1,7 @@
 """
 Lecture / écriture des données Pure Data dans Supabase.
 """
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from app.database import engine
 
 PURE_DATA_TABLE = "pure_data"
