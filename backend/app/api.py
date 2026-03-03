@@ -2791,16 +2791,17 @@ async def genie_query_endpoint(
             return result
         else:
             from app.services.genie_engine import genie_query, genie_full_analysis, invalidate_genie_cache
-            from app.services.genie_engine import _full_analysis_cache
+            from app.services.genie_engine import _full_analysis_cache, _apply_query_to_analysis
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor
 
-            # 1. Cache mémoire (Railway persistant)
             cache_key = getattr(import_data, "import_id", None)
-            if cache_key and cache_key in _full_analysis_cache:
-                analysis = _full_analysis_cache[cache_key]
-                from app.services.genie_engine import _apply_query_to_analysis
-                return _apply_query_to_analysis(analysis, query_type, params, import_data)
 
-            # 2. Cache Supabase (survit aux redémarrages Railway)
+            # 1. Cache mémoire (Railway persistant — instantané)
+            if cache_key and cache_key in _full_analysis_cache:
+                return _apply_query_to_analysis(_full_analysis_cache[cache_key], query_type, params, import_data)
+
+            # 2. Cache Supabase (survit aux redémarrages — <200ms)
             supabase_cache_key = f"genie_cache_{cache_key}"
             try:
                 cached_setting = session.exec(
@@ -2810,31 +2811,33 @@ async def genie_query_endpoint(
                     analysis = json.loads(cached_setting.value)
                     if cache_key:
                         _full_analysis_cache[cache_key] = analysis
-                    from app.services.genie_engine import _apply_query_to_analysis
                     return _apply_query_to_analysis(analysis, query_type, params, import_data)
             except Exception:
                 pass
 
-            # 3. Calcul complet + sauvegarde dans les deux caches
-            analysis = genie_full_analysis(import_data)
+            # 3. Calcul complet dans un thread (ne bloque PAS l'event loop FastAPI)
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                analysis = await loop.run_in_executor(executor, genie_full_analysis, import_data)
 
-            # Sauvegarder dans Supabase en arrière-plan (non bloquant)
+            # Sauvegarder en cache Supabase (non bloquant)
             try:
                 analysis_json = json.dumps(analysis, ensure_ascii=False, default=str)
-                existing = session.exec(
-                    select(AppSettings).where(AppSettings.key == supabase_cache_key)
-                ).first()
-                if existing:
-                    existing.value = analysis_json
-                    existing.updated_at = datetime.now()
-                    session.add(existing)
-                else:
-                    session.add(AppSettings(key=supabase_cache_key, value=analysis_json))
-                session.commit()
+                # Limiter la taille (max ~1MB pour AppSettings)
+                if len(analysis_json) < 1_000_000:
+                    existing = session.exec(
+                        select(AppSettings).where(AppSettings.key == supabase_cache_key)
+                    ).first()
+                    if existing:
+                        existing.value = analysis_json
+                        existing.updated_at = datetime.now()
+                        session.add(existing)
+                    else:
+                        session.add(AppSettings(key=supabase_cache_key, value=analysis_json))
+                    session.commit()
             except Exception as e:
                 print(f"[GENIE] Erreur sauvegarde cache Supabase: {e}")
 
-            from app.services.genie_engine import _apply_query_to_analysis
             return _apply_query_to_analysis(analysis, query_type, params, import_data)
 
     except Exception as e:
