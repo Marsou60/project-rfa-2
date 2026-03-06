@@ -1,0 +1,187 @@
+{
+  "version": "1.0",
+  "description": "Contrat Pièces Méca Vitry - Barème Alliance spécifique (300k-510k+) ; ACR, DCA, EXADIS = barème de base ; tripartites Alliance (Schaeffler, Delphi, Brembo, Sogefi) ; autres tripartites = base.",
+  "contracts": [
+    {
+      "id": "CONTRAT_PIECES_MECA_VITRY",
+      "name": "Pièces Méca Vitry",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat Pièces Méca Vitry. Alliance : 300-350k RFA 5% / bonus 2% ; 350-400k RFA 5% / bonus 2,5% ; 400-510k RFA 5% / bonus 3% ; 510k+ idem. Tripartites Alliance : Schaeffler, Delphi/Brembo, Sogefi. Autres fournisseurs et tripartites = barème de base.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03},
+            {"min": 200000, "rate": 0.035}
+          ],
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03}
+          ]
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03},
+            {"min": 200000, "rate": 0.035}
+          ],
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03}
+          ]
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03},
+            {"min": 200000, "rate": 0.035}
+          ],
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03}
+          ]
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 300000, "rate": 0.05},
+            {"min": 350000, "rate": 0.05},
+            {"min": 400000, "rate": 0.05},
+            {"min": 510000, "rate": 0.05}
+          ],
+          "tiersBonus": [
+            {"min": 300000, "rate": 0.02},
+            {"min": 350000, "rate": 0.025},
+            {"min": 400000, "rate": 0.03},
+            {"min": 510000, "rate": 0.03}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03},
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_DCA_SBS": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03}
+          ]
+        },
+        "TRI_DCA_DAYCO": {
+          "tiers": []
+        },
+        "TRI_ACR_FREINAGE": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_ACR_EMBRAYAGE": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_ACR_FILTRE": {
+          "tiers": [
+            {"min": 25000, "rate": 0.015}
+          ]
+        },
+        "TRI_ACR_DISTRIBUTION": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03}
+          ]
+        },
+        "TRI_ACR_MACHINE_TOURNANTE": {
+          "tiers": [
+            {"min": 0, "rate": 0.02}
+          ]
+        },
+        "TRI_ACR_LIAISON_AU_SOL": {
+          "tiers": [
+            {"min": 0, "rate": 0.02}
+          ]
+        },
+        "TRI_EXADIS_FREINAGE": {
+          "tiers": []
+        },
+        "TRI_EXADIS_EMBRAYAGE": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_EXADIS_FILTRATION": {
+          "tiers": [
+            {"min": 25000, "rate": 0.02}
+          ]
+        },
+        "TRI_EXADIS_DISTRIBUTION": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03}
+          ]
+        },
+        "TRI_EXADIS_ETANCHEITE": {
+          "tiers": [
+            {"min": 5000, "rate": 0.02}
+          ]
+        },
+        "TRI_EXADIS_THERMIQUE": {
+          "tiers": [
+            {"min": 5000, "rate": 0.015}
+          ]
+        },
+        "TRI_ALLIANCE_SKF": {
+          "tiers": []
+        },
+        "TRI_ALLIANCE_NAPA": {
+          "tiers": []
+        },
+        "TRI_PURFLUX_COOPERS": {
+          "tiers": []
+        }
+      }
+    }
+  ]
+}

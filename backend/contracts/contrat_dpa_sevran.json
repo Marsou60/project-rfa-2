@@ -1,0 +1,76 @@
+{
+  "version": "1.0",
+  "description": "Contrat DPA Sevran - 100% Alliance. RFA/Bonus et tripartites Alliance uniquement ; ACR, DCA, EXADIS sans barème.",
+  "contracts": [
+    {
+      "id": "CONTRAT_DPA_SEVRAN",
+      "name": "DPA Sevran",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat DPA Sevran - 100% Alliance. 200-250k RFA 4% / bonus 3% ; 250-300k RFA 4,5% / bonus 3% ; >300k RFA 5% / bonus 3%. Tripartites : Schaeffler, Delphi/Brembo, Sogefi, SKF.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 200000, "rate": 0.04},
+            {"min": 250000, "rate": 0.045},
+            {"min": 300000, "rate": 0.05}
+          ],
+          "tiersBonus": [
+            {"min": 200000, "rate": 0.03},
+            {"min": 250000, "rate": 0.03},
+            {"min": 300000, "rate": 0.03}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03},
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_ALLIANCE_SKF": {
+          "tiers": [
+            {"min": 15000, "rate": 0.02},
+            {"min": 20000, "rate": 0.03},
+            {"min": 30000, "rate": 0.045},
+            {"min": 40000, "rate": 0.06}
+          ]
+        }
+      }
+    }
+  ]
+}

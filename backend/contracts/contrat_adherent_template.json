@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "description": "Modèle de contrat adhérent - à dupliquer et personnaliser",
+  "contracts": [
+    {
+      "id": "CONTRAT_ADHERENT_XXX",
+      "name": "Nom du contrat adhérent",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Description ou notes du contrat.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        }
+      },
+      "triRules": {}
+    }
+  ]
+}
