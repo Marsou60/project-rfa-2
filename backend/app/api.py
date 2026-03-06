@@ -1514,6 +1514,8 @@ async def create_assignment(assignment: ContractAssignment, session: Session = D
     else:
         assignment.priority = 50
     
+    from app.database import ensure_sequence_sync
+    ensure_sequence_sync("contractassignment", session)
     session.add(assignment)
     session.commit()
     session.refresh(assignment)

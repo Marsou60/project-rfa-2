@@ -4,40 +4,18 @@ Service d'import de contrats depuis un fichier JSON.
 import json
 from typing import Dict, List, Optional
 from sqlmodel import Session, select
-from sqlalchemy import text
-from app.database import engine
+from app.database import engine, ensure_sequence_sync
 from app.models import Contract, ContractRule, RuleScope
 from app.core.fields import get_global_fields, get_tri_fields
 from app.core.global_tiers import GLOBAL_PLATFORMS
 
 
-def _ensure_sequence_sync(table: str, session: Optional[Session] = None):
-    """Réaligne la séquence table.id sur PostgreSQL (évite UniqueViolation).
-    Si session est fournie, exécute dans la même connexion pour que le prochain INSERT voie la nouvelle valeur."""
-    if engine.dialect.name != "postgresql":
-        return
-    if table not in ("contract", "contractrule"):
-        return
-    try:
-        stmt = text(
-            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
-            f"COALESCE((SELECT MAX(id) FROM {table}), 0))"
-        )
-        if session is not None:
-            session.execute(stmt)
-        else:
-            with engine.begin() as conn:
-                conn.execute(stmt)
-    except Exception:
-        pass
-
-
 def _ensure_contract_sequence_sync(session: Optional[Session] = None):
-    _ensure_sequence_sync("contract", session)
+    ensure_sequence_sync("contract", session)
 
 
 def _ensure_contractrule_sequence_sync(session: Optional[Session] = None):
-    _ensure_sequence_sync("contractrule", session)
+    ensure_sequence_sync("contractrule", session)
 
 
 def import_contracts_from_json(

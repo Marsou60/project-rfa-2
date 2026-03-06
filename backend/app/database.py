@@ -56,6 +56,27 @@ else:
     engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
 
+def ensure_sequence_sync(table: str, session=None):
+    """Réaligne la séquence table.id sur PostgreSQL (évite UniqueViolation). Utilisable depuis l'API."""
+    if engine.dialect.name != "postgresql":
+        return
+    if table not in ("contract", "contractrule", "contractassignment"):
+        return
+    try:
+        from sqlalchemy import text
+        stmt = text(
+            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+            f"COALESCE((SELECT MAX(id) FROM {table}), 0))"
+        )
+        if session is not None:
+            session.execute(stmt)
+        else:
+            with engine.begin() as conn:
+                conn.execute(stmt)
+    except Exception:
+        pass
+
+
 def hash_password(password: str) -> str:
     """Hash un mot de passe avec SHA-256 (simple, sans bcrypt pour éviter les dépendances)."""
     return hashlib.sha256(password.encode()).hexdigest()
