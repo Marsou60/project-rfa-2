@@ -11,30 +11,33 @@ from app.core.fields import get_global_fields, get_tri_fields
 from app.core.global_tiers import GLOBAL_PLATFORMS
 
 
-def _ensure_sequence_sync(table: str):
-    """Réaligne la séquence table.id sur PostgreSQL (évite UniqueViolation)."""
+def _ensure_sequence_sync(table: str, session: Optional[Session] = None):
+    """Réaligne la séquence table.id sur PostgreSQL (évite UniqueViolation).
+    Si session est fournie, exécute dans la même connexion pour que le prochain INSERT voie la nouvelle valeur."""
     if engine.dialect.name != "postgresql":
         return
     if table not in ("contract", "contractrule"):
         return
     try:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
-                    f"COALESCE((SELECT MAX(id) FROM {table}), 0))"
-                )
-            )
+        stmt = text(
+            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+            f"COALESCE((SELECT MAX(id) FROM {table}), 0))"
+        )
+        if session is not None:
+            session.execute(stmt)
+        else:
+            with engine.begin() as conn:
+                conn.execute(stmt)
     except Exception:
         pass
 
 
-def _ensure_contract_sequence_sync():
-    _ensure_sequence_sync("contract")
+def _ensure_contract_sequence_sync(session: Optional[Session] = None):
+    _ensure_sequence_sync("contract", session)
 
 
-def _ensure_contractrule_sequence_sync():
-    _ensure_sequence_sync("contractrule")
+def _ensure_contractrule_sequence_sync(session: Optional[Session] = None):
+    _ensure_sequence_sync("contractrule", session)
 
 
 def import_contracts_from_json(
@@ -117,7 +120,7 @@ def import_contracts_from_json(
                     contract.scope = scope
                     result["updated"] += 1
                 else:
-                    _ensure_contract_sequence_sync()
+                    _ensure_contract_sequence_sync(session)
                     contract = Contract(
                         name=contract_name,
                         description=contract_data.get("notes"),
@@ -143,7 +146,7 @@ def import_contracts_from_json(
                         c.is_default = False
                         session.add(c)
                 
-                _ensure_contractrule_sequence_sync()
+                _ensure_contractrule_sequence_sync(session)
                 # Importer les règles globales
                 global_rules = contract_data.get("globalRules", {})
                 for key in GLOBAL_PLATFORMS:
