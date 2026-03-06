@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { FileText, Plus, Copy, Star, Power, Trash2, Pencil, Upload, Loader2, X } from 'lucide-react'
-import { getContracts, createContract, duplicateContract, setDefaultContract, toggleActiveContract, deleteContract } from '../api/client'
+import { getContracts, createContract, duplicateContract, setDefaultContract, toggleActiveContract, deleteContract, importContractJson } from '../api/client'
 import ContractEditor from '../components/ContractEditor'
-import axios from 'axios'
 
 function ContractsPage() {
   const [contracts, setContracts] = useState([])
@@ -369,19 +368,12 @@ function ImportJsonButton({ onSuccess }) {
     setError(null)
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
+      const response = await importContractJson(file, 'merge')
 
-      const response = await axios.post('/api/contracts/import-json?mode=merge', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
-
-      if (response.data.errors && response.data.errors.length > 0) {
-        setError(`Import terminé avec des erreurs: ${response.data.errors.join(', ')}`)
+      if (response.errors && response.errors.length > 0) {
+        setError(`Import terminé avec des erreurs: ${response.errors.join(', ')}`)
       } else {
-        alert(`Import réussi: ${response.data.imported} importés, ${response.data.updated} mis à jour`)
+        alert(`Import réussi: ${response.imported} importés, ${response.updated} mis à jour`)
         onSuccess()
       }
     } catch (err) {

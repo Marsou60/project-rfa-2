@@ -161,6 +161,15 @@ export const deleteContract = async (contractId) => {
   return response.data
 }
 
+export const importContractJson = async (file, mode = 'merge') => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post(`/contracts/import-json?mode=${mode}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data
+}
+
 // ==================== RÈGLES ====================
 
 export const updateContractRule = async (contractId, ruleId, rule) => {
