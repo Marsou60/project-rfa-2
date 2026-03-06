@@ -11,20 +11,30 @@ from app.core.fields import get_global_fields, get_tri_fields
 from app.core.global_tiers import GLOBAL_PLATFORMS
 
 
-def _ensure_contract_sequence_sync():
-    """Réaligne la séquence contract.id sur PostgreSQL si besoin (évite UniqueViolation)."""
+def _ensure_sequence_sync(table: str):
+    """Réaligne la séquence table.id sur PostgreSQL (évite UniqueViolation)."""
     if engine.dialect.name != "postgresql":
+        return
+    if table not in ("contract", "contractrule"):
         return
     try:
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    "SELECT setval(pg_get_serial_sequence('contract', 'id'), "
-                    "COALESCE((SELECT MAX(id) FROM contract), 0))"
+                    f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+                    f"COALESCE((SELECT MAX(id) FROM {table}), 0))"
                 )
             )
     except Exception:
         pass
+
+
+def _ensure_contract_sequence_sync():
+    _ensure_sequence_sync("contract")
+
+
+def _ensure_contractrule_sequence_sync():
+    _ensure_sequence_sync("contractrule")
 
 
 def import_contracts_from_json(
@@ -133,6 +143,7 @@ def import_contracts_from_json(
                         c.is_default = False
                         session.add(c)
                 
+                _ensure_contractrule_sequence_sync()
                 # Importer les règles globales
                 global_rules = contract_data.get("globalRules", {})
                 for key in GLOBAL_PLATFORMS:
