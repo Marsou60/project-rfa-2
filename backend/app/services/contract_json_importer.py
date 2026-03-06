@@ -4,10 +4,27 @@ Service d'import de contrats depuis un fichier JSON.
 import json
 from typing import Dict, List, Optional
 from sqlmodel import Session, select
+from sqlalchemy import text
 from app.database import engine
 from app.models import Contract, ContractRule, RuleScope
 from app.core.fields import get_global_fields, get_tri_fields
 from app.core.global_tiers import GLOBAL_PLATFORMS
+
+
+def _ensure_contract_sequence_sync():
+    """Réaligne la séquence contract.id sur PostgreSQL si besoin (évite UniqueViolation)."""
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "SELECT setval(pg_get_serial_sequence('contract', 'id'), "
+                    "COALESCE((SELECT MAX(id) FROM contract), 0))"
+                )
+            )
+    except Exception:
+        pass
 
 
 def import_contracts_from_json(
@@ -90,6 +107,7 @@ def import_contracts_from_json(
                     contract.scope = scope
                     result["updated"] += 1
                 else:
+                    _ensure_contract_sequence_sync()
                     contract = Contract(
                         name=contract_name,
                         description=contract_data.get("notes"),
