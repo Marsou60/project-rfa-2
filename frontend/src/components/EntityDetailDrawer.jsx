@@ -23,11 +23,13 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
   const [unionRatesLoaded, setUnionRatesLoaded] = useState(false)
 
   // Charge les taux effectifs réels depuis l'entité Union (global + tri-partites inclus)
+  // En différé pour ne pas bloquer l'ouverture du drawer
   useEffect(() => {
     if (!importId) return
     setUnionRatesLoaded(false)
-    getUnionEntity(importId)
-      .then((unionEntity) => {
+    const timer = setTimeout(() => {
+      getUnionEntity(importId)
+        .then((unionEntity) => {
         const globalItems = unionEntity?.rfa?.global || {}
         const triItems   = unionEntity?.rfa?.tri   || {}
         const computed   = { ...defaultRates }
@@ -73,15 +75,16 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
 
         setSupplierRates(computed)
         setUnionRatesLoaded(true)
-      })
-      .catch(() => {
-        // Fallback : config Paul/DAF ou défauts
-        try {
-          const paul = localStorage.getItem('gu_supplier_rates')
-          if (paul) setSupplierRates({ ...defaultRates, ...JSON.parse(paul) })
-        } catch {}
-        setUnionRatesLoaded(true)
-      })
+        })
+        .catch(() => {
+          try {
+            const paul = localStorage.getItem('gu_supplier_rates')
+            if (paul) setSupplierRates({ ...defaultRates, ...JSON.parse(paul) })
+          } catch {}
+          setUnionRatesLoaded(true)
+        })
+    }, 50)
+    return () => clearTimeout(timer)
   }, [importId])
 
   useEffect(() => {
@@ -155,7 +158,7 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
 
   const totalCaGlobal = entity?.ca?.totals?.global_total || 0
   const totalCaTri = entity?.ca?.totals?.tri_total || 0
-  const totalCa = totalCaGlobal + totalCaTri
+  const totalCa = entity?.ca?.totals?.grand_total ?? (totalCaGlobal + totalCaTri)
   const parsedMarginRate = marginRateReceived === '' ? null : parseFloat(marginRateReceived) / 100
   const rfaReceived = parsedMarginRate !== null ? totalCa * parsedMarginRate : null
   const unionMargin = parsedMarginRate !== null ? (rfaReceived - adjustedGrandTotal) : null

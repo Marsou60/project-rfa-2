@@ -18,6 +18,7 @@ from app.services.compute import (
     get_client_detail, 
     get_group_detail,
     get_entity_detail_with_rfa,
+    get_entity_rfa_grand_total,
     compute_aggregations,
     get_global_recap_rfa
 )
@@ -539,10 +540,16 @@ async def get_client(import_id: str, code_union: str, session: Session = Depends
 
 
 @router.get("/imports/{import_id}/entities", response_model=List[EntitySummary])
-async def get_entities(import_id: str, mode: str = "client", session: Session = Depends(get_session)):
+async def get_entities(
+    import_id: str,
+    mode: str = "client",
+    with_rfa: bool = Query(True, description="Inclure le total RFA par entité (peut ralentir la liste)"),
+    session: Session = Depends(get_session),
+):
     """
     Liste des entités (clients ou groupes) selon le mode.
     mode: "client" ou "group"
+    with_rfa: si True, calcule et renvoie rfa_total pour chaque entité (liste adhérents).
     """
     import_data = _resolve_import_data(import_id, session)
     if not import_data:
@@ -574,6 +581,7 @@ async def get_entities(import_id: str, mode: str = "client", session: Session = 
         for code_union, data in import_data.by_client.items():
             nom = data.get("nom_client") or ""
             label = f"{code_union} - {nom}" if nom else code_union
+            rfa_total = get_entity_rfa_grand_total(import_data, mode, code_union) if with_rfa else None
             entities.append(EntitySummary(
                 id=code_union,
                 label=label,
@@ -581,12 +589,13 @@ async def get_entities(import_id: str, mode: str = "client", session: Session = 
                 global_total=data["global_total"],
                 tri_total=data["tri_total"],
                 grand_total=data["grand_total"],
-                rfa_total=None,  # calculé à la demande (fiche client)
+                rfa_total=rfa_total,
             ))
         entities.sort(key=lambda x: x.label)
     
     else:  # mode == "group"
         for groupe, data in import_data.by_group.items():
+            rfa_total = get_entity_rfa_grand_total(import_data, mode, groupe) if with_rfa else None
             entities.append(EntitySummary(
                 id=groupe,
                 label=groupe,
@@ -594,7 +603,7 @@ async def get_entities(import_id: str, mode: str = "client", session: Session = 
                 global_total=data["global_total"],
                 tri_total=data["tri_total"],
                 grand_total=data["grand_total"],
-                rfa_total=None,  # calculé à la demande (fiche groupe)
+                rfa_total=rfa_total,
             ))
         entities.sort(key=lambda x: x.label)
     

@@ -126,6 +126,40 @@ def get_group_detail(import_data: ImportData, groupe_client: str) -> GroupDetail
     )
 
 
+def get_entity_rfa_grand_total(
+    import_data: ImportData, mode: str, entity_id: str
+) -> Optional[float]:
+    """
+    Retourne uniquement le total RFA (grand_total) pour une entité.
+    Utilisé par la liste adhérents pour afficher la colonne Total RFA.
+    """
+    try:
+        if mode == "client":
+            if entity_id not in import_data.by_client:
+                return None
+            data = import_data.by_client[entity_id]
+            code_union_norm = entity_id.strip().upper() if entity_id else None
+            groupe_client_norm = (data.get("groupe_client") or "").strip().upper() or None
+            contract = resolve_contract(
+                code_union=code_union_norm,
+                groupe_client=groupe_client_norm,
+            )
+            recap_ca = {"global": data["global"], "tri": data["tri"]}
+            rfa_result = calculate_rfa(recap_ca, contract=contract, code_union=entity_id)
+        else:
+            if entity_id not in import_data.by_group:
+                return None
+            data = import_data.by_group[entity_id]
+            groupe_norm = entity_id.strip().upper() if entity_id else None
+            contract = resolve_contract(groupe_client=groupe_norm)
+            recap_ca = {"global": data["global"], "tri": data["tri"]}
+            rfa_result = calculate_rfa(recap_ca, contract=contract, groupe_client=groupe_norm)
+        totals = rfa_result.get("totals") or {}
+        return totals.get("grand_total")
+    except Exception:
+        return None
+
+
 def get_entity_detail_with_rfa(
     import_data: ImportData, 
     mode: str, 

@@ -259,12 +259,12 @@ function ClientsPage({ importId }) {
       if (sortBy === 'id') {
         aVal = a.id
         bVal = b.id
-      } else if (sortBy === 'global_total') {
-        aVal = a.global_total
-        bVal = b.global_total
+      } else if (sortBy === 'grand_total') {
+        aVal = a.grand_total ?? a.global_total
+        bVal = b.grand_total ?? b.global_total
       } else {
-        aVal = a.grand_total
-        bVal = b.grand_total
+        aVal = a.grand_total ?? a.global_total
+        bVal = b.grand_total ?? b.global_total
       }
 
       if (sortOrder === 'asc') {
@@ -453,12 +453,12 @@ function ClientsPage({ importId }) {
                   </>
                 )}
                 <th
-                  onClick={() => handleSort('global_total')}
+                  onClick={() => handleSort('grand_total')}
                   className="cursor-pointer hover:text-white transition-colors text-right"
                 >
                   <span className="flex items-center justify-end gap-1">
                     Total Global
-                    {sortBy === 'global_total' && (
+                    {sortBy === 'grand_total' && (
                       sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                     )}
                   </span>
