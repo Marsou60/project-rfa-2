@@ -12,7 +12,7 @@ const DEFAULT_SUPPLIER_RATES = {
   GLOBAL_EXADIS:   { label: 'EXADIS',  rate: 13, emoji: '🟢', color: 'from-emerald-500 to-teal-600',    badge: 'bg-emerald-500/20 text-emerald-300' },
 }
 
-function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContractChange, onAssignContract, cotisationAmount = 0, onCotisationChange, onRefresh }) {
+function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContractChange, onAssignContract, cotisationAmount = 0, onCotisationChange, onRefresh, listGrandTotal = null }) {
   const [editingOverride, setEditingOverride] = useState(null)
   const [contractRules, setContractRules] = useState({})
   const [marginRateReceived, setMarginRateReceived] = useState('')
@@ -158,7 +158,8 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
 
   const totalCaGlobal = entity?.ca?.totals?.global_total || 0
   const totalCaTri = entity?.ca?.totals?.tri_total || 0
-  const totalCa = entity?.ca?.totals?.grand_total ?? (totalCaGlobal + totalCaTri)
+  const totalCaFromDetail = entity?.ca?.totals?.grand_total ?? (totalCaGlobal + totalCaTri)
+  const totalCa = listGrandTotal != null ? listGrandTotal : totalCaFromDetail
   const parsedMarginRate = marginRateReceived === '' ? null : parseFloat(marginRateReceived) / 100
   const rfaReceived = parsedMarginRate !== null ? totalCa * parsedMarginRate : null
   const unionMargin = parsedMarginRate !== null ? (rfaReceived - adjustedGrandTotal) : null

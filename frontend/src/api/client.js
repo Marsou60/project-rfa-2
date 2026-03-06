@@ -81,9 +81,9 @@ export const getRfaSheetsCurrent = async () => {
   return response.data
 }
 
-export const getEntities = async (importId, mode = 'client') => {
+export const getEntities = async (importId, mode = 'client', withRfa = false) => {
   const response = await api.get(`/imports/${importId}/entities`, {
-    params: { mode }
+    params: { mode, with_rfa: withRfa }
   })
   return response.data
 }

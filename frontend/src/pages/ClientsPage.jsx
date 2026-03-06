@@ -22,6 +22,7 @@ function ClientsPage({ importId }) {
   const [showAssignModal, setShowAssignModal] = useState(null)
   const [dissolvedGroups, setDissolvedGroups] = useState(new Set())
   const [cotisationAmounts, setCotisationAmounts] = useState({})
+  const [selectedListGrandTotal, setSelectedListGrandTotal] = useState(null)
 
   useEffect(() => {
     if (importId) {
@@ -200,7 +201,10 @@ function ClientsPage({ importId }) {
     }
   }
 
-  const handleEntityClick = async (id) => {
+  const handleEntityClick = async (entity) => {
+    const id = entity?.id ?? entity
+    const listGrandTotal = entity && typeof entity === 'object' ? (entity.grand_total ?? entity.global_total) : null
+    setSelectedListGrandTotal(listGrandTotal)
     setDetailLoading(true)
     setSelectedEntity(null)
     setSelectedContractId(null)
@@ -471,7 +475,7 @@ function ClientsPage({ importId }) {
               {filteredEntities.map((entity) => (
                 <tr
                   key={entity.id}
-                  onClick={() => handleEntityClick(entity.id)}
+                  onClick={() => handleEntityClick(entity)}
                   className={`cursor-pointer transition-all ${
                     calculatedClients.has(entity.id)
                       ? 'bg-emerald-500/10 border-l-2 border-emerald-500'
@@ -640,7 +644,9 @@ function ClientsPage({ importId }) {
         onClose={() => {
           setSelectedEntity(null)
           setSelectedContractId(null)
+          setSelectedListGrandTotal(null)
         }}
+        listGrandTotal={selectedListGrandTotal}
         importId={importId}
         onContractChange={async (contractId) => {
           if (!selectedEntity) return
