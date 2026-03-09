@@ -556,10 +556,11 @@ export const genieQuery = async (importId, queryType, params = {}) => {
   return response.data
 }
 
-export const getSmartPlans = async (importId, entityId = null) => {
+export const getSmartPlans = async (importId, entityId = null, signal = null) => {
   const params = { import_id: importId }
   if (entityId) params.entity_id = entityId
-  const response = await api.get('/genie/smart-plans', { params })
+  const config = signal ? { signal } : {}
+  const response = await api.get('/genie/smart-plans', { params, ...config })
   return response.data
 }
 

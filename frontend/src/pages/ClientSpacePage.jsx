@@ -26,6 +26,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [smartPlans, setSmartPlans] = useState([])
   const [loadingPlans, setLoadingPlans] = useState(false)
   const loadIdRef = useRef(null)
+  const plansAbortRef = useRef(null)
 
   // Charger les logos fournisseurs
   useEffect(() => {
@@ -141,6 +142,12 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     if (!entityId) return
     const myId = entityId
     loadIdRef.current = myId
+    if (plansAbortRef.current) {
+      plansAbortRef.current.abort()
+      plansAbortRef.current = null
+    }
+    setLoadingPlans(false)
+    setSmartPlans([])
     setLoading(true)
     setError(null)
     try {
@@ -198,19 +205,23 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
         setRulesMap({})
       }
 
-      // Plans d'achat en arrière-plan : ne pas bloquer l'affichage de la fiche
+      // Plans d'achat en arrière-plan : ne pas bloquer l'affichage ni le changement de client
       if (loadIdRef.current !== myId) return
+      const plansController = new AbortController()
+      plansAbortRef.current = plansController
       setLoadingPlans(true)
       setSmartPlans([])
-      getSmartPlans(importId, entityId)
+      getSmartPlans(importId, entityId, plansController.signal)
         .then((plans) => {
           if (loadIdRef.current === myId) setSmartPlans(plans || [])
         })
         .catch((e) => {
+          if (e.name === 'CanceledError' || e.code === 'ERR_CANCELED') return
           console.warn('Plans non disponibles:', e)
           if (loadIdRef.current === myId) setSmartPlans([])
         })
         .finally(() => {
+          if (plansAbortRef.current === plansController) plansAbortRef.current = null
           if (loadIdRef.current === myId) setLoadingPlans(false)
         })
     } catch (err) {
