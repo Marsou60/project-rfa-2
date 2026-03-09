@@ -198,18 +198,21 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
         setRulesMap({})
       }
 
+      // Plans d'achat en arrière-plan : ne pas bloquer l'affichage de la fiche
       if (loadIdRef.current !== myId) return
       setLoadingPlans(true)
-      try {
-        const plans = await getSmartPlans(importId, entityId)
-        if (loadIdRef.current !== myId) return
-        setSmartPlans(plans || [])
-      } catch (e) {
-        console.warn('Plans non disponibles:', e)
-        setSmartPlans([])
-      } finally {
-        if (loadIdRef.current === myId) setLoadingPlans(false)
-      }
+      setSmartPlans([])
+      getSmartPlans(importId, entityId)
+        .then((plans) => {
+          if (loadIdRef.current === myId) setSmartPlans(plans || [])
+        })
+        .catch((e) => {
+          console.warn('Plans non disponibles:', e)
+          if (loadIdRef.current === myId) setSmartPlans([])
+        })
+        .finally(() => {
+          if (loadIdRef.current === myId) setLoadingPlans(false)
+        })
     } catch (err) {
       if (loadIdRef.current !== myId) return
       setError(err.response?.data?.detail || `Erreur lors du chargement ${mode === 'client' ? 'du client' : 'du groupe'}`)
