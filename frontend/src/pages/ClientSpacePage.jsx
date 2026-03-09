@@ -25,6 +25,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [exportingPdf, setExportingPdf] = useState(false)
   const [smartPlans, setSmartPlans] = useState([])
   const [loadingPlans, setLoadingPlans] = useState(false)
+  const loadIdRef = useRef(null)
 
   // Charger les logos fournisseurs
   useEffect(() => {
@@ -138,14 +139,18 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
 
   const loadEntity = async (entityId) => {
     if (!entityId) return
+    const myId = entityId
+    loadIdRef.current = myId
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      setError(null)
       const detail = await getEntityDetail(importId, mode, entityId)
+      if (loadIdRef.current !== myId) return
       setEntity(detail)
-      
+
       if (detail?.contract_applied?.id) {
         const rules = await getContractRules(detail.contract_applied.id)
+        if (loadIdRef.current !== myId) return
         const map = {}
         for (const rule of rules || []) {
           map[rule.key] = {
@@ -155,10 +160,11 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             tiers: parseTiers(rule.tiers),
           }
         }
-        
+
         const targetType = mode === 'client' ? 'CODE_UNION' : 'GROUPE_CLIENT'
         try {
           const overrides = await getEntityOverrides(targetType, entityId)
+          if (loadIdRef.current !== myId) return
           for (const override of overrides || []) {
             const key = override.field_key
             if (!map[key]) {
@@ -168,7 +174,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               const customTiers = JSON.parse(override.custom_tiers || '[]')
               const parsedTiers = customTiers.map(t => ({ min: Number(t.min) || 0, rate: Number(t.rate) || 0 }))
                 .sort((a, b) => a.min - b.min)
-              
+
               if (override.tier_type === 'rfa') {
                 map[key].tiers_rfa = parsedTiers
                 map[key].has_override_rfa = true
@@ -186,30 +192,32 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
         } catch (err) {
           console.warn('Impossible de charger les overrides:', err)
         }
-        
+
         setRulesMap(map)
       } else {
         setRulesMap({})
       }
 
-      // Charger les plans d'achat optimisés
+      if (loadIdRef.current !== myId) return
       setLoadingPlans(true)
       try {
         const plans = await getSmartPlans(importId, entityId)
+        if (loadIdRef.current !== myId) return
         setSmartPlans(plans || [])
       } catch (e) {
         console.warn('Plans non disponibles:', e)
         setSmartPlans([])
       } finally {
-        setLoadingPlans(false)
+        if (loadIdRef.current === myId) setLoadingPlans(false)
       }
     } catch (err) {
+      if (loadIdRef.current !== myId) return
       setError(err.response?.data?.detail || `Erreur lors du chargement ${mode === 'client' ? 'du client' : 'du groupe'}`)
       setEntity(null)
       setRulesMap({})
       setSmartPlans([])
     } finally {
-      setLoading(false)
+      if (loadIdRef.current === myId) setLoading(false)
     }
   }
 
@@ -416,7 +424,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             <button
               onClick={() => loadEntity(query.split(' - ')[0].trim())}
               className="btn-primary"
-              disabled={!query || loading}
+              disabled={!query}
             >
               {loading ? '⏳ Chargement...' : '🚀 Consulter'}
             </button>
