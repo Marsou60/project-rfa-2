@@ -97,6 +97,14 @@ export const getEntityDetail = async (importId, mode, id, contractId = null) => 
   return response.data
 }
 
+/** Fiche complète en 1 requête : entity + rules + overrides (plus rapide que 3 appels). */
+export const getEntityFull = async (importId, mode, id, contractId = null) => {
+  const params = { mode, id }
+  if (contractId) params.contract_id = contractId
+  const response = await api.get(`/imports/${importId}/entity/full`, { params })
+  return response.data
+}
+
 export const getUnionEntity = async (importId) => {
   const response = await api.get(`/imports/${importId}/union`)
   return response.data

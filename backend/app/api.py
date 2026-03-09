@@ -641,6 +641,62 @@ async def get_entity(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/imports/{import_id}/entity/full")
+async def get_entity_full(
+    import_id: str,
+    mode: str,
+    id: str,
+    contract_id: Optional[int] = Query(None),
+    session: Session = Depends(get_session),
+):
+    """
+    Fiche client complète en une requête : détail entité + règles contrat + overrides.
+    Réduit le nombre d'appels (1 au lieu de 3) pour un chargement plus rapide.
+    """
+    import_data = _resolve_import_data(import_id, session)
+    if not import_data:
+        available_imports = list_imports()
+        raise HTTPException(
+            status_code=404,
+            detail=f"Import non trouvé (ID: {import_id}). Imports disponibles: {len(available_imports)}",
+        )
+    if mode not in ["client", "group"]:
+        raise HTTPException(status_code=400, detail="mode doit etre 'client' ou 'group'")
+    try:
+        entity = get_entity_detail_with_rfa(import_data, mode, id, contract_id=contract_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    rules = []
+    overrides = []
+    cap = getattr(entity, "contract_applied", None) or {}
+    cid = cap.get("id") if isinstance(cap, dict) else getattr(cap, "id", None)
+    if cid:
+        rules = list(session.exec(select(ContractRule).where(ContractRule.contract_id == cid)).all())
+        target_type = TargetType.CODE_UNION if mode == "client" else TargetType.GROUPE_CLIENT
+        target_value = (id or "").strip().upper()
+        overrides = list(
+            session.exec(
+                select(ContractOverride).where(
+                    ContractOverride.target_type == target_type,
+                    ContractOverride.target_value == target_value,
+                ).order_by(ContractOverride.field_key)
+            ).all()
+        )
+
+    def rule_to_dict(r):
+        return {"id": r.id, "key": r.key, "label": getattr(r, "label", r.key), "tiers_rfa": r.tiers_rfa, "tiers_bonus": r.tiers_bonus, "tiers": r.tiers}
+
+    def override_to_dict(o):
+        return {"field_key": o.field_key, "custom_tiers": o.custom_tiers, "tier_type": o.tier_type.value if hasattr(o.tier_type, "value") else str(o.tier_type)}
+
+    return {
+        "entity": entity.model_dump(by_alias=True, mode="json"),
+        "rules": [rule_to_dict(r) for r in rules],
+        "overrides": [override_to_dict(o) for o in overrides],
+    }
+
+
 @router.get("/imports/{import_id}/union")
 async def get_union_entity(import_id: str, session: Session = Depends(get_session)):
     """

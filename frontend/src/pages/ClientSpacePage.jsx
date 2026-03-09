@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { getEntities, getEntityDetail, getContractRules, getEntityOverrides, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 
@@ -25,8 +25,8 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [exportingPdf, setExportingPdf] = useState(false)
   const [smartPlans, setSmartPlans] = useState([])
   const [loadingPlans, setLoadingPlans] = useState(false)
+  const [plansRequested, setPlansRequested] = useState(false)
   const loadIdRef = useRef(null)
-  const plansAbortRef = useRef(null)
 
   // Charger les logos fournisseurs
   useEffect(() => {
@@ -142,88 +142,52 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     if (!entityId) return
     const myId = entityId
     loadIdRef.current = myId
-    if (plansAbortRef.current) {
-      plansAbortRef.current.abort()
-      plansAbortRef.current = null
-    }
-    setLoadingPlans(false)
     setSmartPlans([])
+    setLoadingPlans(false)
+    setPlansRequested(false)
     setLoading(true)
     setError(null)
     try {
-      const detail = await getEntityDetail(importId, mode, entityId)
+      const full = await getEntityFull(importId, mode, entityId)
       if (loadIdRef.current !== myId) return
+      const detail = full.entity
       setEntity(detail)
 
-      if (detail?.contract_applied?.id) {
-        const rules = await getContractRules(detail.contract_applied.id)
-        if (loadIdRef.current !== myId) return
-        const map = {}
-        for (const rule of rules || []) {
-          map[rule.key] = {
-            ...rule,
-            tiers_rfa: parseTiers(rule.tiers_rfa),
-            tiers_bonus: parseTiers(rule.tiers_bonus),
-            tiers: parseTiers(rule.tiers),
-          }
+      const rules = full.rules || []
+      const overrides = full.overrides || []
+      const map = {}
+      for (const rule of rules) {
+        map[rule.key] = {
+          ...rule,
+          tiers_rfa: parseTiers(rule.tiers_rfa),
+          tiers_bonus: parseTiers(rule.tiers_bonus),
+          tiers: parseTiers(rule.tiers),
         }
-
-        const targetType = mode === 'client' ? 'CODE_UNION' : 'GROUPE_CLIENT'
-        try {
-          const overrides = await getEntityOverrides(targetType, entityId)
-          if (loadIdRef.current !== myId) return
-          for (const override of overrides || []) {
-            const key = override.field_key
-            if (!map[key]) {
-              map[key] = { key, tiers_rfa: [], tiers_bonus: [], tiers: [] }
-            }
-            try {
-              const customTiers = JSON.parse(override.custom_tiers || '[]')
-              const parsedTiers = customTiers.map(t => ({ min: Number(t.min) || 0, rate: Number(t.rate) || 0 }))
-                .sort((a, b) => a.min - b.min)
-
-              if (override.tier_type === 'rfa') {
-                map[key].tiers_rfa = parsedTiers
-                map[key].has_override_rfa = true
-              } else if (override.tier_type === 'bonus') {
-                map[key].tiers_bonus = parsedTiers
-                map[key].has_override_bonus = true
-              } else if (override.tier_type === 'tri') {
-                map[key].tiers = parsedTiers
-                map[key].has_override_tri = true
-              }
-            } catch (e) {
-              console.warn('Erreur parsing override:', e)
-            }
-          }
-        } catch (err) {
-          console.warn('Impossible de charger les overrides:', err)
-        }
-
-        setRulesMap(map)
-      } else {
-        setRulesMap({})
       }
-
-      // Plans d'achat en arrière-plan : ne pas bloquer l'affichage ni le changement de client
-      if (loadIdRef.current !== myId) return
-      const plansController = new AbortController()
-      plansAbortRef.current = plansController
-      setLoadingPlans(true)
-      setSmartPlans([])
-      getSmartPlans(importId, entityId, plansController.signal)
-        .then((plans) => {
-          if (loadIdRef.current === myId) setSmartPlans(plans || [])
-        })
-        .catch((e) => {
-          if (e.name === 'CanceledError' || e.code === 'ERR_CANCELED') return
-          console.warn('Plans non disponibles:', e)
-          if (loadIdRef.current === myId) setSmartPlans([])
-        })
-        .finally(() => {
-          if (plansAbortRef.current === plansController) plansAbortRef.current = null
-          if (loadIdRef.current === myId) setLoadingPlans(false)
-        })
+      for (const override of overrides) {
+        const key = override.field_key
+        if (!map[key]) {
+          map[key] = { key, tiers_rfa: [], tiers_bonus: [], tiers: [] }
+        }
+        try {
+          const customTiers = JSON.parse(override.custom_tiers || '[]')
+          const parsedTiers = customTiers.map(t => ({ min: Number(t.min) || 0, rate: Number(t.rate) || 0 }))
+            .sort((a, b) => a.min - b.min)
+          if (override.tier_type === 'rfa') {
+            map[key].tiers_rfa = parsedTiers
+            map[key].has_override_rfa = true
+          } else if (override.tier_type === 'bonus') {
+            map[key].tiers_bonus = parsedTiers
+            map[key].has_override_bonus = true
+          } else if (override.tier_type === 'tri') {
+            map[key].tiers = parsedTiers
+            map[key].has_override_tri = true
+          }
+        } catch (e) {
+          console.warn('Erreur parsing override:', e)
+        }
+      }
+      setRulesMap(map)
     } catch (err) {
       if (loadIdRef.current !== myId) return
       setError(err.response?.data?.detail || `Erreur lors du chargement ${mode === 'client' ? 'du client' : 'du groupe'}`)
@@ -233,6 +197,21 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     } finally {
       if (loadIdRef.current === myId) setLoading(false)
     }
+  }
+
+  const loadPlansOnce = () => {
+    if (plansRequested || loadingPlans || !entity) return
+    const entityId = mode === 'client' ? (entity.code_union || entity.id) : (entity.groupe_client || entity.id)
+    if (!importId || !entityId) return
+    setPlansRequested(true)
+    setLoadingPlans(true)
+    getSmartPlans(importId, entityId)
+      .then((plans) => setSmartPlans(plans || []))
+      .catch((e) => {
+        console.warn('Plans non disponibles:', e)
+        setSmartPlans([])
+      })
+      .finally(() => setLoadingPlans(false))
   }
 
   const globalRows = useMemo(() => {
@@ -511,7 +490,29 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             </span>
           </div>
 
-          {/* Plans d'achat optimisés — AU-DESSUS des fournisseurs */}
+          {/* Plans d'achat optimisés — chargement à la demande */}
+          {!plansRequested && !loadingPlans && (
+            <div className="card overflow-hidden">
+              <div className="px-5 py-4 bg-gradient-to-r from-violet-500 to-indigo-600 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-white font-bold">🎯 Plans d'achat optimisés</h3>
+                  <p className="text-violet-100 text-xs">Combinez vos tri-partites pour débloquer plusieurs paliers</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={loadPlansOnce}
+                  className="px-4 py-2 bg-white text-violet-600 rounded-xl font-semibold hover:bg-violet-50 transition-all shadow-md"
+                >
+                  Afficher les plans d'achat
+                </button>
+              </div>
+            </div>
+          )}
+          {plansRequested && !loadingPlans && smartPlans.length === 0 && (
+            <div className="card p-6 text-center text-gray-500">
+              Aucun plan d'achat optimisé pour ce client.
+            </div>
+          )}
           {smartPlans.length > 0 && (() => {
             // Calcul RFA totale actuelle et projetée (plateforme sélectionnée si filtre)
             const currentRfaTotal = rfaTotalDisplay
