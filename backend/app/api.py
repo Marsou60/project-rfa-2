@@ -2534,7 +2534,7 @@ def _resolve_pure_data(pure_data_id: str):
     """
     from app.storage import get_pure_data_import, create_pure_data_import, _pure_data_imports
     # 1. Mémoire (cache)
-    pd_import = _resolve_pure_data(pure_data_id)
+    pd_import = get_pure_data_import(pure_data_id)
     if pd_import:
         return pd_import
     # 2. Supabase (pour sheets_live ou après redémarrage)
@@ -2660,15 +2660,20 @@ async def pure_data_client_detail(
         raise HTTPException(status_code=404, detail="Import pure data introuvable. Relance l'analyse.")
 
     from app.services.pure_data_import import build_client_detail
-    detail = build_client_detail(
-        pure_data.rows,
-        code_union=code_union,
-        year_current=year_current,
-        year_previous=year_previous,
-        month=month,
-        fournisseur=fournisseur,
-    )
-    return detail
+    try:
+        detail = build_client_detail(
+            pure_data.rows,
+            code_union=code_union,
+            year_current=year_current,
+            year_previous=year_previous,
+            month=month,
+            fournisseur=fournisseur,
+        )
+        return detail
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erreur détail client: {str(e)}")
 
 
 @router.get("/pure-data/platform-detail")
@@ -2752,15 +2757,20 @@ async def pure_data_commercial_detail(
         raise HTTPException(status_code=404, detail="Import pure data introuvable. Relance l'analyse.")
 
     from app.services.pure_data_import import build_commercial_detail
-    detail = build_commercial_detail(
-        pure_data.rows,
-        commercial=commercial,
-        year_current=year_current,
-        year_previous=year_previous,
-        month=month,
-        fournisseur=fournisseur,
-    )
-    return detail
+    try:
+        detail = build_commercial_detail(
+            pure_data.rows,
+            commercial=commercial,
+            year_current=year_current,
+            year_previous=year_previous,
+            month=month,
+            fournisseur=fournisseur,
+        )
+        return detail
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erreur détail commercial: {str(e)}")
 
 
 # ==================== GENIE RFA (Assistant commercial IA) ====================

@@ -45,8 +45,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response as StarletteResponse
 
+def _add_cors_headers(response: StarletteResponse, origin: str, allowed: bool) -> None:
+    if allowed and origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+
+
 class DynamicCORSMiddleware(BaseHTTPMiddleware):
-    """Accepte les origines statiques + tous les sous-domaines *.vercel.app"""
+    """Accepte les origines statiques + tous les sous-domaines *.vercel.app.
+    Ajoute toujours les en-têtes CORS sur la réponse (y compris en cas d'erreur 500)
+    pour que le frontend reçoive une réponse valide et affiche l'erreur."""
     async def dispatch(self, request: StarletteRequest, call_next):
         origin = request.headers.get("origin", "")
         allowed = (
@@ -55,15 +65,21 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
             or origin.startswith("http://localhost")
         )
         if request.method == "OPTIONS":
-            # Preflight
             response = StarletteResponse(status_code=200)
-        else:
+            _add_cors_headers(response, origin, allowed)
+            return response
+        try:
             response = await call_next(request)
-        if allowed and origin:
-            response.headers["Access-Control-Allow-Origin"]  = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"] = "*"
-            response.headers["Access-Control-Allow-Headers"] = "*"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            body = b'{"detail":"Internal server error"}'
+            response = StarletteResponse(
+                content=body,
+                status_code=500,
+                media_type="application/json",
+            )
+        _add_cors_headers(response, origin, allowed)
         return response
 
 app.add_middleware(DynamicCORSMiddleware)
