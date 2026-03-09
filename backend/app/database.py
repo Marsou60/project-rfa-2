@@ -3,6 +3,7 @@ Configuration de la base de données SQLite.
 """
 from sqlmodel import SQLModel, create_engine, Session, select
 from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, Ad, User, UserRole, AppSettings, SupplierLogo
+from fastapi import HTTPException
 import os
 import sqlite3
 import hashlib
@@ -211,6 +212,8 @@ def get_session():
     try:
         with Session(engine) as session:
             yield session
+    except HTTPException:
+        raise
     except Exception as e:
         raise RuntimeError(f"Impossible de se connecter à la base de données: {e}")
 

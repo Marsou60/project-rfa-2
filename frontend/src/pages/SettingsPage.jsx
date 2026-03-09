@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Upload, Trash2, Building2, Info, Loader2, X, Check } from 'lucide-react'
-import { getSetting, setSetting, uploadLogo, getImageUrl } from '../api/client'
+import { Settings, Upload, Trash2, Building2, Info, Loader2, X, Check, Download } from 'lucide-react'
+import { getSetting, setSetting, uploadLogo, getImageUrl, getApiBaseUrl } from '../api/client'
+import { useUpdater } from '../components/AppUpdater'
+
+const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined
 
 function SettingsPage() {
   const [companyLogo, setCompanyLogo] = useState(null)
+  const updater = useUpdater()
+  const { update, checking, downloading, error, checkForUpdates, downloadAndInstall } = updater
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
+  const [formError, setFormError] = useState(null)
   const [success, setSuccess] = useState(null)
   const fileRef = useRef(null)
 
@@ -40,7 +45,7 @@ function SettingsPage() {
       await setSetting('company_logo', result.url)
       setSuccess('Logo mis à jour avec succès !')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de l\'upload')
+      setFormError(err.response?.data?.detail || 'Erreur lors de l\'upload')
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -54,7 +59,7 @@ function SettingsPage() {
       setCompanyLogo(null)
       setSuccess('Logo supprimé')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur')
+      setFormError(err.response?.data?.detail || 'Erreur')
     } finally {
       setSaving(false)
     }
@@ -73,10 +78,10 @@ function SettingsPage() {
         </div>
       </div>
 
-      {error && (
+      {formError && (
         <div className="glass-card p-4 border-red-500/30 text-red-300 flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300">
+          <span>{formError}</span>
+          <button onClick={() => setFormError(null)} className="text-red-400 hover:text-red-300">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -172,6 +177,49 @@ function SettingsPage() {
         </div>
       </div>
 
+      {/* Mises à jour (Tauri uniquement) */}
+      {isTauri && (
+        <div className="glass-card p-6">
+          <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+            <Download className="w-5 h-5 text-indigo-400" />
+            Mises à jour
+          </h2>
+          <p className="text-sm text-glass-secondary mb-4">
+            Vérifiez si une nouvelle version de l'application est disponible.
+          </p>
+          {error && (
+            <p className="text-sm text-red-400 mb-3">{error}</p>
+          )}
+          {update ? (
+            <div className="glass-card-dark p-4 rounded-xl flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium text-white">Version {update.version} disponible</p>
+                {update.body && <p className="text-sm text-glass-secondary mt-1">{update.body}</p>}
+              </div>
+              <button
+                type="button"
+                disabled={downloading}
+                onClick={() => downloadAndInstall()}
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                {downloading ? 'Téléchargement...' : 'Installer'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={checking}
+              onClick={() => checkForUpdates()}
+              className="glass-btn-secondary inline-flex items-center gap-2"
+            >
+              {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Info className="w-4 h-4" />}
+              {checking ? 'Vérification...' : 'Vérifier les mises à jour'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Infos système */}
       <div className="glass-card p-6">
         <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -187,6 +235,13 @@ function SettingsPage() {
             <span className="text-glass-muted">Plateforme</span>
             <p className="font-medium text-white mt-1">Groupement Union RFA</p>
           </div>
+          {isTauri && (
+            <div className="glass-card-dark p-4 rounded-xl col-span-2">
+              <span className="text-glass-muted">API (backend)</span>
+              <p className="font-medium text-white mt-1 break-all">{getApiBaseUrl()}</p>
+              <p className="text-xs text-glass-muted mt-1">Si tu vois localhost, l’app n’est pas connectée au cloud. Rebuild avec .env contenant VITE_API_URL.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

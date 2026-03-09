@@ -38,6 +38,9 @@ frontend/.vite/
 
 # ── Tauri ─────────────────────────────────────────────────────
 frontend/src-tauri/target/
+frontend/src-tauri/.tauri-sign.key
+frontend/src-tauri/.tauri-sign.key.pub
+frontend/src-tauri/.tauri-sign.password
 
 # ── Base de données SQLite locale ────────────────────────────
 *.db

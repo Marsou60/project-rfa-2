@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "RFA Application",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.groupement.rfa",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -28,6 +28,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
+    "shortDescription": "Application RFA - Suivi et optimisation des remises",
+    "longDescription": "Application RFA pour le suivi des performances et l'optimisation des remises fournisseurs.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,5 +38,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVBMTc4NzFEQzFDNEZGMDMKUldRRC84VEJIWWNYV3NrSGpzaHhPNGZ1RCtrdGZORnJVSnFxbFNDa25KUmdJTno3eldZTTR1elEK",
+      "endpoints": [
+        "https://github.com/Marsou60/project-rfa-2/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

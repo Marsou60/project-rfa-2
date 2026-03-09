@@ -16,6 +16,20 @@ load_dotenv(_env_path)
 
 app = FastAPI(title="RFA Excel Import API", version="0.2.0")
 
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc):
+    """Retourne le message d'erreur réel (500) ou préserve HTTPException (401, 403, etc.)."""
+    from fastapi.responses import JSONResponse
+    from fastapi import HTTPException
+    if isinstance(exc, HTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    import traceback
+    traceback.print_exc()
+    detail = str(exc) if str(exc) else "Internal server error"
+    return JSONResponse(status_code=500, content={"detail": detail})
+
+
 # Initialiser la base de données au démarrage
 @app.on_event("startup")
 def on_startup():
@@ -37,6 +51,7 @@ _static_origins = [
     "http://localhost:3000",
     "http://localhost",
     "tauri://localhost",
+    "https://tauri.localhost",
     "https://project-rfa-2.vercel.app",
     *_extra_origins,
 ]
@@ -44,6 +59,8 @@ _static_origins = [
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import Response as StarletteResponse
+from fastapi import HTTPException
+import json
 
 def _add_cors_headers(response: StarletteResponse, origin: str, allowed: bool) -> None:
     if allowed and origin:
@@ -63,6 +80,7 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
             origin in _static_origins
             or origin.endswith(".vercel.app")
             or origin.startswith("http://localhost")
+            or "tauri" in origin.lower()
         )
         if request.method == "OPTIONS":
             response = StarletteResponse(status_code=200)
@@ -70,10 +88,18 @@ class DynamicCORSMiddleware(BaseHTTPMiddleware):
             return response
         try:
             response = await call_next(request)
+        except HTTPException as he:
+            body = json.dumps({"detail": he.detail}).encode()
+            response = StarletteResponse(
+                content=body,
+                status_code=he.status_code,
+                media_type="application/json",
+            )
         except Exception as e:
             import traceback
             traceback.print_exc()
-            body = b'{"detail":"Internal server error"}'
+            detail = str(e) if str(e) else "Internal server error"
+            body = json.dumps({"detail": detail}).encode()
             response = StarletteResponse(
                 content=body,
                 status_code=500,

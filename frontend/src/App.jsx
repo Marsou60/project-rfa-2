@@ -37,6 +37,7 @@ import HubPage from './pages/HubPage'
 import NathaliePage from './pages/NathaliePage'
 import PaulPage from './pages/PaulPage'
 import ErrorBoundary from './components/ErrorBoundary'
+import { AppUpdaterEffect } from './components/AppUpdater'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SupplierFilterProvider, useSupplierFilter } from './context/SupplierFilterContext'
 import { SUPPLIER_KEYS, SUPPLIER_LABELS } from './constants/suppliers'
@@ -173,6 +174,7 @@ function AppContent() {
 
   return (
     <div className="glass-background">
+      <AppUpdaterEffect />
       {/* Particules flottantes en arrière-plan */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-20 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-float" />

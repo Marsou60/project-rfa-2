@@ -1,16 +1,14 @@
 import axios from 'axios'
 
 // Détection de l'environnement :
-// - Tauri (desktop local) → localhost:8001
-// - Dev web local         → proxy Vite → localhost:8001
-// - Production Vercel     → Railway backend (VITE_API_URL)
-const isTauri = window.__TAURI__ !== undefined
+// - Tauri : VITE_API_URL si défini (backend cloud), sinon localhost:8001 (backend local = meilleures perfs)
+// - Dev web local : proxy Vite → localhost:8001
+// - Production Vercel : Railway backend (VITE_API_URL)
+const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined
 
-const getApiBaseUrl = () => {
+export const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api`
   if (isTauri) return 'http://localhost:8001/api'
-  // Variable injectée au build par Vite (définie dans Vercel env vars)
-  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL}/api`
-  // Dev local : proxy Vite
   return '/api'
 }
 

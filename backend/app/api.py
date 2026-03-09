@@ -1920,34 +1920,50 @@ def require_admin(user: Optional[User] = Depends(get_current_user)) -> User:
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest, session: Session = Depends(get_session)):
     """Connexion utilisateur."""
-    statement = select(User).where(User.username == request.username)
-    user = session.exec(statement).first()
-    
-    if not user or not verify_password(request.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Identifiants incorrects")
-    
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="Compte désactivé")
-    
-    # Mettre à jour last_login
-    user.last_login = datetime.now()
-    session.add(user)
-    session.commit()
-    
-    # Générer un token simple
-    token_data = f"{user.id}:{datetime.now().timestamp()}"
-    token = base64.b64encode(token_data.encode()).decode()
-    
-    return LoginResponse(
-        user_id=user.id,
-        username=user.username,
-        display_name=user.display_name,
-        role=user.role.value,
-        linked_code_union=user.linked_code_union,
-        linked_groupe=user.linked_groupe,
-        avatar_url=user.avatar_url,
-        token=token
-    )
+    try:
+        statement = select(User).where(User.username == request.username)
+        user = session.exec(statement).first()
+
+        if not user or not verify_password(request.password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Identifiants incorrects")
+
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Compte désactivé")
+
+        # Mettre à jour last_login
+        user.last_login = datetime.now()
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+        # Générer un token simple
+        token_data = f"{user.id}:{datetime.now().timestamp()}"
+        token = base64.b64encode(token_data.encode()).decode()
+
+        return LoginResponse(
+            user_id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            role=_user_role_str(user),
+            linked_code_union=user.linked_code_union,
+            linked_groupe=user.linked_groupe,
+            avatar_url=user.avatar_url,
+            token=token
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
+
+
+def _user_role_str(user) -> str:
+    """Retourne le rôle sous forme de chaîne, même si enum ou valeur inattendue."""
+    r = getattr(user, "role", None)
+    if r is None:
+        return "ADHERENT"
+    return getattr(r, "value", None) or str(r)
 
 
 @router.get("/auth/me", response_model=UserResponse)
@@ -1955,12 +1971,12 @@ async def get_me(user: User = Depends(get_current_user)):
     """Récupère l'utilisateur courant."""
     if not user:
         raise HTTPException(status_code=401, detail="Non authentifié")
-    
+
     return UserResponse(
         id=user.id,
         username=user.username,
         display_name=user.display_name,
-        role=user.role.value,
+        role=_user_role_str(user),
         linked_code_union=user.linked_code_union,
         linked_groupe=user.linked_groupe,
         avatar_url=user.avatar_url,
@@ -1988,7 +2004,7 @@ async def list_users(admin: User = Depends(require_admin), session: Session = De
             id=u.id,
             username=u.username,
             display_name=u.display_name,
-            role=u.role.value,
+            role=_user_role_str(u),
             linked_code_union=u.linked_code_union,
             linked_groupe=u.linked_groupe,
             avatar_url=u.avatar_url,
@@ -2036,7 +2052,7 @@ async def create_user(
         id=user.id,
         username=user.username,
         display_name=user.display_name,
-        role=user.role.value,
+        role=_user_role_str(user),
         linked_code_union=user.linked_code_union,
         linked_groupe=user.linked_groupe,
         avatar_url=user.avatar_url,
@@ -2084,7 +2100,7 @@ async def update_user(
         id=user.id,
         username=user.username,
         display_name=user.display_name,
-        role=user.role.value,
+        role=_user_role_str(user),
         linked_code_union=user.linked_code_union,
         linked_groupe=user.linked_groupe,
         avatar_url=user.avatar_url,
