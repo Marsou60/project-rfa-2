@@ -1,10 +1,35 @@
 """
 Lecture / écriture des données Pure Data dans Supabase.
 """
+import re
 from typing import List, Dict, Tuple, Optional
 from app.database import engine
 
 PURE_DATA_TABLE = "pure_data"
+
+
+def _norm_year(value) -> Optional[int]:
+    """Dérive year (int) depuis annee pour compatibilité avec filter_rows."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        pass
+    s = str(value)
+    m = re.search(r"(20\d{2})", s)
+    return int(m.group(1)) if m else None
+
+
+def _norm_month(value) -> Optional[int]:
+    """Dérive month (int 1-12) depuis mois pour compatibilité avec filter_rows."""
+    if value is None:
+        return None
+    try:
+        x = int(value)
+        return x if 1 <= x <= 12 else None
+    except (ValueError, TypeError):
+        return None
 
 COLUMNS = [
     "mois", "annee", "code_union", "raison_sociale", "groupe_client",
@@ -91,6 +116,9 @@ def read_pure_data_from_supabase(
         rows_raw = result.fetchall()
 
     rows = [dict(zip(COLUMNS, r)) for r in rows_raw]
+    for r in rows:
+        r["year"] = _norm_year(r.get("annee"))
+        r["month"] = _norm_month(r.get("mois"))
     return rows, list(COLUMNS), {col: col for col in COLUMNS}
 
 
