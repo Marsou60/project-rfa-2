@@ -213,7 +213,13 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
                 <button
                   onClick={async () => {
                     try {
-                      const entityId = mode === 'client' ? entity.code_union : entity.groupe_client
+                      const entityId = mode === 'client'
+                        ? (entity.code_union || entity.id)
+                        : (entity.groupe_client || entity.id)
+                      if (!entityId) {
+                        alert('Identifiant client/groupe manquant pour l\'export PDF.')
+                        return
+                      }
                       await exportEntityPdf(importId, mode, entityId, entity.contract_applied?.id)
                     } catch (err) {
                       console.error('Erreur export PDF:', err)

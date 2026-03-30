@@ -653,7 +653,9 @@ function ClientsPage({ importId }) {
           setSelectedContractId(contractId)
           setDetailLoading(true)
           try {
-            const entityId = mode === 'client' ? selectedEntity.code_union : selectedEntity.groupe_client
+            const entityId = mode === 'client'
+              ? (selectedEntity.code_union || selectedEntity.id)
+              : (selectedEntity.groupe_client || selectedEntity.id)
             const detail = await getEntityDetail(importId, mode, entityId, contractId)
             setSelectedEntity(detail)
           } catch (err) {

@@ -15,7 +15,7 @@ except ImportError:
 from app.services.compute import get_entity_detail_with_rfa
 from app.services.contract_resolver import get_contract_by_id
 from app.services.rfa_calculator import load_contract_rules, load_entity_overrides
-from app.storage import get_import
+from app.storage import get_import, ImportData
 from app.core.fields import get_global_fields, get_tri_fields, get_field_by_key
 from datetime import datetime
 
@@ -760,14 +760,16 @@ def generate_pdf_report(
     import_id: str,
     mode: str,
     entity_id: str,
-    contract_id: Optional[int] = None
+    contract_id: Optional[int] = None,
+    import_data: Optional[ImportData] = None,
 ) -> BytesIO:
     """
     Génère un rapport PDF pour une entité (client ou groupe) avec les calculs RFA.
+    Si import_data est fourni (ex. déjà résolu via _resolve_import_data), il est utilisé
+    tel quel — évite tout décalage avec get_import seul (feuille live, cold start).
     """
-    from app.storage import get_import
-    
-    import_data = get_import(import_id)
+    if import_data is None:
+        import_data = get_import(import_id)
     if not import_data:
         raise ValueError(f"Import non trouvé: {import_id}")
 
@@ -788,9 +790,16 @@ def generate_pdf_report(
     # Générer le PDF avec xhtml2pdf
     pdf_buffer = BytesIO()
     result = pisa.CreatePDF(html_content, dest=pdf_buffer, encoding='utf-8')
-    
-    if result.err:
-        raise ValueError(f"Erreur lors de la generation du PDF: {result.err}")
-    
     pdf_buffer.seek(0)
+    raw = pdf_buffer.getvalue()
+    # xhtml2pdf incrémente souvent err pour des avertissements CSS alors que le PDF est valide
+    if not raw.startswith(b"%PDF") or len(raw) < 64:
+        raise ValueError(
+            f"PDF invalide ou vide (xhtml2pdf err={result.err!r}, {len(raw)} octets)"
+        )
+    if result.err:
+        import logging
+        logging.getLogger(__name__).warning(
+            "xhtml2pdf: %s avertissement(s) — PDF genere (%s octets)", result.err, len(raw)
+        )
     return pdf_buffer

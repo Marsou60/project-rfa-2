@@ -1224,7 +1224,9 @@ async def get_entity_pdf(
         raise HTTPException(status_code=400, detail="mode doit etre 'client' ou 'group'")
     
     try:
-        pdf_buffer = generate_pdf_report(import_id, mode, id, contract_id=contract_id)
+        pdf_buffer = generate_pdf_report(
+            import_id, mode, id, contract_id=contract_id, import_data=import_data
+        )
         
         # Déterminer le nom du fichier
         entity_label = id.replace(" ", "_")
@@ -1238,7 +1240,30 @@ async def get_entity_pdf(
             }
         )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        msg = str(e)
+        nl = msg.lower()
+        # Entité / contrat / import introuvable → 404 (évite un 500 trompeur)
+        is_not_found = (
+            msg.startswith("Import non trouvé")
+            or (
+                msg.startswith("Client ")
+                and ("non trouvé" in msg or "non trouve" in nl)
+            )
+            or (
+                msg.startswith("Groupe ")
+                and ("non trouvé" in msg or "non trouve" in nl)
+            )
+            or (
+                msg.startswith("Contrat ")
+                and ("non trouvé" in msg or "non trouve" in nl)
+            )
+        )
+        if is_not_found:
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=500, detail=msg)
+    except RuntimeError as e:
+        # Ex. xhtml2pdf non installé (requirements incomplet sur le poste)
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         import traceback
         print(f"Erreur lors de la generation du PDF: {e}")

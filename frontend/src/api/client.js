@@ -261,26 +261,78 @@ export const deleteAd = async (adId) => {
 
 // ==================== EXPORT PDF ====================
 
+function uint8IsPdf(u8) {
+  return (
+    u8.byteLength >= 4 &&
+    u8[0] === 0x25 &&
+    u8[1] === 0x50 &&
+    u8[2] === 0x44 &&
+    u8[3] === 0x46
+  )
+}
+
+/** Décode le corps JSON FastAPI { detail } depuis une réponse brute (Tauri / Axios). */
+function parseFastApiErrorBodyText(text) {
+  if (!text || !String(text).trim()) return null
+  try {
+    const j = JSON.parse(String(text).trim())
+    if (j.detail == null) return null
+    return typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
+  } catch {
+    return null
+  }
+}
+
 export const exportEntityPdf = async (importId, mode, entityId, contractId = null) => {
   const params = { mode, id: entityId }
   if (contractId) {
     params.contract_id = contractId
   }
-  const response = await api.get(`/imports/${importId}/entity/pdf`, {
-    params,
-    responseType: 'blob'
-  })
-  
-  // Créer un lien de téléchargement
-  const url = window.URL.createObjectURL(new Blob([response.data]))
-  const link = document.createElement('a')
-  link.href = url
-  const entityLabel = entityId.replace(/ /g, '_')
-  link.setAttribute('download', `RFA_${entityLabel}_${mode}.pdf`)
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.URL.revokeObjectURL(url)
+  let response
+  try {
+    // arraybuffer + validateStatus : sous Tauri le corps d'erreur n'est pas toujours lisible en Blob
+    response = await api.get(`/imports/${importId}/entity/pdf`, {
+      params,
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
+    })
+  } catch (err) {
+    const res = err.response
+    const msg = err.message || 'Réseau indisponible'
+    if (res?.data instanceof ArrayBuffer) {
+      const t = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(res.data))
+      const d = parseFastApiErrorBodyText(t)
+      throw new Error(d || msg)
+    }
+    throw new Error(msg)
+  }
+
+  const buf = response.data
+  const u8 = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(0)
+
+  if (response.status === 200 && uint8IsPdf(u8)) {
+    const blob = new Blob([buf], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    const entityLabel = String(entityId || 'entity').replace(/ /g, '_')
+    link.setAttribute('download', `RFA_${entityLabel}_${mode}.pdf`)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+    return
+  }
+
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(u8)
+  let detail = parseFastApiErrorBodyText(text)
+  if (!detail) {
+    const preview = text.replace(/\s+/g, ' ').trim().slice(0, 280)
+    detail =
+      preview ||
+      `Réponse HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''} (corps vide ou non JSON)`
+  }
+  throw new Error(detail)
 }
 
 export const exportUnionPdf = async (importId) => {
