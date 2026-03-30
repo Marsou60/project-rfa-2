@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     curl \
     fonts-dejavu-core \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Le contexte Docker est la racine du repo.
