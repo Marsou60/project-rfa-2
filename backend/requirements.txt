@@ -13,4 +13,5 @@ google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
 psycopg2-binary>=2.9.9
 xhtml2pdf>=0.2.15
-reportlab>=4.0.0
+reportlab>=3.6.0,<4.3.0
+Pillow>=9.0.0
