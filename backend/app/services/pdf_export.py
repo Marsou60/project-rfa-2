@@ -560,6 +560,23 @@ def _get_espace_client_template() -> str:
         .pdf-message p:last-child { margin-bottom: 0; }
         .pdf-message strong { color: #1a1a1a; }
 
+        /* Annonce solennelle (PDF : pas de Google Fonts — italique serif, centré) */
+        .pdf-message-hero {
+            margin-top: 16px;
+            padding: 20px 22px;
+            border: 2px solid #1a4a8a;
+            background: #f4f7fb;
+            font-size: 15px;
+            line-height: 1.6;
+            font-style: italic;
+            font-weight: normal;
+            font-family: Georgia, "Palatino Linotype", Palatino, "Book Antiqua", "Times New Roman", Times, serif;
+            color: #152a45;
+            text-align: center;
+        }
+        .pdf-message-hero p { margin: 0 0 14px 0; }
+        .pdf-message-hero p:last-child { margin-bottom: 0; }
+
         /* ── FOOTER PAGE ── */
         .pg-foot   { border-top: 1px solid #000000; padding-top: 10px; text-align: center; font-size: 9px; color: #555; }
     </style>
@@ -762,11 +779,17 @@ def _get_espace_client_template() -> str:
         Si ce n'est pas encore fait, merci également de nous transmettre votre <strong>RIB</strong>,
         un extrait <strong>Kbis</strong> à jour ainsi que votre dernier <strong>bilan</strong>.
     </p>
+</div>
+
+<div class="pdf-message-hero">
     <p>
-        Le <strong>Groupement Union</strong> est fier de vous présenter son nouveau contrat, en adéquation avec les évolutions du marché&nbsp;:
-        une rémunération évolutive qui reconnaît le réseau dans son intégralité.
-        Tout est lié&nbsp;: lorsque vous achetez au sein du réseau, c'est l'ensemble de votre rémunération qui progresse.
-        Merci de votre confiance et de votre engagement aux côtés du Groupement Union.
+        Le <strong>Groupement Union</strong> a l'honneur de vous présenter son nouveau contrat, pensé en adéquation avec les évolutions du marché
+        et l'ambition collective de notre réseau d'adhérents. Il institue une rémunération évolutive qui reconnaît le Groupement Union dans son intégralité&nbsp;:
+        votre engagement et vos achats au sein du réseau s'inscrivent dans une même dynamique de progrès.
+    </p>
+    <p>
+        Tout est lié&nbsp;: lorsque vous développez vos achats auprès des partenaires du réseau, c'est l'ensemble de votre rémunération qui peut s'améliorer,
+        car la réussite du collectif renforce celle de chacun. Nous sommes fiers de bâtir cette aventure avec vous et vous remercions chaleureusement de votre confiance.
     </p>
 </div>
 
