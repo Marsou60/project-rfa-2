@@ -285,54 +285,54 @@ def _get_espace_client_template() -> str:
     <style>
         @page { size: A4; margin: 14mm; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Helvetica, Arial, sans-serif; font-size: 10px; color: #1a1a1a; background: white; line-height: 1.45; }
+        body { font-family: Helvetica, Arial, sans-serif; font-size: 10px; color: #1a1a1a; background: white; line-height: 1.6; }
 
         /* ── HEADER ── */
-        .hdr-table  { width: 100%; border-collapse: collapse; padding-bottom: 8px; border-bottom: 1.5px solid #1a1a1a; margin-bottom: 14px; }
-        .hdr-label  { font-size: 8px; text-transform: uppercase; letter-spacing: .1em; color: #aaa; margin-bottom: 3px; }
-        .hdr-name   { font-size: 18px; font-weight: bold; color: #1a1a1a; }
+        .hdr-table  { width: 100%; border-collapse: collapse; padding-bottom: 12px; border-bottom: 2px solid #1a1a1a; margin-bottom: 14px; }
+        .hdr-label  { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: #aaa; margin-bottom: 6px; }
+        .hdr-name   { font-size: 20px; font-weight: bold; color: #1a1a1a; }
         .hdr-right  { text-align: right; vertical-align: bottom; font-size: 8px; color: #777; }
         .hdr-gu     { font-size: 9px; font-weight: bold; color: #1a1a1a; }
 
         /* ── KPI ── */
-        .kpi-table { width: 100%; border-collapse: separate; border-spacing: 7px; margin-bottom: 14px; }
-        .kpi-box   { background: #f5f5f3; padding: 10px 12px; }
-        .kpi-lbl   { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: #888; margin-bottom: 3px; }
-        .kpi-val   { font-size: 20px; font-weight: bold; color: #1a1a1a; }
+        .kpi-table { width: 100%; border-collapse: separate; border-spacing: 10px; margin-bottom: 16px; }
+        .kpi-box   { background: #f5f5f3; padding: 14px 16px; }
+        .kpi-lbl   { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 3px; }
+        .kpi-val   { font-size: 22px; font-weight: bold; color: #1a1a1a; }
         .kpi-green { color: #1a7a45; }
         .kpi-blue  { color: #1a4a8a; }
         .kpi-sub   { font-size: 8px; color: #aaa; margin-top: 2px; }
 
         /* ── SECTION ── */
-        .sec-wrap  { padding-bottom: 5px; border-bottom: 0.5px solid #ddd; margin-top: 14px; margin-bottom: 8px; }
-        .sec-title { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: #555; }
+        .sec-wrap  { padding-bottom: 6px; border-bottom: 0.5px solid #ddd; margin-top: 18px; margin-bottom: 10px; }
+        .sec-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #555; }
         .pill      { font-size: 8px; padding: 2px 7px; margin-left: 5px; }
         .pill-g    { background: #d4edda; color: #155724; }
         .pill-y    { background: #fff3cd; color: #856404; }
 
         /* ── CARDS ── */
-        .card      { border: 0.5px solid #e0e0e0; padding: 9px 11px; margin-bottom: 6px; page-break-inside: avoid; }
-        .card-pri  { border-left: 3px solid #1a4a8a; padding-left: 9px; }
+        .card      { border: 0.5px solid #e0e0e0; border-left: 3px solid #e0e0e0; padding: 12px 14px; margin-bottom: 10px; page-break-inside: avoid; }
+        .card-pri  { border-left: 3px solid #1a4a8a; }
         .card-top  { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
-        .c-name    { font-size: 10px; font-weight: 600; color: #1a1a1a; }
+        .c-name    { font-size: 11px; font-weight: 600; color: #1a1a1a; }
         .c-tag     { font-size: 8px; color: #1a4a8a; margin-left: 4px; }
-        .c-rfa-ok  { font-size: 11px; font-weight: 700; color: #1a7a45; text-align: right; }
+        .c-rfa-ok  { font-size: 12px; font-weight: 700; color: #1a7a45; text-align: right; }
         .c-rfa-run { font-size: 9px; color: #888; text-align: right; }
-        .c-meta    { font-size: 8px; color: #888; margin-bottom: 4px; }
+        .c-meta    { font-size: 9px; color: #666; margin-bottom: 6px; }
 
         /* ── BARRE DE PROGRESSION ── */
-        .bar-bg    { background: #ebebeb; height: 5px; width: 100%; margin: 4px 0 5px 0; }
-        .bar-green { height: 5px; background: #1a7a45; }
-        .bar-blue  { height: 5px; background: #1a4a8a; }
-        .bar-amber { height: 5px; background: #c07800; }
+        .bar-bg    { background: #ebebeb; height: 6px; width: 100%; margin: 6px 0 7px 0; }
+        .bar-green { height: 6px; background: #1a7a45; }
+        .bar-blue  { height: 6px; background: #1a4a8a; }
+        .bar-amber { height: 6px; background: #c07800; }
 
         /* ── PIED DE CARTE ── */
-        .c-foot    { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        .c-miss    { font-size: 8px; color: #a05c00; }
-        .c-gain    { font-size: 8px; color: #1a4a8a; text-align: right; font-weight: 600; }
+        .c-foot    { width: 100%; border-collapse: collapse; margin-top: 4px; padding-top: 4px; }
+        .c-miss    { font-size: 9px; color: #a05c00; }
+        .c-gain    { font-size: 9px; color: #1a4a8a; text-align: right; font-weight: 600; }
 
         /* ── FOOTER PAGE ── */
-        .pg-foot   { margin-top: 18px; border-top: 0.5px solid #ddd; padding-top: 6px; text-align: center; font-size: 8px; color: #bbb; }
+        .pg-foot   { margin-top: 22px; border-top: 0.5px solid #ddd; padding-top: 8px; text-align: center; font-size: 8px; color: #bbb; }
     </style>
 </head>
 <body>
@@ -353,7 +353,7 @@ def _get_espace_client_template() -> str:
 </table>
 
 <!-- ══ KPI ══ -->
-<table class="kpi-table" cellpadding="0" cellspacing="7">
+<table class="kpi-table" cellpadding="0" cellspacing="10">
 <tr>
     <td style="width:33%">
         <div class="kpi-box">
