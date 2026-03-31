@@ -275,321 +275,260 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
 
 
 def _get_espace_client_template() -> str:
-    """Template HTML rapport RFA client — design épuré, compatible xhtml2pdf."""
+    """Template HTML rapport RFA — design sobre et professionnel, compatible xhtml2pdf."""
     return """
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Rapport RFA - {{ entity_label }}</title>
+    <title>Rapport RFA — {{ entity_label }}</title>
     <style>
-        @page { size: A4; margin: 1.8cm 1.5cm 1.8cm 1.5cm; }
+        @page { size: A4; margin: 14mm; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Helvetica, Arial, sans-serif; color: #1a1a2e; font-size: 9.5pt; line-height: 1.45; }
+        body { font-family: Helvetica, Arial, sans-serif; font-size: 10px; color: #1a1a1a; background: white; line-height: 1.45; }
 
         /* ── HEADER ── */
-        .header-band { background: #1e3a5f; color: white; padding: 18px 22px 14px 22px; margin-bottom: 18px; }
-        .header-band h1 { font-size: 20pt; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px; }
-        .header-band .sub { font-size: 9pt; color: #a8c4e0; margin-top: 2px; }
-        .header-meta { background: #f0f4f8; border-left: 4px solid #1e3a5f; padding: 8px 14px; margin-bottom: 16px; font-size: 8.5pt; color: #374151; }
-        .header-meta strong { color: #1e3a5f; font-size: 10pt; }
+        .hdr-table  { width: 100%; border-collapse: collapse; padding-bottom: 8px; border-bottom: 1.5px solid #1a1a1a; margin-bottom: 14px; }
+        .hdr-label  { font-size: 8px; text-transform: uppercase; letter-spacing: .1em; color: #aaa; margin-bottom: 3px; }
+        .hdr-name   { font-size: 18px; font-weight: bold; color: #1a1a1a; }
+        .hdr-right  { text-align: right; vertical-align: bottom; font-size: 8px; color: #777; }
+        .hdr-gu     { font-size: 9px; font-weight: bold; color: #1a1a1a; }
 
-        /* ── KPI CARDS (table layout) ── */
-        .kpi-table { width: 100%; border-collapse: separate; border-spacing: 6px; margin-bottom: 16px; }
-        .kpi-table td { width: 25%; padding: 10px 12px; vertical-align: top; }
-        .kpi-card { padding: 10px 12px; border-top: 3px solid #1e3a5f; background: #f8fafc; }
-        .kpi-card.blue  { border-color: #2563eb; background: #eff6ff; }
-        .kpi-card.green { border-color: #16a34a; background: #f0fdf4; }
-        .kpi-card.amber { border-color: #d97706; background: #fffbeb; }
-        .kpi-card.gray  { border-color: #6b7280; background: #f9fafb; }
-        .kpi-label { font-size: 7.5pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
-        .kpi-value { font-size: 13pt; font-weight: bold; color: #1a1a2e; }
-        .kpi-value.blue  { color: #1d4ed8; }
-        .kpi-value.green { color: #15803d; }
-        .kpi-value.amber { color: #b45309; }
-        .kpi-sub { font-size: 7.5pt; color: #6b7280; margin-top: 2px; }
+        /* ── KPI ── */
+        .kpi-table { width: 100%; border-collapse: separate; border-spacing: 7px; margin-bottom: 14px; }
+        .kpi-box   { background: #f5f5f3; padding: 10px 12px; }
+        .kpi-lbl   { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: #888; margin-bottom: 3px; }
+        .kpi-val   { font-size: 20px; font-weight: bold; color: #1a1a1a; }
+        .kpi-green { color: #1a7a45; }
+        .kpi-blue  { color: #1a4a8a; }
+        .kpi-sub   { font-size: 8px; color: #aaa; margin-top: 2px; }
 
-        /* ── RÉSUMÉ BADGES ── */
-        .summary-bar { background: #f8fafc; border: 1px solid #e5e7eb; padding: 8px 12px; margin-bottom: 16px; font-size: 8.5pt; }
-        .badge-inline { display: inline; font-weight: bold; padding: 1px 6px; margin-right: 6px; }
-        .badge-green { color: #15803d; background: #dcfce7; border: 1px solid #bbf7d0; }
-        .badge-amber { color: #92400e; background: #fef3c7; border: 1px solid #fde68a; }
-        .badge-gray  { color: #374151; background: #f3f4f6; border: 1px solid #d1d5db; }
+        /* ── SECTION ── */
+        .sec-wrap  { padding-bottom: 5px; border-bottom: 0.5px solid #ddd; margin-top: 14px; margin-bottom: 8px; }
+        .sec-title { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: #555; }
+        .pill      { font-size: 8px; padding: 2px 7px; margin-left: 5px; }
+        .pill-g    { background: #d4edda; color: #155724; }
+        .pill-y    { background: #fff3cd; color: #856404; }
 
-        /* ── SECTION TITLES ── */
-        .section-header { margin-bottom: 0; margin-top: 14px; }
-        .section-header td { padding: 7px 12px; font-size: 9.5pt; font-weight: bold; color: white; }
-        .section-blue  { background: #1e3a5f; }
-        .section-purple { background: #5b21b6; }
-
-        /* ── TABLES ── */
-        .data-table { width: 100%; border-collapse: collapse; margin-bottom: 6px; font-size: 8.5pt; }
-        .data-table th { padding: 6px 8px; text-align: left; background: #f1f5f9; color: #374151; border-bottom: 2px solid #cbd5e1; font-weight: bold; font-size: 8pt; }
-        .data-table th.r { text-align: right; }
-        .data-table td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; color: #1a1a2e; }
-        .data-table td.r { text-align: right; }
-        .data-table tr.row-achieved td { background: #f0fdf4; }
-        .data-table tr.row-near td    { background: #fffbeb; }
-        .data-table tr.row-normal td  { background: #ffffff; }
-        .data-table tr.row-alt td     { background: #f8fafc; }
-
-        /* ── STATUTS ── */
-        .tag { font-size: 7pt; font-weight: bold; padding: 1px 5px; margin-left: 4px; }
-        .tag-green  { color: #15803d; background: #dcfce7; border: 1px solid #bbf7d0; }
-        .tag-amber  { color: #92400e; background: #fef3c7; border: 1px solid #fde68a; }
-        .tag-blue   { color: #1d4ed8; background: #dbeafe; border: 1px solid #bfdbfe; }
-        .tag-violet { color: #5b21b6; background: #ede9fe; border: 1px solid #ddd6fe; }
+        /* ── CARDS ── */
+        .card      { border: 0.5px solid #e0e0e0; padding: 9px 11px; margin-bottom: 6px; page-break-inside: avoid; }
+        .card-pri  { border-left: 3px solid #1a4a8a; padding-left: 9px; }
+        .card-top  { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
+        .c-name    { font-size: 10px; font-weight: 600; color: #1a1a1a; }
+        .c-tag     { font-size: 8px; color: #1a4a8a; margin-left: 4px; }
+        .c-rfa-ok  { font-size: 11px; font-weight: 700; color: #1a7a45; text-align: right; }
+        .c-rfa-run { font-size: 9px; color: #888; text-align: right; }
+        .c-meta    { font-size: 8px; color: #888; margin-bottom: 4px; }
 
         /* ── BARRE DE PROGRESSION ── */
-        .bar-outer { width: 80px; height: 8px; background: #e2e8f0; border: 1px solid #cbd5e1; display: block; }
-        .bar-inner-green  { height: 8px; background: #16a34a; display: block; }
-        .bar-inner-amber  { height: 8px; background: #d97706; display: block; }
-        .bar-inner-blue   { height: 8px; background: #2563eb; display: block; }
-        .pct { font-size: 7.5pt; color: #374151; font-weight: bold; }
+        .bar-bg    { background: #ebebeb; height: 5px; width: 100%; margin: 4px 0 5px 0; }
+        .bar-green { height: 5px; background: #1a7a45; }
+        .bar-blue  { height: 5px; background: #1a4a8a; }
+        .bar-amber { height: 5px; background: #c07800; }
 
-        /* ── FOOTER ── */
-        .footer-band { margin-top: 18px; border-top: 2px solid #1e3a5f; padding-top: 8px; font-size: 7.5pt; color: #6b7280; }
-        .footer-band .gu { color: #1e3a5f; font-weight: bold; }
+        /* ── PIED DE CARTE ── */
+        .c-foot    { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        .c-miss    { font-size: 8px; color: #a05c00; }
+        .c-gain    { font-size: 8px; color: #1a4a8a; text-align: right; font-weight: 600; }
+
+        /* ── FOOTER PAGE ── */
+        .pg-foot   { margin-top: 18px; border-top: 0.5px solid #ddd; padding-top: 6px; text-align: center; font-size: 8px; color: #bbb; }
     </style>
 </head>
 <body>
 
-<!-- HEADER -->
-<div class="header-band">
-    <h1>Groupement Union</h1>
-    <div class="sub">Rapport de Remises de Fin d'Annee (RFA)</div>
-</div>
-
-<div class="header-meta">
-    <strong>{{ entity_label }}</strong>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    {{ mode_label }} : {{ entity_id }}
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    Contrat : {{ contract_name }}
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    Genere le {{ date_generated }}
-</div>
-
-<!-- KPI CARDS -->
-<table class="kpi-table" cellpadding="0" cellspacing="6">
+<!-- ══ HEADER ══ -->
+<table class="hdr-table" cellpadding="0" cellspacing="0">
 <tr>
-    <td style="width:25%">
-        <div class="kpi-card">
-            <div class="kpi-label">Chiffre d'Affaires</div>
-            <div class="kpi-value blue">{{ format_amount(ca_total) }}</div>
-            <div class="kpi-sub">CA Global cumule</div>
+    <td style="vertical-align:bottom">
+        <div class="hdr-label">Espace Client &mdash; Recapitulatif RFA</div>
+        <div class="hdr-name">{{ entity_label }}</div>
+    </td>
+    <td class="hdr-right">
+        <div class="hdr-gu">Groupement Union</div>
+        <div>{{ date_generated }}</div>
+        <div>Contrat : {{ contract_name }}</div>
+    </td>
+</tr>
+</table>
+
+<!-- ══ KPI ══ -->
+<table class="kpi-table" cellpadding="0" cellspacing="7">
+<tr>
+    <td style="width:33%">
+        <div class="kpi-box">
+            <div class="kpi-lbl">Chiffre d'Affaires</div>
+            <div class="kpi-val">{{ format_amount(ca_total) }}</div>
+            <div class="kpi-sub">CA global cumule</div>
         </div>
     </td>
-    <td style="width:25%">
-        <div class="kpi-card green">
-            <div class="kpi-label">RFA Totale</div>
-            <div class="kpi-value green">{{ format_amount(rfa_total) }}</div>
+    <td style="width:33%">
+        <div class="kpi-box">
+            <div class="kpi-lbl">RFA Acquise</div>
+            <div class="kpi-val kpi-green">{{ format_amount(rfa_total) }}</div>
             <div class="kpi-sub">{{ format_percent(rfa_rate_global / 100) }} du CA</div>
         </div>
     </td>
-    <td style="width:25%">
-        <div class="kpi-card {% if near_count > 0 %}amber{% else %}gray{% endif %}">
-            <div class="kpi-label">Gain a portee</div>
-            <div class="kpi-value {% if near_count > 0 %}amber{% endif %}">{{ ('+' + format_amount(potential_gain_near)) if near_count > 0 else '—' }}</div>
+    <td style="width:33%">
+        <div class="kpi-box">
+            <div class="kpi-lbl">Gain Potentiel</div>
+            <div class="kpi-val kpi-blue">{{ ('+' + format_amount(potential_gain_near)) if near_count > 0 else '—' }}</div>
             <div class="kpi-sub">{{ near_count }} objectif(s) proche(s)</div>
-        </div>
-    </td>
-    <td style="width:25%">
-        <div class="kpi-card">
-            <div class="kpi-label">Progression globale</div>
-            <div class="kpi-value">{{ achieved_count }} / {{ total_objectives }}</div>
-            <div class="kpi-sub">objectifs atteints</div>
         </div>
     </td>
 </tr>
 </table>
 
-<!-- RÉSUMÉ -->
-<div class="summary-bar">
-    Synthese :&nbsp;
-    {% if achieved_count > 0 %}<span class="badge-inline badge-green"> {{ achieved_count }} atteint(s) </span>{% endif %}
-    {% if near_count > 0 %}<span class="badge-inline badge-amber"> {{ near_count }} proche(s) &nbsp;+{{ format_amount(potential_gain_near) }} </span>{% endif %}
-    <span class="badge-inline badge-gray"> {{ total_objectives }} objectif(s) au total </span>
+<!-- ══ SECTION PLATEFORMES ══ -->
+{% if global_rows %}
+<div class="sec-wrap">
+    <span class="sec-title">Objectifs Plateformes</span>
+    {% set g_ok = global_rows | selectattr('achieved') | list | length %}
+    {% if g_ok > 0 %}<span class="pill pill-g">{{ g_ok }} atteint(s)</span>{% endif %}
+    {% set g_run = global_rows | length - g_ok %}
+    {% if g_run > 0 %}<span class="pill pill-y">{{ g_run }} en cours</span>{% endif %}
 </div>
 
-<!-- SECTION PLATEFORMES -->
-{% if global_rows %}
-<table class="section-header" cellpadding="0" cellspacing="0" style="width:100%">
-    <tr><td class="section-blue">Objectifs Plateformes</td></tr>
-</table>
-<table class="data-table">
-    <thead>
-        <tr>
-            <th style="width:28%">Plateforme</th>
-            <th class="r" style="width:16%">CA realise</th>
-            <th class="r" style="width:11%">Taux</th>
-            <th class="r" style="width:14%">RFA acquise</th>
-            <th class="r" style="width:13%">Prochain palier</th>
-            <th class="r" style="width:10%">Gain potentiel</th>
-            <th style="width:8%">Avancement</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for row in global_rows %}
-    {% set pct = row.combined_progress|round(0)|int %}
-    {% if row.achieved %}
-    <tr class="row-achieved">
-    {% elif row.near %}
-    <tr class="row-near">
-    {% elif loop.index is odd %}
-    <tr class="row-normal">
-    {% else %}
-    <tr class="row-alt">
-    {% endif %}
+{% for row in global_rows %}
+{% set pct = row.combined_progress|round(0)|int %}
+{% set is_pri = row.near and not row.achieved %}
+<div class="card{% if is_pri %} card-pri{% endif %}">
+
+    <table class="card-top" cellpadding="0" cellspacing="0">
+    <tr>
         <td>
-            <strong>{{ row.label }}</strong>
-            {% if row.achieved %}
-            <span class="tag tag-green">Atteint</span>
-            {% elif row.near %}
-            <span class="tag tag-amber">Proche</span>
-            {% else %}
-            <span class="tag tag-blue">En cours</span>
-            {% endif %}
-            {% if row.has_override %}<span class="tag tag-violet">Perso</span>{% endif %}
-        </td>
-        <td class="r"><strong>{{ format_amount(row.ca) }}</strong></td>
-        <td class="r">
-            {% if row.next_combined_rate and not row.achieved %}
-                {{ format_percent(row.combined_rate) }}&nbsp;&rsaquo;&nbsp;<strong>{{ format_percent(row.next_combined_rate) }}</strong>
-            {% else %}
-                <strong>{{ format_percent(row.combined_rate) }}</strong>
-            {% endif %}
-        </td>
-        <td class="r"><strong>{{ format_amount(row.current_rfa_amount) }}</strong></td>
-        <td class="r">
-            {% if row.achieved %}
-                <span style="color:#15803d">&#10003; Maximum</span>
-            {% else %}
-                {{ format_amount(row.combined_next_min) }}
-                {% if row.missing_ca and row.missing_ca > 0 %}
-                <br><span style="font-size:7.5pt;color:#9ca3af">encore {{ format_amount(row.missing_ca) }}</span>
-                {% endif %}
-            {% endif %}
-        </td>
-        <td class="r">
-            {% if row.projected_gain and row.projected_gain > 0 and not row.achieved %}
-                <strong style="color:#15803d">+{{ format_amount(row.projected_gain) }}</strong>
-            {% else %}
-                —
-            {% endif %}
+            <span class="c-name">{{ row.label }}</span>
+            {% if is_pri %}<span class="c-tag">&#8599; Proche du seuil</span>{% endif %}
+            {% if row.has_override %}<span style="font-size:8px;color:#7c3aed;margin-left:4px;">&#9998; perso</span>{% endif %}
         </td>
         <td>
-            <div class="bar-outer">
-                {% if row.achieved %}
-                <div class="bar-inner-green" style="width:100%"></div>
-                {% elif row.near %}
-                <div class="bar-inner-amber" style="width:{{ pct }}%"></div>
-                {% else %}
-                <div class="bar-inner-blue" style="width:{{ pct }}%"></div>
-                {% endif %}
-            </div>
-            <span class="pct">{{ pct }}%</span>
+            {% if row.achieved %}
+            <span class="c-rfa-ok">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
+            {% else %}
+            <span class="c-rfa-run">{{ format_amount(row.current_rfa_amount) }}</span>
+            {% endif %}
         </td>
     </tr>
-    {% endfor %}
-    </tbody>
-</table>
+    </table>
+
+    <div class="c-meta">
+        CA : {{ format_amount(row.ca) }}
+        &nbsp;&bull;&nbsp;
+        Taux : {% if row.next_combined_rate and not row.achieved %}{{ format_percent(row.combined_rate) }} &rsaquo; <strong>{{ format_percent(row.next_combined_rate) }}</strong>{% else %}<strong>{{ format_percent(row.combined_rate) }}</strong>{% endif %}
+        &nbsp;&bull;&nbsp;
+        Progression : {{ pct }}%
+    </div>
+
+    <div class="bar-bg">
+        {% if row.achieved %}
+        <div class="bar-green" style="width:100%"></div>
+        {% elif pct >= 60 %}
+        <div class="bar-blue" style="width:{{ pct }}%"></div>
+        {% else %}
+        <div class="bar-amber" style="width:{{ pct }}%"></div>
+        {% endif %}
+    </div>
+
+    {% if not row.achieved %}
+    <table class="c-foot" cellpadding="0" cellspacing="0">
+    <tr>
+        <td class="c-miss">
+            {% if row.missing_ca and row.missing_ca > 0 %}
+            Il manque {{ format_amount(row.missing_ca) }} pour atteindre le seuil ({{ format_amount(row.combined_next_min) }})
+            {% endif %}
+        </td>
+        <td class="c-gain">
+            {% if row.projected_gain and row.projected_gain > 0 %}
+            Gain potentiel : +{{ format_amount(row.projected_gain) }}
+            {% endif %}
+        </td>
+    </tr>
+    </table>
+    {% endif %}
+
+</div>
+{% endfor %}
 {% endif %}
 
-<!-- SECTION TRI-PARTITES -->
+<!-- ══ SECTION TRI-PARTITES ══ -->
 {% if tri_rows %}
-<table class="section-header" cellpadding="0" cellspacing="0" style="width:100%; margin-top:10px">
-    <tr><td class="section-purple">Objectifs Tri-partites</td></tr>
-</table>
-<table class="data-table">
-    <thead>
-        <tr>
-            <th style="width:28%">Fournisseur / Programme</th>
-            <th class="r" style="width:16%">CA realise</th>
-            <th class="r" style="width:11%">Taux</th>
-            <th class="r" style="width:14%">RFA acquise</th>
-            <th class="r" style="width:13%">Prochain palier</th>
-            <th class="r" style="width:10%">Gain potentiel</th>
-            <th style="width:8%">Avancement</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for row in tri_rows %}
-    {% set pct = row.tri_progress.progress|round(0)|int %}
-    {% if row.achieved %}
-    <tr class="row-achieved">
-    {% elif row.near %}
-    <tr class="row-near">
-    {% elif loop.index is odd %}
-    <tr class="row-normal">
-    {% else %}
-    <tr class="row-alt">
-    {% endif %}
+<div class="sec-wrap">
+    <span class="sec-title">Objectifs Tri-partites</span>
+    {% set t_ok = tri_rows | selectattr('achieved') | list | length %}
+    {% if t_ok > 0 %}<span class="pill pill-g">{{ t_ok }} atteint(s)</span>{% endif %}
+    {% set t_run = tri_rows | length - t_ok %}
+    {% if t_run > 0 %}<span class="pill pill-y">{{ t_run }} en cours</span>{% endif %}
+</div>
+
+{% for row in tri_rows %}
+{% set pct = row.tri_progress.progress|round(0)|int %}
+{% set is_pri = row.near and not row.achieved %}
+<div class="card{% if is_pri %} card-pri{% endif %}">
+
+    <table class="card-top" cellpadding="0" cellspacing="0">
+    <tr>
         <td>
-            <strong>{{ row.label }}</strong>
-            {% if row.achieved %}
-            <span class="tag tag-green">Atteint</span>
-            {% elif row.near %}
-            <span class="tag tag-amber">Proche</span>
-            {% else %}
-            <span class="tag tag-blue">En cours</span>
-            {% endif %}
-            {% if row.has_override %}<span class="tag tag-violet">Perso</span>{% endif %}
-        </td>
-        <td class="r"><strong>{{ format_amount(row.ca) }}</strong></td>
-        <td class="r">
-            {% if row.next_min and not row.achieved and row.next_tri_rate is not none %}
-                {{ format_percent(row.rate) }}&nbsp;&rsaquo;&nbsp;<strong>{{ format_percent(row.next_tri_rate) }}</strong>
-            {% else %}
-                <strong>{{ format_percent(row.rate) }}</strong>
-            {% endif %}
-        </td>
-        <td class="r"><strong>{{ format_amount(row.current_rfa_amount) }}</strong></td>
-        <td class="r">
-            {% if row.achieved %}
-                <span style="color:#15803d">&#10003; Maximum</span>
-            {% else %}
-                {{ format_amount(row.next_min) }}
-                {% if row.missing_ca and row.missing_ca > 0 %}
-                <br><span style="font-size:7.5pt;color:#9ca3af">encore {{ format_amount(row.missing_ca) }}</span>
-                {% endif %}
-            {% endif %}
-        </td>
-        <td class="r">
-            {% if row.projected_gain and row.projected_gain > 0 and not row.achieved %}
-                <strong style="color:#15803d">+{{ format_amount(row.projected_gain) }}</strong>
-            {% else %}
-                —
-            {% endif %}
+            <span class="c-name">{{ row.label }}</span>
+            {% if is_pri %}<span class="c-tag">&#8599; Proche du seuil</span>{% endif %}
+            {% if row.has_override %}<span style="font-size:8px;color:#7c3aed;margin-left:4px;">&#9998; perso</span>{% endif %}
         </td>
         <td>
-            <div class="bar-outer">
-                {% if row.achieved %}
-                <div class="bar-inner-green" style="width:100%"></div>
-                {% elif row.near %}
-                <div class="bar-inner-amber" style="width:{{ pct }}%"></div>
-                {% else %}
-                <div class="bar-inner-blue" style="width:{{ pct }}%"></div>
-                {% endif %}
-            </div>
-            <span class="pct">{{ pct }}%</span>
+            {% if row.achieved %}
+            <span class="c-rfa-ok">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
+            {% else %}
+            <span class="c-rfa-run">{{ format_amount(row.current_rfa_amount) }}</span>
+            {% endif %}
         </td>
     </tr>
-    {% endfor %}
-    </tbody>
-</table>
+    </table>
+
+    <div class="c-meta">
+        CA : {{ format_amount(row.ca) }}
+        &nbsp;&bull;&nbsp;
+        Taux : {% if row.next_min and not row.achieved and row.next_tri_rate is not none %}{{ format_percent(row.rate) }} &rsaquo; <strong>{{ format_percent(row.next_tri_rate) }}</strong>{% else %}<strong>{{ format_percent(row.rate) }}</strong>{% endif %}
+        &nbsp;&bull;&nbsp;
+        Progression : {{ pct }}%
+    </div>
+
+    <div class="bar-bg">
+        {% if row.achieved %}
+        <div class="bar-green" style="width:100%"></div>
+        {% elif pct >= 60 %}
+        <div class="bar-blue" style="width:{{ pct }}%"></div>
+        {% else %}
+        <div class="bar-amber" style="width:{{ pct }}%"></div>
+        {% endif %}
+    </div>
+
+    {% if not row.achieved %}
+    <table class="c-foot" cellpadding="0" cellspacing="0">
+    <tr>
+        <td class="c-miss">
+            {% if row.missing_ca and row.missing_ca > 0 %}
+            Il manque {{ format_amount(row.missing_ca) }} pour atteindre le seuil ({{ format_amount(row.next_min) }})
+            {% endif %}
+        </td>
+        <td class="c-gain">
+            {% if row.projected_gain and row.projected_gain > 0 %}
+            Gain potentiel : +{{ format_amount(row.projected_gain) }}
+            {% endif %}
+        </td>
+    </tr>
+    </table>
+    {% endif %}
+
+</div>
+{% endfor %}
 {% endif %}
 
-<!-- FOOTER -->
-<div class="footer-band">
-    <span class="gu">Groupement Union</span>
-    &nbsp;—&nbsp; Rapport RFA confidentiel &nbsp;—&nbsp; {{ entity_label }} &nbsp;—&nbsp; {{ date_generated }}
+<!-- ══ FOOTER ══ -->
+<div class="pg-foot">
+    Document genere le {{ date_generated }} &mdash; Espace Client RFA &mdash; Groupement Union
 </div>
 
 </body>
 </html>
 """
-
 
 def generate_pdf_html(entity_data: Dict, mode: str) -> str:
     """
