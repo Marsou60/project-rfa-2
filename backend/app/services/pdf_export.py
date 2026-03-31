@@ -430,6 +430,19 @@ def format_percent(value: float) -> str:
     return f"{float(value) * 100:.2f}%"
 
 
+def get_client_ca_category_label(ca_global: Optional[float]) -> str:
+    """
+    Catégorie adhérent selon le CA global d'achat (tranches commerciales).
+    CLASSIQUE (1) : 0 € – 100 000 € | SILVER (2) : 100 001 € à 300 999,99 € | GOLD (3) : à partir de 301 000 €
+    """
+    ca = float(ca_global or 0)
+    if ca <= 100_000:
+        return "Client CLASSIQUE (1)"
+    if ca < 301_000:
+        return "Client SILVER (2)"
+    return "Client GOLD (3)"
+
+
 def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
     """
     Génère le HTML PDF identique à la page Espace Client : en-tête, KPI, badges, tableaux Plateformes et Tri-partites.
@@ -473,6 +486,7 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         mode_label="Client" if mode == "client" else "Groupe",
         date_generated=date_generated,
         ca_total=ca_total,
+        client_ca_category_label=get_client_ca_category_label(ca_total),
         rfa_total=rfa_total,
         rfa_rate_global=rfa_rate_global,
         potential_gain_near=potential_gain_near,
@@ -593,6 +607,7 @@ def _get_espace_client_template() -> str:
     <td style="width:33%; background:#f5f5f3; padding:16px 18px; vertical-align:top; border:1px solid #000000;">
         <div class="kpi-lbl">Chiffre d'Affaires</div>
         <div style="font-size:23px; font-weight:bold; color:#1a1a1a;">{{ format_amount(ca_total) }}</div>
+        <div style="font-size:10px; font-weight:600; color:#1a4a8a; margin-top:8px; line-height:1.35;">{{ client_ca_category_label }}</div>
         <div class="kpi-sub">CA global cumule</div>
     </td>
     <td style="width:33%; background:#f5f5f3; padding:16px 18px; vertical-align:top; border:1px solid #000000;">
