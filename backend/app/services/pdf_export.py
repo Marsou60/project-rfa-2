@@ -786,22 +786,6 @@ def _get_espace_client_template() -> str:
 </head>
 <body>
 
-{% macro cotisation_union_encadre_inner() %}
-        <div style="font-size:10px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; color:#5c4a1a; margin-bottom:6px;">Cotisation Union</div>
-        {% if cotisation_offerte %}
-        <p style="font-size:10px; color:#333; line-height:1.55; margin:0 0 8px 0; padding:0;"><strong>1. Référence — cotisation d'adhésion</strong> — Le montant de <strong>{{ format_amount(cotisation_amount) }}</strong> correspond à la cotisation habituellement exigible au titre de l'adhésion au réseau. Il est rappelé ici à titre <strong>strictement informatif</strong> pour situer la valeur de référence ; <strong>aucune somme complémentaire n'est due par l'adhérent</strong> sur ce poste dans le cadre du geste commercial décrit au point&nbsp;2.</p>
-        <p style="font-size:10px; color:#333; line-height:1.55; margin:0; padding:0;"><strong>2. Geste commercial — Groupement Union</strong> — Pour cette période, le Groupement Union <strong>prend en charge</strong> ce montant : il n'est <strong>ni facturé en sus</strong> à l'adhérent ni <strong>déduit</strong> de la RFA acquise. Le montant « RFA Acquise » ci-dessus reste <strong>intégral</strong>. Ce dispositif <strong>ne constitue pas un versement supplémentaire</strong> au profit de l'adhérent au-delà de la RFA indiquée.</p>
-        {% else %}
-        {# Paragraphes empilés (pas de tableau imbriqué) : xhtml2pdf omet souvent le contenu des &lt;table&gt; dans une cellule. #}
-        {% if cotisation_facturee %}
-        <p style="font-size:10px; color:#333; line-height:1.55; margin:0 0 8px 0; padding:0;"><strong>1. Facturation</strong> — La cotisation de <strong>{{ format_amount(cotisation_amount) }}</strong> est due au titre de l'adhésion au réseau ; elle figure explicitement sur ce rapport comme charge liée à l'adhésion (elle n'est pas présentée comme un montant gratuit).</p>
-        {% endif %}
-        {% if cotisation_deduite %}
-        <p style="font-size:10px; color:#333; line-height:1.55; margin:0; padding:0;"><strong>{% if cotisation_facturee %}2.{% else %}•{% endif %} Déduction RFA</strong> — Le même montant de <strong>{{ format_amount(cotisation_amount) }}</strong> est <strong>retenu</strong> sur la RFA brute : le montant reversé et la facture RFA s'entendent <strong>net</strong> après cette déduction (cf. « RFA Acquise » ci-dessus).</p>
-        {% endif %}
-        {% endif %}
-{% endmacro %}
-
 {% macro cotisation_union_detail_rows_table(rows) %}
 <table class="cotisation-detail-table" cellpadding="0" cellspacing="0" style="page-break-inside:avoid;">
     <thead>
@@ -916,21 +900,14 @@ def _get_espace_client_template() -> str:
 {% endif %}
 
 {% if cotisation_active and not global_rows and cotisation_offerte %}
-<table cellpadding="0" cellspacing="0" style="width:100%; margin-bottom:14px; border:1px solid #000000; border-collapse:collapse;">
-<tr>
-    <td style="padding:12px 14px; background:#fffbf3; vertical-align:top;">
-        {{ cotisation_union_encadre_inner() }}
-    </td>
-</tr>
-</table>
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
 {% endif %}
 
-<!-- ══ SECTION PLATEFORMES (+ cotisation à droite si activée) ══ -->
+<!-- ══ SECTION PLATEFORMES ══ -->
 {% if global_rows %}
 <table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
 <tr>
-    <td style="vertical-align:top; width:{% if cotisation_active and cotisation_offerte %}62%{% else %}100%{% endif %}; padding-right:{% if cotisation_active and cotisation_offerte %}10px{% else %}0{% endif %};">
+    <td style="vertical-align:top; width:100%; padding-right:0;">
         <div class="sec-wrap">
             <span class="sec-title">Objectifs Plateformes</span>
             {% set g_ok = global_rows | selectattr('achieved') | list | length %}
@@ -939,17 +916,6 @@ def _get_espace_client_template() -> str:
             {% if g_run > 0 %}<span class="pill pill-y">{{ g_run }} en cours</span>{% endif %}
         </div>
     </td>
-    {% if cotisation_active and cotisation_offerte %}
-    <td style="vertical-align:top; width:38%; padding-top:22px;">
-        <table cellpadding="0" cellspacing="0" style="width:100%; border:1px solid #000000; border-collapse:collapse;">
-        <tr>
-            <td style="padding:10px 12px; background:#fffbf3; vertical-align:top;">
-                {{ cotisation_union_encadre_inner() }}
-            </td>
-        </tr>
-        </table>
-    </td>
-    {% endif %}
 </tr>
 </table>
 
