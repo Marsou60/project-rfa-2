@@ -430,15 +430,39 @@ def format_percent(value: float) -> str:
     return f"{float(value) * 100:.2f}%"
 
 
-def build_pdf_hero_banner_data_uri() -> Optional[str]:
+def _pil_image_from_data_uri(data_uri: Optional[str]) -> Optional[Any]:
+    """Décode un data URI image (PNG/JPEG…) en Image PIL, ou None si illisible."""
+    if not data_uri or not str(data_uri).strip().startswith("data:"):
+        return None
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    s = str(data_uri).strip()
+    try:
+        comma = s.index(",")
+    except ValueError:
+        return None
+    try:
+        raw = base64.b64decode(s[comma + 1 :], validate=False)
+        im = Image.open(BytesIO(raw))
+        im.load()
+        return im
+    except Exception:
+        return None
+
+
+def build_pdf_hero_banner_data_uri(union_logo_data_uri: Optional[str] = None) -> Optional[str]:
     """
     Bandeau décoratif (dégradé bleu GU + liseré or) en PNG embarqué en data URI pour xhtml2pdf.
+    Si union_logo_data_uri est fourni (PNG/JPEG depuis collect_pdf_header_assets), le logo est centré dans la zone bleue.
     """
     try:
         from PIL import Image, ImageDraw
     except ImportError:
         return None
     w, h = 540, 70
+    blue_h = h - 5
     img = Image.new("RGB", (w, h))
     px = img.load()
     for x in range(w):
@@ -446,11 +470,31 @@ def build_pdf_hero_banner_data_uri() -> Optional[str]:
         r = int(22 + (45 - 22) * t)
         g = int(58 + (110 - 58) * t)
         b = int(118 + (175 - 118) * t)
-        for y in range(h - 5):
+        for y in range(blue_h):
             px[x, y] = (r, g, b)
     draw = ImageDraw.Draw(img)
     gold = (197, 165, 75)
     draw.rectangle([0, h - 5, w, h], fill=gold)
+
+    logo_im = _pil_image_from_data_uri(union_logo_data_uri)
+    if logo_im is not None:
+        try:
+            logo_rgba = logo_im.convert("RGBA")
+            pad_x, pad_y = int(w * 0.06), 6
+            max_w = w - 2 * pad_x
+            max_h = max(1, blue_h - 2 * pad_y)
+            logo_rgba.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+            lw, lh = logo_rgba.size
+            lx = (w - lw) // 2
+            ly = pad_y + (max_h - lh) // 2
+            layer = img.convert("RGBA")
+            layer.paste(logo_rgba, (lx, ly), logo_rgba)
+            img = layer.convert("RGB")
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([0, h - 5, w, h], fill=gold)
+        except Exception as e:
+            _LOG.debug("PDF hero banner: logo Union ignoré: %s", e)
+
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
@@ -504,7 +548,7 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         entity_label = entity_data.get("groupe_client") or entity_id
 
     date_generated = datetime.now().strftime("%d/%m/%Y")
-    hero_banner_data_uri = build_pdf_hero_banner_data_uri()
+    hero_banner_data_uri = build_pdf_hero_banner_data_uri(header_assets.get("union_logo_data_uri"))
 
     template_str = _get_espace_client_template()
     template = Template(template_str)
