@@ -464,6 +464,8 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
 
     ca_total = entity_data.get("ca", {}).get("totals", {}).get("global_total", 0) or 0
     rfa_total = entity_data.get("rfa", {}).get("totals", {}).get("grand_total", 0) or 0
+    rfa_total_ht = float(rfa_total or 0)
+    rfa_total_ttc = rfa_total_ht * 1.2
     rfa_rate_global = (rfa_total / ca_total * 100) if ca_total > 0 else 0
     potential_gain_near = sum(r.get("projected_gain") or 0 for r in global_rows if r.get("near")) + sum(r.get("projected_gain") or 0 for r in tri_rows if r.get("near"))
     achieved_count = sum(1 for r in global_rows if r.get("achieved")) + sum(1 for r in tri_rows if r.get("achieved"))
@@ -488,6 +490,8 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         ca_total=ca_total,
         client_ca_category_label=get_client_ca_category_label(ca_total),
         rfa_total=rfa_total,
+        rfa_invoice_ht_formatted=format_amount(rfa_total_ht),
+        rfa_invoice_ttc_formatted=format_amount(rfa_total_ttc),
         rfa_rate_global=rfa_rate_global,
         potential_gain_near=potential_gain_near,
         near_count=near_count,
@@ -549,6 +553,12 @@ def _get_espace_client_template() -> str:
         .c-foot    { width: 100%; border-collapse: collapse; margin-top: 6px; padding-top: 8px; }
         .c-miss    { font-size: 10px; color: #a05c00; line-height: 1.5; }
         .c-gain    { font-size: 10px; color: #1a4a8a; text-align: right; font-weight: 600; line-height: 1.5; }
+
+        /* ── MESSAGE DE CLÔTURE ── */
+        .pdf-message { margin-top: 20px; padding: 14px 16px; border: 1px solid #000000; background: #f9f9f7; font-size: 9px; line-height: 1.65; color: #222; text-align: justify; }
+        .pdf-message p { margin: 0 0 11px 0; }
+        .pdf-message p:last-child { margin-bottom: 0; }
+        .pdf-message strong { color: #1a1a1a; }
 
         /* ── FOOTER PAGE ── */
         .pg-foot   { border-top: 1px solid #000000; padding-top: 10px; text-align: center; font-size: 9px; color: #555; }
@@ -740,6 +750,27 @@ def _get_espace_client_template() -> str:
 {% endif %}
 
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:22px;font-size:1px;">&nbsp;</td></tr></table>
+
+<!-- ══ MESSAGE ADHÉRENT ══ -->
+<div class="pdf-message">
+    <p>
+        Nous vous remercions de nous adresser la facture au nom de <strong>Groupement Union</strong>,
+        d'un montant de <strong>{{ rfa_invoice_ttc_formatted }} TTC</strong>
+        (montant RFA calculé hors taxes&nbsp;: {{ rfa_invoice_ht_formatted }} ; TVA 20&nbsp;% appliquée pour le total TTC).
+    </p>
+    <p>
+        Si ce n'est pas encore fait, merci également de nous transmettre votre <strong>RIB</strong>,
+        un extrait <strong>Kbis</strong> à jour ainsi que votre dernier <strong>bilan</strong>.
+    </p>
+    <p>
+        Le <strong>Groupement Union</strong> est fier de vous présenter son nouveau contrat, en adéquation avec les évolutions du marché&nbsp;:
+        une rémunération évolutive qui reconnaît le réseau dans son intégralité.
+        Tout est lié&nbsp;: lorsque vous achetez au sein du réseau, c'est l'ensemble de votre rémunération qui progresse.
+        Merci de votre confiance et de votre engagement aux côtés du Groupement Union.
+    </p>
+</div>
+
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:14px;font-size:1px;">&nbsp;</td></tr></table>
 
 <!-- ══ FOOTER ══ -->
 <div class="pg-foot">
