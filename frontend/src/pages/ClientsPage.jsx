@@ -112,12 +112,11 @@ function ClientsPage({ importId }) {
         map[item.entity_key] = { amount: item.amount, facturee: item.facturee, deduite: item.deduite }
       }
       setCotisationAmounts(map)
-      // Sync localStorage en cache pour l'espace client (cotisationStorage.js)
       if (importId) {
         try { localStorage.setItem(`cotisation_amounts_${importId}`, JSON.stringify(map)) } catch (_) {}
       }
     } catch (e) {
-      console.error('Erreur chargement cotisations:', e)
+      console.error('Erreur chargement cotisations API:', e)
       // Fallback localStorage
       if (importId) {
         const stored = localStorage.getItem(`cotisation_amounts_${importId}`)
@@ -128,31 +127,35 @@ function ClientsPage({ importId }) {
     }
   }
 
-  const updateCotisationAmount = async (entityKey, data) => {
+  const updateCotisationAmount = (entityKey, data) => {
     if (!entityKey) return
     const canonical = normalizeValue(entityKey)
     if (!canonical) return
+    // Mise à jour optimiste : état immédiat + localStorage, API en arrière-plan
     const next = { ...cotisationAmounts }
-    // Supprimer les anciennes clés (groupe) avant mise à jour
     for (const k of Object.keys(next)) {
       if (normalizeValue(k) === canonical) delete next[k]
     }
-    try {
-      if (!data || !data.amount || Number(data.amount) <= 0) {
-        await deleteCotisation(mode, canonical)
-      } else {
-        const entry = { amount: Number(data.amount), facturee: Boolean(data.facturee), deduite: Boolean(data.deduite) }
-        await upsertCotisation(mode, canonical, entry)
-        next[canonical] = entry
+    if (data && data.amount && Number(data.amount) > 0) {
+      next[canonical] = {
+        amount: Number(data.amount),
+        facturee: Boolean(data.facturee),
+        deduite: Boolean(data.deduite),
       }
-    } catch (e) {
-      console.error('Erreur sauvegarde cotisation:', e)
     }
     setCotisationAmounts(next)
-    // Sync cache localStorage
     if (importId) {
       try { localStorage.setItem(`cotisation_amounts_${importId}`, JSON.stringify(next)) } catch (_) {}
     }
+    // Persistance DB en arrière-plan (ne bloque pas l'UI)
+    const apiCall = !data || !data.amount || Number(data.amount) <= 0
+      ? deleteCotisation(mode, canonical)
+      : upsertCotisation(mode, canonical, {
+          amount: Number(data.amount),
+          facturee: Boolean(data.facturee),
+          deduite: Boolean(data.deduite),
+        })
+    apiCall.catch((e) => console.warn('Cotisation DB sync failed (local still updated):', e))
   }
 
   const saveCalculatedClient = (entityId) => {
