@@ -2,7 +2,11 @@
 Service d'export PDF pour les rapports RFA clients.
 Export "Espace Client" : rendu identique à la page Espace Client.
 """
+import base64
 import json
+import logging
+import mimetypes
+import os
 from typing import Dict, Optional, List, Tuple, Any
 from io import BytesIO
 from jinja2 import Template
@@ -18,6 +22,167 @@ from app.services.rfa_calculator import load_contract_rules, load_entity_overrid
 from app.storage import get_import, ImportData
 from app.core.fields import get_global_fields, get_tri_fields, get_field_by_key
 from datetime import datetime
+
+_LOG = logging.getLogger(__name__)
+_MAX_PARTNER_LOGOS = 12
+
+
+def _local_path_from_api_uploads(url: str) -> Optional[str]:
+    """Convertit /api/uploads/... vers un chemin disque (backend local)."""
+    if not url or not url.startswith("/api/uploads/"):
+        return None
+    try:
+        from app.database import UPLOADS_DIR, LOGOS_DIR, AVATARS_DIR, SUPPLIER_LOGOS_DIR
+    except Exception:
+        return None
+    rest = url[len("/api/uploads/") :].lstrip("/")
+    if "/" not in rest:
+        return None
+    folder, filename = rest.split("/", 1)
+    dir_map = {
+        "logos": LOGOS_DIR,
+        "ads": UPLOADS_DIR,
+        "avatars": AVATARS_DIR,
+        "supplier-logos": SUPPLIER_LOGOS_DIR,
+    }
+    base = dir_map.get(folder)
+    if not base:
+        return None
+    path = os.path.normpath(os.path.join(base, filename))
+    if not path.startswith(os.path.normpath(base)):
+        return None
+    return path if os.path.isfile(path) else None
+
+
+def _fetch_image_as_data_uri(ref: str) -> Optional[str]:
+    """
+    Charge une image (URL absolue ou fichier local via /api/uploads/...) et retourne un data URI
+    pour xhtml2pdf (évite les requêtes HTTP pendant CreatePDF).
+    """
+    ref = (ref or "").strip()
+    if not ref:
+        return None
+    try:
+        import requests
+    except ImportError:
+        requests = None  # type: ignore
+
+    raw: Optional[bytes] = None
+    mime = "image/png"
+
+    try:
+        if ref.startswith("/api/uploads/"):
+            path = _local_path_from_api_uploads(ref)
+            if not path:
+                return None
+            with open(path, "rb") as f:
+                raw = f.read()
+            guessed, _ = mimetypes.guess_type(path)
+            if guessed:
+                mime = guessed
+        elif ref.startswith("http://") or ref.startswith("https://"):
+            if not requests:
+                return None
+            r = requests.get(ref, timeout=20)
+            r.raise_for_status()
+            raw = r.content
+            ct = (r.headers.get("Content-Type") or "").split(";")[0].strip()
+            if ct and ct != "application/octet-stream":
+                mime = ct
+            else:
+                guessed, _ = mimetypes.guess_type(ref.split("?", 1)[0])
+                if guessed:
+                    mime = guessed
+        else:
+            return None
+    except Exception as e:
+        _LOG.debug("PDF: impossible de charger l'image %s: %s", ref, e)
+        return None
+
+    if not raw:
+        return None
+    if mime == "image/svg+xml":
+        return None
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+def collect_pdf_header_assets() -> Dict[str, Any]:
+    """
+    Logos pour l'en-tête PDF : société (AppSettings company_logo), annonces type logo (publicité),
+    logos fournisseurs actifs. Retourne des data URI prêts pour <img src="...">.
+    """
+    out: Dict[str, Any] = {"union_logo_data_uri": None, "partner_logo_data_uris": []}
+    try:
+        from sqlmodel import Session, select
+        from app.database import engine
+        from app.models import AppSettings, Ad, SupplierLogo
+    except Exception as e:
+        _LOG.debug("PDF header assets: import/session indisponible: %s", e)
+        return out
+
+    union_uri: Optional[str] = None
+    partner_uris: List[str] = []
+    seen_raw: set = set()
+    now = datetime.now()
+
+    try:
+        with Session(engine) as session:
+            st = session.exec(select(AppSettings).where(AppSettings.key == "company_logo")).first()
+            company_raw = (st.value or "").strip() if st else ""
+            if company_raw:
+                seen_raw.add(company_raw)
+                union_uri = _fetch_image_as_data_uri(company_raw)
+
+            ads = session.exec(
+                select(Ad)
+                .where(
+                    Ad.is_active == True,  # noqa: E712
+                    (Ad.start_at == None) | (Ad.start_at <= now),  # noqa: E711
+                    (Ad.end_at == None) | (Ad.end_at >= now),  # noqa: E711
+                )
+                .order_by(Ad.sort_order, Ad.created_at.desc())
+            ).all()
+
+            for ad in ads:
+                if len(partner_uris) >= _MAX_PARTNER_LOGOS:
+                    break
+                if not ad.image_url:
+                    continue
+                if getattr(ad, "kind", None) and ad.kind != "logo":
+                    continue
+                u = ad.image_url.strip()
+                if not u or u in seen_raw:
+                    continue
+                seen_raw.add(u)
+                data = _fetch_image_as_data_uri(u)
+                if data:
+                    partner_uris.append(data)
+
+            sups = session.exec(
+                select(SupplierLogo)
+                .where(SupplierLogo.is_active == True)  # noqa: E712
+                .order_by(SupplierLogo.supplier_key)
+            ).all()
+            for sl in sups:
+                if len(partner_uris) >= _MAX_PARTNER_LOGOS:
+                    break
+                if not sl.image_url:
+                    continue
+                u = sl.image_url.strip()
+                if not u or u in seen_raw:
+                    continue
+                seen_raw.add(u)
+                data = _fetch_image_as_data_uri(u)
+                if data:
+                    partner_uris.append(data)
+    except Exception as e:
+        _LOG.warning("PDF header assets: lecture BDD échouée: %s", e)
+        return out
+
+    out["union_logo_data_uri"] = union_uri
+    out["partner_logo_data_uris"] = partner_uris
+    return out
 
 
 def _parse_tiers(tiers_json: Optional[str]) -> List[Dict[str, float]]:
@@ -250,6 +415,7 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         entity_label = entity_data.get("groupe_client") or entity_id
 
     date_generated = datetime.now().strftime("%d/%m/%Y")
+    header_assets = collect_pdf_header_assets()
 
     template_str = _get_espace_client_template()
     template = Template(template_str)
@@ -270,6 +436,8 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         tri_rows=tri_rows,
         format_amount=format_amount,
         format_percent=format_percent,
+        union_logo_data_uri=header_assets.get("union_logo_data_uri"),
+        partner_logo_data_uris=header_assets.get("partner_logo_data_uris") or [],
     )
     return html_content
 
@@ -288,10 +456,11 @@ def _get_espace_client_template() -> str:
         body { font-family: Helvetica, Arial, sans-serif; font-size: 10px; color: #1a1a1a; background: white; line-height: 1.6; }
 
         /* ── HEADER ── */
-        .hdr-table  { width: 100%; border-collapse: collapse; padding-bottom: 12px; border-bottom: 2px solid #1a1a1a; margin-bottom: 14px; }
-        .hdr-label  { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: #aaa; margin-bottom: 6px; }
-        .hdr-right  { text-align: right; vertical-align: bottom; font-size: 8px; color: #777; }
+        .hdr-table  { width: 100%; border-collapse: collapse; padding-bottom: 12px; border-bottom: 2px solid #000000; margin-bottom: 14px; }
+        .hdr-label  { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 6px; }
+        .hdr-right  { text-align: right; vertical-align: bottom; font-size: 8px; color: #333; }
         .hdr-gu     { font-size: 9px; font-weight: bold; color: #1a1a1a; }
+        .logo-band  { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
 
         /* ── KPI ── */
         .kpi-table { width: 100%; border-collapse: separate; border-spacing: 10px; margin-bottom: 16px; }
@@ -299,18 +468,18 @@ def _get_espace_client_template() -> str:
         .kpi-sub   { font-size: 8px; color: #aaa; margin-top: 2px; }
 
         /* ── SECTION ── */
-        .sec-wrap  { padding-bottom: 6px; border-bottom: 0.5px solid #ddd; margin-top: 18px; margin-bottom: 10px; }
+        .sec-wrap  { padding-bottom: 6px; border-bottom: 1px solid #000000; margin-top: 18px; margin-bottom: 10px; }
         .sec-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #555; }
         .pill      { font-size: 8px; padding: 2px 7px; margin-left: 5px; }
         .pill-g    { background: #d4edda; color: #155724; }
         .pill-y    { background: #fff3cd; color: #856404; }
 
         /* ── CARDS ── */
-        .card      { border: 0.5px solid #e0e0e0; border-left: 3px solid #e0e0e0; page-break-inside: avoid; }
+        .card      { border: 1px solid #000000; border-left: 3px solid #000000; page-break-inside: avoid; }
         .card-pri  { border-left: 3px solid #1a4a8a; }
         .card-top  { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
         .c-tag     { font-size: 8px; color: #1a4a8a; margin-left: 4px; }
-        .c-rfa-run { font-size: 9px; color: #888; text-align: right; }
+        .c-rfa-run { font-size: 9px; color: #333; text-align: right; }
         .c-meta    { font-size: 9px; color: #666; margin-bottom: 6px; }
 
         /* ── PIED DE CARTE ── */
@@ -319,10 +488,38 @@ def _get_espace_client_template() -> str:
         .c-gain    { font-size: 9px; color: #1a4a8a; text-align: right; font-weight: 600; }
 
         /* ── FOOTER PAGE ── */
-        .pg-foot   { border-top: 0.5px solid #ddd; padding-top: 8px; text-align: center; font-size: 8px; color: #bbb; }
+        .pg-foot   { border-top: 1px solid #000000; padding-top: 8px; text-align: center; font-size: 8px; color: #555; }
     </style>
 </head>
 <body>
+
+{% if union_logo_data_uri or partner_logo_data_uris %}
+<table class="logo-band" cellpadding="0" cellspacing="0">
+{% if union_logo_data_uri %}
+<tr>
+    <td style="text-align:center; padding-bottom:10px; vertical-align:middle;">
+        <img src="{{ union_logo_data_uri }}" alt="" style="max-height:48px; max-width:220px;" />
+    </td>
+</tr>
+{% endif %}
+{% if partner_logo_data_uris %}
+<tr>
+    <td style="text-align:center; vertical-align:middle;">
+        <table cellpadding="6" cellspacing="0" style="margin:0 auto; border-collapse:separate;">
+        <tr>
+            {% for plogo in partner_logo_data_uris %}
+            <td style="text-align:center; vertical-align:middle; border:1px solid #000000; padding:6px 10px;">
+                <img src="{{ plogo }}" alt="" style="max-height:36px; max-width:100px;" />
+            </td>
+            {% endfor %}
+        </tr>
+        </table>
+    </td>
+</tr>
+{% endif %}
+</table>
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:8px;font-size:1px;">&nbsp;</td></tr></table>
+{% endif %}
 
 <!-- ══ HEADER ══ -->
 <table class="hdr-table" cellpadding="0" cellspacing="0">
@@ -344,17 +541,17 @@ def _get_espace_client_template() -> str:
 <!-- ══ KPI ══ -->
 <table class="kpi-table" cellpadding="0" cellspacing="10">
 <tr>
-    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top;">
+    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top; border:1px solid #000000;">
         <div class="kpi-lbl">Chiffre d'Affaires</div>
         <div style="font-size:22px; font-weight:bold; color:#1a1a1a;">{{ format_amount(ca_total) }}</div>
         <div class="kpi-sub">CA global cumule</div>
     </td>
-    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top;">
+    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top; border:1px solid #000000;">
         <div class="kpi-lbl">RFA Acquise</div>
         <div style="font-size:22px; font-weight:bold; color:#1a7a45;">{{ format_amount(rfa_total) }}</div>
         <div class="kpi-sub">{{ format_percent(rfa_rate_global / 100) }} du CA</div>
     </td>
-    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top;">
+    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top; border:1px solid #000000;">
         <div class="kpi-lbl">Gain Potentiel</div>
         <div style="font-size:22px; font-weight:bold; color:#1a4a8a;">{{ ('+' + format_amount(potential_gain_near)) if near_count > 0 else '—' }}</div>
         <div class="kpi-sub">{{ near_count }} objectif(s) proche(s)</div>
