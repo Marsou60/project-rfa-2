@@ -348,6 +348,18 @@ def _build_global_rows(entity_data: Dict, rules_map: Dict) -> List[Dict]:
         projected_gain = max((projected_rfa or 0) - current_value, 0) if projected_rfa is not None else None
         achieved = combined_next_min is None and (rfa_prog["min_reached"] is not None or bonus_prog["min_reached"] is not None)
         near = combined_next_min is not None and combined_progress >= 80
+        display_rate_ratio = float(combined_rate) if achieved else 0.0
+        palier_detail_lines = _build_global_palier_pdf_lines(
+            ca=ca,
+            tiers_rfa=tiers_rfa,
+            tiers_bonus=tiers_bonus,
+            achieved=achieved,
+            combined_next_min=combined_next_min,
+            missing_ca=missing_ca,
+            next_combined_rate=next_combined_rate,
+            combined_rate=combined_rate,
+            projected_gain=projected_gain,
+        )
 
         rows.append({
             "key": key,
@@ -355,6 +367,7 @@ def _build_global_rows(entity_data: Dict, rules_map: Dict) -> List[Dict]:
             "ca": ca,
             "current_rfa_amount": current_value,
             "combined_rate": combined_rate,
+            "display_rate_ratio": display_rate_ratio,
             "next_combined_rate": next_combined_rate,
             "combined_next_min": combined_next_min,
             "combined_progress": combined_progress,
@@ -363,6 +376,7 @@ def _build_global_rows(entity_data: Dict, rules_map: Dict) -> List[Dict]:
             "achieved": achieved,
             "near": near,
             "has_override": rule.get("has_override_rfa") or rule.get("has_override_bonus"),
+            "palier_detail_lines": palier_detail_lines,
         })
     return rows
 
@@ -428,6 +442,55 @@ def format_percent(value: float) -> str:
     if value is None or value == 0:
         return "0.00%"
     return f"{float(value) * 100:.2f}%"
+
+
+def _upcoming_palier_mins(ca: float, tiers_rfa: List[Dict], tiers_bonus: List[Dict], limit: int = 5) -> List[float]:
+    """Seuils de CA strictement au-dessus du CA actuel (union RFA + bonus)."""
+    mins_set: set = set()
+    for t in tiers_rfa:
+        m = t.get("min")
+        if m is not None and float(m) > ca:
+            mins_set.add(float(m))
+    for t in tiers_bonus:
+        m = t.get("min")
+        if m is not None and float(m) > ca:
+            mins_set.add(float(m))
+    return sorted(mins_set)[:limit]
+
+
+def _build_global_palier_pdf_lines(
+    ca: float,
+    tiers_rfa: List[Dict],
+    tiers_bonus: List[Dict],
+    achieved: bool,
+    combined_next_min: Optional[float],
+    missing_ca: Optional[float],
+    next_combined_rate: Optional[float],
+    combined_rate: float,
+    projected_gain: Optional[float],
+) -> List[str]:
+    """Textes courts pour le bloc « paliers » sous chaque objectif plateforme (PDF)."""
+    lines: List[str] = []
+    if achieved:
+        lines.append(f"Palier atteint — taux appliqué : {format_percent(combined_rate)}.")
+        return lines
+    upcoming = _upcoming_palier_mins(ca, tiers_rfa, tiers_bonus, limit=6)
+    if combined_next_min is not None:
+        lines.append(f"Prochain seuil : CA ≥ {format_amount(combined_next_min)}.")
+        if missing_ca is not None and missing_ca > 0:
+            lines.append(f"Il manque {format_amount(missing_ca)} de CA pour l'atteindre.")
+        if next_combined_rate is not None:
+            lines.append(f"Au prochain seuil, taux RFA + bonus : {format_percent(next_combined_rate)}.")
+        if projected_gain is not None and projected_gain > 0:
+            lines.append(f"Gain RFA potentiel à ce seuil : +{format_amount(projected_gain)}.")
+    if len(upcoming) > 1:
+        rest = upcoming[1:4]
+        if rest:
+            parts = [format_amount(x) for x in rest]
+            lines.append("Seuils suivants : " + " · ".join(parts) + ".")
+    elif combined_next_min is None and not upcoming:
+        lines.append("Aucun palier supplémentaire au-delà du CA actuel.")
+    return lines
 
 
 def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
@@ -555,8 +618,8 @@ def _get_espace_client_template() -> str:
         <table cellpadding="0" cellspacing="0" style="margin:0 auto; border-collapse:separate; border-spacing:10px;">
         <tr>
             {% for plogo in partner_logo_data_uris %}
-            <td style="text-align:center; vertical-align:middle; border:1px solid #000000; padding:12px 16px; background:#fafafa;">
-                <img src="{{ plogo }}" alt="" style="max-height:52px; max-width:130px;" />
+            <td style="text-align:center; vertical-align:middle; border:1px solid #000000; padding:10px 14px; background:#fafafa;">
+                <img src="{{ plogo }}" alt="" style="max-height:76px; max-width:200px;" />
             </td>
             {% endfor %}
         </tr>
@@ -621,72 +684,57 @@ def _get_espace_client_template() -> str:
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
 
 {% for row in global_rows %}
-{% set pct = row.combined_progress|round(0)|int %}
 {% set is_pri = row.near and not row.achieved %}
 <div class="card{% if is_pri %} card-pri{% endif %}" style="margin-bottom:18px; padding:16px 18px;">
 
-    <table class="card-top" cellpadding="0" cellspacing="0">
+    <table class="card-top" cellpadding="0" cellspacing="0" style="width:100%;">
     <tr>
-        <td style="width:64px; vertical-align:middle; padding-right:12px;">
+        <td style="width:68px; vertical-align:top; padding-right:14px;">
             {% if row.supplier_logo_data_uri %}
-            <img src="{{ row.supplier_logo_data_uri }}" alt="" style="max-height:48px; max-width:58px;" />
+            <img src="{{ row.supplier_logo_data_uri }}" alt="" style="max-height:52px; max-width:64px;" />
             {% else %}
             <span style="font-size:1px;">&nbsp;</span>
             {% endif %}
         </td>
-        <td style="vertical-align:middle;">
-            <span style="font-size:12px; font-weight:600; color:#1a1a1a;">{{ row.label }}</span>
-            {% if is_pri %}<span class="c-tag">&#8599; Proche du seuil</span>{% endif %}
-            {% if row.has_override %}<span style="font-size:9px;color:#7c3aed;margin-left:5px;">&#9998; perso</span>{% endif %}
-        </td>
-        <td style="text-align:right; vertical-align:middle;">
-            {% if row.achieved %}
-            <span style="font-size:13px; font-weight:700; color:#1a7a45;">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
-            {% else %}
-            <span class="c-rfa-run">{{ format_amount(row.current_rfa_amount) }}</span>
+        <td style="vertical-align:top;">
+            <div style="font-size:12px; font-weight:600; color:#1a1a1a; margin-bottom:12px;">
+                {{ row.label }}
+                {% if row.has_override %}<span style="font-size:9px;color:#7c3aed;margin-left:6px;">&#9998; perso</span>{% endif %}
+                {% if is_pri %}<span class="c-tag">&#8599; Proche du seuil</span>{% endif %}
+            </div>
+
+            <table cellpadding="0" cellspacing="0" style="width:100%; margin-bottom:12px;">
+            <tr>
+                <td style="width:50%; vertical-align:top; padding-right:8px;">
+                    <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin-bottom:4px;">CA plateforme</div>
+                    <div style="font-size:13px; font-weight:600; color:#1a1a1a;">{{ format_amount(row.ca) }}</div>
+                </td>
+                <td style="width:50%; vertical-align:top;">
+                    <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin-bottom:4px;">Taux</div>
+                    <div style="font-size:13px; font-weight:600; color:#1a1a1a;">{{ format_percent(row.display_rate_ratio) }}</div>
+                </td>
+            </tr>
+            </table>
+
+            <div style="margin-bottom:10px;">
+                <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:#555; margin-bottom:4px;">Montant RFA</div>
+                {% if row.achieved %}
+                <span style="font-size:14px; font-weight:700; color:#1a7a45;">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
+                {% else %}
+                <span style="font-size:14px; font-weight:700; color:#1a1a1a;">{{ format_amount(row.current_rfa_amount) }}</span>
+                {% endif %}
+            </div>
+
+            {% if row.palier_detail_lines %}
+            <div style="border-top:1px solid #000000; padding-top:10px; margin-top:4px;">
+                {% for line in row.palier_detail_lines %}
+                <div style="font-size:10px; color:#333; line-height:1.5; padding:3px 0;">{{ line }}</div>
+                {% endfor %}
+            </div>
             {% endif %}
         </td>
     </tr>
     </table>
-
-    <div class="c-meta">
-        CA : {{ format_amount(row.ca) }}
-        &nbsp;&bull;&nbsp;
-        Taux : {% if row.next_combined_rate and not row.achieved %}{{ format_percent(row.combined_rate) }} &rsaquo; <strong>{{ format_percent(row.next_combined_rate) }}</strong>{% else %}<strong>{{ format_percent(row.combined_rate) }}</strong>{% endif %}
-        &nbsp;&bull;&nbsp;
-        Progression : {{ pct }}%
-    </div>
-
-    <table cellpadding="0" cellspacing="0" style="width:100%; margin:8px 0 10px 0;">
-    <tr>
-        {% if row.achieved %}
-        <td style="width:100%; background:#1a7a45; height:8px; font-size:1px;">&nbsp;</td>
-        {% elif pct >= 60 %}
-        <td style="width:{{ pct }}%; background:#1a4a8a; height:8px; font-size:1px;">&nbsp;</td>
-        <td style="background:#ebebeb; height:8px; font-size:1px;">&nbsp;</td>
-        {% else %}
-        <td style="width:{{ pct }}%; background:#c07800; height:8px; font-size:1px;">&nbsp;</td>
-        <td style="background:#ebebeb; height:8px; font-size:1px;">&nbsp;</td>
-        {% endif %}
-    </tr>
-    </table>
-
-    {% if not row.achieved %}
-    <table class="c-foot" cellpadding="0" cellspacing="0">
-    <tr>
-        <td class="c-miss">
-            {% if row.missing_ca and row.missing_ca > 0 %}
-            Il manque {{ format_amount(row.missing_ca) }} pour atteindre le seuil ({{ format_amount(row.combined_next_min) }})
-            {% endif %}
-        </td>
-        <td class="c-gain">
-            {% if row.projected_gain and row.projected_gain > 0 %}
-            Gain potentiel : +{{ format_amount(row.projected_gain) }}
-            {% endif %}
-        </td>
-    </tr>
-    </table>
-    {% endif %}
 
 </div>
 {% endfor %}
