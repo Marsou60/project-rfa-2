@@ -21,6 +21,17 @@ class SyncFromSheetsRequest(BaseModel):
     sheet_name: Optional[str] = None  # ex. "Feuille1" ; si absent = première feuille
 
 
+class EntityPdfExportBody(BaseModel):
+    """Export PDF entité (client/groupe) — POST : cotisation et booléens fiables (évite perte de query GET)."""
+    mode: str
+    entity_id: str = Field(..., description="code_union (client) ou groupe_client (groupe)")
+    contract_id: Optional[int] = None
+    cotisation_amount: Optional[float] = Field(default=None, ge=0)
+    cotisation_facturee: Optional[bool] = None
+    cotisation_deduite: Optional[bool] = None
+    cotisation_mode: Optional[str] = None
+
+
 class ClientSummary(BaseModel):
     """Résumé client pour la liste."""
     code_union: str

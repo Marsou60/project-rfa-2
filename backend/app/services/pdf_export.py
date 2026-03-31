@@ -430,6 +430,43 @@ def format_percent(value: float) -> str:
     return f"{float(value) * 100:.2f}%"
 
 
+def build_cotisation_pdf_detail_rows(
+    mode: str,
+    c_amt: float,
+    cotisation_active: bool,
+    cotisation_offerte: bool,
+    c_ded: bool,
+) -> List[Dict[str, Any]]:
+    """
+    Lignes type tableau « Détail des RFA » pour la cotisation (réf. capture utilisateur) :
+    - Geste commercial : « Facturée » (-montant) + « Offerte » (+montant), CA = montant, taux 0 %.
+    - Facturation avec déduction : une ligne « Facturée » (-montant) seule.
+    """
+    if mode not in ("client", "group") or not cotisation_active or c_amt <= 0:
+        return []
+    specs: List[Tuple[str, float, float, float]] = []
+    if cotisation_offerte:
+        specs.append(("Cotisation Union - Facturée", c_amt, 0.0, -c_amt))
+        specs.append(("Cotisation Union - Offerte", c_amt, 0.0, c_amt))
+    elif c_ded:
+        specs.append(("Cotisation Union - Facturée", c_amt, 0.0, -c_amt))
+    out: List[Dict[str, Any]] = []
+    for label, ca, rate, val in specs:
+        out.append(
+            {
+                "label": label,
+                "ca": ca,
+                "rate": rate,
+                "value": val,
+                "ca_formatted": format_amount(ca),
+                "rate_formatted": format_percent(rate),
+                "value_formatted": format_amount(val),
+                "cotisation_row": True,
+            }
+        )
+    return out
+
+
 def _pil_image_from_data_uri(data_uri: Optional[str]) -> Optional[Any]:
     """Décode un data URI image (PNG/JPEG…) en Image PIL, ou None si illisible."""
     if not data_uri or not str(data_uri).strip().startswith("data:"):
@@ -513,15 +550,32 @@ def get_client_ca_category_label(ca_global: Optional[float]) -> str:
     return "Client GOLD (3)"
 
 
-def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
+def generate_espace_client_pdf_html(
+    entity_data: Dict,
+    mode: str,
+    cotisation_amount: Optional[float] = None,
+    cotisation_kind: Optional[str] = None,
+    cotisation_facturee: Optional[bool] = None,
+    cotisation_deduite: Optional[bool] = None,
+) -> str:
     """
     Génère le HTML PDF identique à la page Espace Client : en-tête, KPI, badges, tableaux Plateformes et Tri-partites.
+    Cotisation : montant + cotisation_facturee / cotisation_deduite (lignes indépendantes sur le rapport).
+    Ancien cotisation_kind (facturee | offerte) encore accepté si les booléens absents.
     """
     contract_applied = entity_data.get("contract_applied") or {}
     contract_id = contract_applied.get("id")
     entity_id = entity_data.get("code_union") or entity_data.get("groupe_client") or ""
-    if not contract_id:
-        return generate_pdf_html(entity_data, mode)
+    # id 0 = « aucun contrat » (ex. Union sans contrats) : template simple + cotisation lisible (tableaux)
+    if contract_id is None or contract_id == 0:
+        return generate_pdf_html(
+            entity_data,
+            mode,
+            cotisation_amount=cotisation_amount,
+            cotisation_kind=cotisation_kind,
+            cotisation_facturee=cotisation_facturee,
+            cotisation_deduite=cotisation_deduite,
+        )
 
     rules_map = _load_rules_map(contract_id, mode, entity_id)
     global_rows = _build_global_rows(entity_data, rules_map)
@@ -533,10 +587,55 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
     _enrich_rows_with_supplier_logos(tri_rows, logo_map)
 
     ca_total = entity_data.get("ca", {}).get("totals", {}).get("global_total", 0) or 0
-    rfa_total = entity_data.get("rfa", {}).get("totals", {}).get("grand_total", 0) or 0
-    rfa_total_ht = float(rfa_total or 0)
-    rfa_total_ttc = rfa_total_ht * 1.2
-    rfa_rate_global = (rfa_total / ca_total * 100) if ca_total > 0 else 0
+    rfa_gross = float(entity_data.get("rfa", {}).get("totals", {}).get("grand_total", 0) or 0)
+
+    c_amt = float(cotisation_amount or 0) if cotisation_amount is not None else 0.0
+    if c_amt < 0:
+        c_amt = 0.0
+
+    c_fact: bool
+    c_ded: bool
+    if cotisation_facturee is None and cotisation_deduite is None:
+        c_kind_raw = (cotisation_kind or "").strip().lower()
+        if c_kind_raw == "offerte":
+            c_fact, c_ded = False, False
+        elif c_amt > 0:
+            c_fact, c_ded = True, True
+        else:
+            c_fact, c_ded = False, False
+    elif cotisation_facturee is None or cotisation_deduite is None:
+        # Un seul flag dans la query (ex. client HTTP qui omet un bool) : défaut True pour l'absent si montant > 0
+        c_fact = bool(cotisation_facturee) if cotisation_facturee is not None else (c_amt > 0)
+        c_ded = bool(cotisation_deduite) if cotisation_deduite is not None else (c_amt > 0)
+    else:
+        c_fact = bool(cotisation_facturee)
+        c_ded = bool(cotisation_deduite)
+
+    cotisation_active = mode in ("client", "group") and c_amt > 0
+    cotisation_offerte = cotisation_active and not c_fact and not c_ded
+
+    if cotisation_active:
+        if cotisation_offerte:
+            cotisation_mode_label_offerte = "Geste commercial — cotisation Union offerte."
+            cotisation_mode_label_facturee = ""
+        else:
+            cotisation_mode_label_offerte = ""
+            cotisation_mode_label_facturee = (
+                "Cotisation Union facturée : déduction sur la RFA reversée (montant net dans « RFA Acquise »)."
+            )
+    else:
+        cotisation_mode_label_offerte = ""
+        cotisation_mode_label_facturee = ""
+
+    if cotisation_active and c_ded:
+        rfa_kpi_display = max(rfa_gross - c_amt, 0.0)
+        rfa_invoice_ht = rfa_kpi_display
+    else:
+        rfa_kpi_display = rfa_gross
+        rfa_invoice_ht = rfa_gross
+
+    rfa_total_ttc = rfa_invoice_ht * 1.2
+    rfa_rate_global = (rfa_gross / ca_total * 100) if ca_total > 0 else 0
     potential_gain_near = sum(r.get("projected_gain") or 0 for r in global_rows if r.get("near")) + sum(r.get("projected_gain") or 0 for r in tri_rows if r.get("near"))
     achieved_count = sum(1 for r in global_rows if r.get("achieved")) + sum(1 for r in tri_rows if r.get("achieved"))
     near_count = sum(1 for r in global_rows if r.get("near")) + sum(1 for r in tri_rows if r.get("near"))
@@ -550,6 +649,18 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
     date_generated = datetime.now().strftime("%d/%m/%Y")
     hero_banner_data_uri = build_pdf_hero_banner_data_uri(header_assets.get("union_logo_data_uri"))
 
+    cotisation_detail_rows_all = build_cotisation_pdf_detail_rows(
+        mode, c_amt, cotisation_active, cotisation_offerte, c_ded
+    )
+    cotisation_detail_rows_top = (
+        cotisation_detail_rows_all if cotisation_offerte else []
+    )
+    cotisation_detail_rows_bottom = (
+        cotisation_detail_rows_all
+        if cotisation_active and not cotisation_offerte
+        else []
+    )
+
     template_str = _get_espace_client_template()
     template = Template(template_str)
     html_content = template.render(
@@ -560,8 +671,18 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         date_generated=date_generated,
         ca_total=ca_total,
         client_ca_category_label=get_client_ca_category_label(ca_total),
-        rfa_total=rfa_total,
-        rfa_invoice_ht_formatted=format_amount(rfa_total_ht),
+        rfa_kpi_display=rfa_kpi_display,
+        rfa_gross_total=rfa_gross,
+        cotisation_active=cotisation_active,
+        cotisation_facturee=c_fact,
+        cotisation_deduite=c_ded,
+        cotisation_offerte=cotisation_offerte,
+        cotisation_amount=c_amt if cotisation_active else 0.0,
+        cotisation_mode_label_offerte=cotisation_mode_label_offerte,
+        cotisation_mode_label_facturee=cotisation_mode_label_facturee,
+        cotisation_detail_rows_top=cotisation_detail_rows_top,
+        cotisation_detail_rows_bottom=cotisation_detail_rows_bottom,
+        rfa_invoice_ht_formatted=format_amount(rfa_invoice_ht),
         rfa_invoice_ttc_formatted=format_amount(rfa_total_ttc),
         rfa_rate_global=rfa_rate_global,
         potential_gain_near=potential_gain_near,
@@ -654,9 +775,56 @@ def _get_espace_client_template() -> str:
 
         /* ── FOOTER PAGE ── */
         .pg-foot   { border-top: 1px solid #000000; padding-top: 10px; text-align: center; font-size: 9px; color: #555; }
+
+        /* Lignes cotisation dans le tableau type « Détail des RFA » */
+        .cotisation-detail-table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 10px; margin-bottom: 6px; }
+        .cotisation-detail-table th, .cotisation-detail-table td { border: 1px solid #000000; padding: 6px 8px; }
+        .cotisation-detail-table th { background: #e8e8e8; font-size: 9px; text-align: left; }
+        .cotisation-detail-table th.num, .cotisation-detail-table td.num { text-align: right; }
+        .cotisation-detail-table td.cotis-blue { color: #1a4a8a; font-weight: 600; }
     </style>
 </head>
 <body>
+
+{% macro cotisation_union_encadre_inner() %}
+        <div style="font-size:10px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; color:#5c4a1a; margin-bottom:6px;">Cotisation Union</div>
+        {% if cotisation_offerte %}
+        <p style="font-size:10px; color:#333; line-height:1.55; margin:0 0 8px 0; padding:0;"><strong>1. Référence — cotisation d'adhésion</strong> — Le montant de <strong>{{ format_amount(cotisation_amount) }}</strong> correspond à la cotisation habituellement exigible au titre de l'adhésion au réseau. Il est rappelé ici à titre <strong>strictement informatif</strong> pour situer la valeur de référence ; <strong>aucune somme complémentaire n'est due par l'adhérent</strong> sur ce poste dans le cadre du geste commercial décrit au point&nbsp;2.</p>
+        <p style="font-size:10px; color:#333; line-height:1.55; margin:0; padding:0;"><strong>2. Geste commercial — Groupement Union</strong> — Pour cette période, le Groupement Union <strong>prend en charge</strong> ce montant : il n'est <strong>ni facturé en sus</strong> à l'adhérent ni <strong>déduit</strong> de la RFA acquise. Le montant « RFA Acquise » ci-dessus reste <strong>intégral</strong>. Ce dispositif <strong>ne constitue pas un versement supplémentaire</strong> au profit de l'adhérent au-delà de la RFA indiquée.</p>
+        {% else %}
+        {# Paragraphes empilés (pas de tableau imbriqué) : xhtml2pdf omet souvent le contenu des &lt;table&gt; dans une cellule. #}
+        {% if cotisation_facturee %}
+        <p style="font-size:10px; color:#333; line-height:1.55; margin:0 0 8px 0; padding:0;"><strong>1. Facturation</strong> — La cotisation de <strong>{{ format_amount(cotisation_amount) }}</strong> est due au titre de l'adhésion au réseau ; elle figure explicitement sur ce rapport comme charge liée à l'adhésion (elle n'est pas présentée comme un montant gratuit).</p>
+        {% endif %}
+        {% if cotisation_deduite %}
+        <p style="font-size:10px; color:#333; line-height:1.55; margin:0; padding:0;"><strong>{% if cotisation_facturee %}2.{% else %}•{% endif %} Déduction RFA</strong> — Le même montant de <strong>{{ format_amount(cotisation_amount) }}</strong> est <strong>retenu</strong> sur la RFA brute : le montant reversé et la facture RFA s'entendent <strong>net</strong> après cette déduction (cf. « RFA Acquise » ci-dessus).</p>
+        {% endif %}
+        {% endif %}
+{% endmacro %}
+
+{% macro cotisation_union_detail_rows_table(rows) %}
+<table class="cotisation-detail-table" cellpadding="0" cellspacing="0" style="page-break-inside:avoid;">
+    <thead>
+        <tr>
+            <th>Plateforme/Fournisseur</th>
+            <th class="num">CA Total HT</th>
+            <th class="num">Taux RFA (%)</th>
+            <th class="num">Montant RFA HT (&euro;)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="cotis-blue">{{ r.label }}</td>
+            <td class="num cotis-blue">{{ r.ca_formatted }}</td>
+            <td class="num cotis-blue">{{ r.rate_formatted }}</td>
+            <td class="num cotis-blue">{{ r.value_formatted }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:12px;font-size:1px;">&nbsp;</td></tr></table>
+{% endmacro %}
 
 {% if union_logo_data_uri or partner_logo_data_uris %}
 <table class="logo-band" cellpadding="0" cellspacing="0">
@@ -714,8 +882,17 @@ def _get_espace_client_template() -> str:
     </td>
     <td style="width:33%; background:#f5f5f3; padding:16px 18px; vertical-align:top; border:1px solid #000000;">
         <div class="kpi-lbl">RFA Acquise</div>
-        <div style="font-size:23px; font-weight:bold; color:#1a7a45;">{{ format_amount(rfa_total) }}</div>
-        <div class="kpi-sub">{{ format_percent(rfa_rate_global / 100) }} du CA</div>
+        <div style="font-size:23px; font-weight:bold; color:#1a7a45;">{{ format_amount(rfa_kpi_display) }}</div>
+        {% if cotisation_active and cotisation_deduite %}
+        <div class="kpi-sub" style="margin-top:6px; color:#856404; line-height:1.35;">Déduction cotisation Union&nbsp;: &minus;{{ format_amount(cotisation_amount) }} — RFA brute {{ format_amount(rfa_gross_total) }}</div>
+        {% endif %}
+        {% if cotisation_active and cotisation_facturee %}
+        <div class="kpi-sub" style="margin-top:4px; color:#1a4a8a; line-height:1.35;">Ligne facturation&nbsp;: cotisation Union de {{ format_amount(cotisation_amount) }} (due au titre de l'adhésion)</div>
+        {% endif %}
+        {% if cotisation_active and cotisation_offerte %}
+        <div class="kpi-sub" style="margin-top:6px; color:#1a4a8a; line-height:1.35;">Geste commercial — cotisation Union offerte ({{ format_amount(cotisation_amount) }}) — RFA intégrale</div>
+        {% endif %}
+        <div class="kpi-sub">{{ format_percent(rfa_rate_global / 100) }} du CA (sur RFA brute)</div>
     </td>
     <td style="width:33%; background:#f5f5f3; padding:16px 18px; vertical-align:top; border:1px solid #000000;">
         <div class="kpi-lbl">Gain Potentiel</div>
@@ -725,17 +902,56 @@ def _get_espace_client_template() -> str:
 </tr>
 </table>
 
-<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
-
-<!-- ══ SECTION PLATEFORMES ══ -->
-{% if global_rows %}
-<div class="sec-wrap">
-    <span class="sec-title">Objectifs Plateformes</span>
-    {% set g_ok = global_rows | selectattr('achieved') | list | length %}
-    {% if g_ok > 0 %}<span class="pill pill-g">{{ g_ok }} atteint(s)</span>{% endif %}
-    {% set g_run = global_rows | length - g_ok %}
-    {% if g_run > 0 %}<span class="pill pill-y">{{ g_run }} en cours</span>{% endif %}
+{% if cotisation_mode_label_offerte %}
+<div style="font-size:10px; color:#1a4a3a; margin:10px 0 8px 0; padding:9px 12px; border:1px solid #2d6a4f; background:#ecfdf5; line-height:1.5;">
+    {{ cotisation_mode_label_offerte }}
 </div>
+{% endif %}
+
+{% if cotisation_detail_rows_top %}
+<div class="sec-wrap" style="margin-top:14px;">
+    <span class="sec-title">Détail des RFA : Cotisation Union</span>
+</div>
+{{ cotisation_union_detail_rows_table(cotisation_detail_rows_top) }}
+{% endif %}
+
+{% if cotisation_active and not global_rows and cotisation_offerte %}
+<table cellpadding="0" cellspacing="0" style="width:100%; margin-bottom:14px; border:1px solid #000000; border-collapse:collapse;">
+<tr>
+    <td style="padding:12px 14px; background:#fffbf3; vertical-align:top;">
+        {{ cotisation_union_encadre_inner() }}
+    </td>
+</tr>
+</table>
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
+{% endif %}
+
+<!-- ══ SECTION PLATEFORMES (+ cotisation à droite si activée) ══ -->
+{% if global_rows %}
+<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
+<tr>
+    <td style="vertical-align:top; width:{% if cotisation_active and cotisation_offerte %}62%{% else %}100%{% endif %}; padding-right:{% if cotisation_active and cotisation_offerte %}10px{% else %}0{% endif %};">
+        <div class="sec-wrap">
+            <span class="sec-title">Objectifs Plateformes</span>
+            {% set g_ok = global_rows | selectattr('achieved') | list | length %}
+            {% if g_ok > 0 %}<span class="pill pill-g">{{ g_ok }} atteint(s)</span>{% endif %}
+            {% set g_run = global_rows | length - g_ok %}
+            {% if g_run > 0 %}<span class="pill pill-y">{{ g_run }} en cours</span>{% endif %}
+        </div>
+    </td>
+    {% if cotisation_active and cotisation_offerte %}
+    <td style="vertical-align:top; width:38%; padding-top:22px;">
+        <table cellpadding="0" cellspacing="0" style="width:100%; border:1px solid #000000; border-collapse:collapse;">
+        <tr>
+            <td style="padding:10px 12px; background:#fffbf3; vertical-align:top;">
+                {{ cotisation_union_encadre_inner() }}
+            </td>
+        </tr>
+        </table>
+    </td>
+    {% endif %}
+</tr>
+</table>
 
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
 
@@ -841,14 +1057,49 @@ def _get_espace_client_template() -> str:
 </div>
 {% endif %}
 
+{% if cotisation_mode_label_facturee or cotisation_detail_rows_bottom %}
+<div class="sec-wrap" style="margin-top:18px;">
+    <span class="sec-title">Cotisation Union (facturation)</span>
+</div>
+{% if cotisation_mode_label_facturee %}
+<div style="font-size:10px; color:#222; margin:8px 0 6px 0; padding:9px 12px; border:1px solid #000000; background:#fff5eb; line-height:1.5;">
+    {{ cotisation_mode_label_facturee }}
+</div>
+{% endif %}
+{% if cotisation_detail_rows_bottom %}
+<div class="sec-wrap" style="margin-top:6px;">
+    <span class="sec-title">Détail des RFA : Cotisation Union</span>
+</div>
+{{ cotisation_union_detail_rows_table(cotisation_detail_rows_bottom) }}
+{% endif %}
+{% endif %}
+
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:22px;font-size:1px;">&nbsp;</td></tr></table>
 
 <!-- ══ MESSAGE ADHÉRENT ══ -->
 <div class="pdf-message">
     <p>
+        {% if cotisation_active and cotisation_offerte %}
+        Nous vous remercions de nous adresser la facture au nom de <strong>Groupement Union</strong>,
+        d'un montant de <strong>{{ rfa_invoice_ttc_formatted }} TTC</strong>
+        (RFA HT {{ rfa_invoice_ht_formatted }} — <strong>geste commercial</strong>, cotisation Union offerte ; TVA 20&nbsp;% sur la RFA pour le total TTC).
+        {% elif cotisation_active and cotisation_facturee and cotisation_deduite %}
+        Nous vous remercions de nous adresser la facture au nom de <strong>Groupement Union</strong>,
+        d'un montant de <strong>{{ rfa_invoice_ttc_formatted }} TTC</strong>
+        (<strong>Facturation</strong>&nbsp;: la cotisation Union de {{ format_amount(cotisation_amount) }} est rappelée au titre de l'adhésion. <strong>Déduction</strong>&nbsp;: ce montant est déduit de la RFA brute {{ format_amount(rfa_gross_total) }} — montant RFA <strong>net</strong> hors taxes {{ rfa_invoice_ht_formatted }} ; TVA 20&nbsp;% sur le net pour le total TTC).
+        {% elif cotisation_active and cotisation_deduite %}
+        Nous vous remercions de nous adresser la facture au nom de <strong>Groupement Union</strong>,
+        d'un montant de <strong>{{ rfa_invoice_ttc_formatted }} TTC</strong>
+        (montant RFA <strong>net</strong> après déduction de la cotisation Union de {{ format_amount(cotisation_amount) }}&nbsp;; hors taxes&nbsp;: {{ rfa_invoice_ht_formatted }} ; RFA brute {{ format_amount(rfa_gross_total) }} ; TVA 20&nbsp;% appliquée sur le net pour le total TTC).
+        {% elif cotisation_active and cotisation_facturee %}
+        Nous vous remercions de nous adresser la facture au nom de <strong>Groupement Union</strong>,
+        d'un montant de <strong>{{ rfa_invoice_ttc_formatted }} TTC</strong>
+        (montant RFA hors taxes intégral {{ rfa_invoice_ht_formatted }} — la cotisation Union de {{ format_amount(cotisation_amount) }} est mentionnée au titre de la facturation d'adhésion <strong>sans déduction</strong> sur la RFA reversée ; TVA 20&nbsp;% pour le total TTC).
+        {% else %}
         Nous vous remercions de nous adresser la facture au nom de <strong>Groupement Union</strong>,
         d'un montant de <strong>{{ rfa_invoice_ttc_formatted }} TTC</strong>
         (montant RFA calculé hors taxes&nbsp;: {{ rfa_invoice_ht_formatted }} ; TVA 20&nbsp;% appliquée pour le total TTC).
+        {% endif %}
     </p>
     <p>
         Si ce n'est pas encore fait, merci également de nous transmettre votre <strong>RIB</strong>,
@@ -887,10 +1138,18 @@ def _get_espace_client_template() -> str:
 </html>
 """
 
-def generate_pdf_html(entity_data: Dict, mode: str) -> str:
+def generate_pdf_html(
+    entity_data: Dict,
+    mode: str,
+    cotisation_amount: Optional[float] = None,
+    cotisation_kind: Optional[str] = None,
+    cotisation_facturee: Optional[bool] = None,
+    cotisation_deduite: Optional[bool] = None,
+) -> str:
     """
     Génère le HTML pour le PDF à partir des données de l'entité.
-    Format simple et lisible (fallback si pas de contrat).
+    Format simple et lisible (fallback si pas de contrat ou contract_applied.id absent).
+    Reprend la cotisation Union si transmise (comme le template Espace Client).
     """
     template_str = """
 <!DOCTYPE html>
@@ -935,11 +1194,19 @@ def generate_pdf_html(entity_data: Dict, mode: str) -> str:
             background: #f5f5f5;
             border: 1px solid #ddd;
         }
-        .summary-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
+        /* Tableau : xhtml2pdf ignore souvent display:flex — les lignes cotisation disparaissaient */
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
             font-size: 11pt;
+        }
+        .summary-table td {
+            padding: 8px 4px;
+            vertical-align: top;
+        }
+        .summary-table td.num {
+            text-align: right;
+            white-space: nowrap;
         }
         .summary-label {
             font-weight: bold;
@@ -1004,6 +1271,10 @@ def generate_pdf_html(entity_data: Dict, mode: str) -> str:
         .value-positive {
             font-weight: 600;
         }
+        tr.cotisation-rfa-row td {
+            color: #1a4a8a;
+            font-weight: 600;
+        }
         .footer {
             margin-top: 30px;
             padding-top: 15px;
@@ -1023,18 +1294,45 @@ def generate_pdf_html(entity_data: Dict, mode: str) -> str:
     </div>
 
     <div class="summary">
-        <div class="summary-row">
-            <span class="summary-label">Chiffre d'Affaires Total HT :</span>
-            <span class="summary-value">{{ ca_total_formatted }}</span>
-        </div>
-        <div class="summary-row">
-            <span class="summary-label">RFA Totale HT :</span>
-            <span class="summary-value">{{ rfa_total_formatted }}</span>
-        </div>
-        <div class="summary-row">
-            <span class="summary-label">Taux RFA Global :</span>
-            <span class="summary-value">{{ rfa_rate_global_formatted }}</span>
-        </div>
+        <table class="summary-table" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="summary-label">Chiffre d'Affaires Total HT :</td>
+            <td class="num summary-value">{{ ca_total_formatted }}</td>
+        </tr>
+        <tr>
+            <td class="summary-label">{{ rfa_main_label }}</td>
+            <td class="num summary-value">{{ rfa_display_formatted }}</td>
+        </tr>
+        {% if cotisation_active and cotisation_deduite %}
+        <tr>
+            <td class="summary-label" style="font-size:10pt;">RFA brute (avant cotisation)</td>
+            <td class="num" style="font-size:10pt;">{{ rfa_gross_formatted }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td class="summary-label">Taux RFA Global :</td>
+            <td class="num summary-value">{{ rfa_rate_global_formatted }}</td>
+        </tr>
+        {% if cotisation_active %}
+        <tr><td colspan="2" style="padding-top:10px; border-top:1px solid #ccc; font-size:1px;">&nbsp;</td></tr>
+        <tr>
+            <td class="summary-label">Cotisation Union (adhésion)</td>
+            <td class="num summary-value">{{ cotisation_amount_formatted }}</td>
+        </tr>
+        {% if cotisation_offerte %}
+        <tr>
+            <td colspan="2" style="font-size:10pt; padding-top:6px;">Geste commercial — cotisation Union offerte. RFA intégrale (non déduite).</td>
+        </tr>
+        {% else %}
+        {% if cotisation_facturee %}
+        <tr><td colspan="2" style="font-size:10pt; padding-top:6px;">Facturation : montant dû au titre de l'adhésion (rappel sur ce rapport).</td></tr>
+        {% endif %}
+        {% if cotisation_deduite %}
+        <tr><td colspan="2" style="font-size:10pt; padding-top:4px;">Déduction : retenue sur la RFA brute (cf. RFA nette ci-dessus).</td></tr>
+        {% endif %}
+        {% endif %}
+        {% endif %}
+        </table>
     </div>
 
     <div class="section-title">Détail des RFA :</div>
@@ -1049,16 +1347,20 @@ def generate_pdf_html(entity_data: Dict, mode: str) -> str:
         </thead>
         <tbody>
             {% for item in all_items %}
-            <tr class="{% if item.value > 0 %}accomplished{% endif %}">
+            <tr class="{% if item.cotisation_row %}cotisation-rfa-row{% elif item.value > 0 %}accomplished{% endif %}">
                 <td>
+                    {% if item.cotisation_row %}
+                    {{ item.label }}
+                    {% else %}
                     <span class="status-icon {% if item.value > 0 %}{% else %}status-not-accomplished{% endif %}">
                         {% if item.value > 0 %}✓{% else %}{% endif %}
                     </span>
                     {{ item.label }}
+                    {% endif %}
                 </td>
                 <td class="text-right">{{ item.ca_formatted }}</td>
-                <td class="text-right {% if item.value > 0 %}value-positive{% endif %}">{{ item.rate_formatted }}</td>
-                <td class="text-right {% if item.value > 0 %}value-positive{% endif %}">{{ item.value_formatted }}</td>
+                <td class="text-right {% if not item.cotisation_row and item.value > 0 %}value-positive{% endif %}">{{ item.rate_formatted }}</td>
+                <td class="text-right {% if not item.cotisation_row and item.value > 0 %}value-positive{% endif %}">{{ item.value_formatted }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -1164,7 +1466,39 @@ def generate_pdf_html(entity_data: Dict, mode: str) -> str:
     from datetime import datetime
     date_generated = datetime.now().strftime("%d/%m/%Y")
     year = datetime.now().strftime("%Y")
-    
+
+    rfa_gross = float(rfa_total)
+    c_amt = float(cotisation_amount or 0) if cotisation_amount is not None else 0.0
+    if c_amt < 0:
+        c_amt = 0.0
+    if cotisation_facturee is None and cotisation_deduite is None:
+        c_kind_raw = (cotisation_kind or "").strip().lower()
+        if c_kind_raw == "offerte":
+            c_fact, c_ded = False, False
+        elif c_amt > 0:
+            c_fact, c_ded = True, True
+        else:
+            c_fact, c_ded = False, False
+    elif cotisation_facturee is None or cotisation_deduite is None:
+        c_fact = bool(cotisation_facturee) if cotisation_facturee is not None else (c_amt > 0)
+        c_ded = bool(cotisation_deduite) if cotisation_deduite is not None else (c_amt > 0)
+    else:
+        c_fact = bool(cotisation_facturee)
+        c_ded = bool(cotisation_deduite)
+
+    cotisation_active = mode in ("client", "group") and c_amt > 0
+    cotisation_offerte = cotisation_active and not c_fact and not c_ded
+    if cotisation_active and c_ded:
+        rfa_display = max(rfa_gross - c_amt, 0.0)
+        rfa_main_label = "RFA Totale HT (nette)"
+    else:
+        rfa_display = rfa_gross
+        rfa_main_label = "RFA Totale HT"
+
+    all_items.extend(
+        build_cotisation_pdf_detail_rows(mode, c_amt, cotisation_active, cotisation_offerte, c_ded)
+    )
+
     html_content = template.render(
         entity_label=adherent_name,
         adherent_name=adherent_name,
@@ -1172,8 +1506,16 @@ def generate_pdf_html(entity_data: Dict, mode: str) -> str:
         year=year,
         ca_total_formatted=format_amount(ca_global_total),
         rfa_total_formatted=format_amount(rfa_total),
+        rfa_display_formatted=format_amount(rfa_display),
+        rfa_gross_formatted=format_amount(rfa_gross),
+        rfa_main_label=rfa_main_label,
         rfa_rate_global_formatted=format_percent(rfa_rate_global / 100),  # format_percent attend un ratio
-        all_items=all_items
+        cotisation_active=cotisation_active,
+        cotisation_offerte=cotisation_offerte,
+        cotisation_facturee=c_fact,
+        cotisation_deduite=c_ded,
+        cotisation_amount_formatted=format_amount(c_amt) if cotisation_active else format_amount(0),
+        all_items=all_items,
     )
     
     return html_content
@@ -1185,6 +1527,10 @@ def generate_pdf_report(
     entity_id: str,
     contract_id: Optional[int] = None,
     import_data: Optional[ImportData] = None,
+    cotisation_amount: Optional[float] = None,
+    cotisation_kind: Optional[str] = None,
+    cotisation_facturee: Optional[bool] = None,
+    cotisation_deduite: Optional[bool] = None,
 ) -> BytesIO:
     """
     Génère un rapport PDF pour une entité (client ou groupe) avec les calculs RFA.
@@ -1205,7 +1551,14 @@ def generate_pdf_report(
     entity_dict = entity_detail.model_dump(by_alias=True, mode='json')
 
     # Générer le HTML (identique à la page Espace Client)
-    html_content = generate_espace_client_pdf_html(entity_dict, mode)
+    html_content = generate_espace_client_pdf_html(
+        entity_dict,
+        mode,
+        cotisation_amount=cotisation_amount,
+        cotisation_kind=cotisation_kind,
+        cotisation_facturee=cotisation_facturee,
+        cotisation_deduite=cotisation_deduite,
+    )
 
     if not XHTML2PDF_AVAILABLE:
         raise RuntimeError("Export PDF non disponible dans cet environnement (xhtml2pdf non installé).")

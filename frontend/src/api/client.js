@@ -283,16 +283,30 @@ function parseFastApiErrorBodyText(text) {
   }
 }
 
-export const exportEntityPdf = async (importId, mode, entityId, contractId = null) => {
-  const params = { mode, id: entityId }
-  if (contractId) {
-    params.contract_id = contractId
+export const exportEntityPdf = async (importId, mode, entityId, contractId = null, cotisationOpts = undefined) => {
+  const path = `/imports/${encodeURIComponent(String(importId))}/entity/pdf`
+  const body = {
+    mode: String(mode),
+    entity_id: String(entityId),
+  }
+  if (contractId != null && contractId !== '') {
+    const n = Number(contractId)
+    if (Number.isFinite(n)) body.contract_id = n
+  }
+  if ((mode === 'client' || mode === 'group') && cotisationOpts && Number(cotisationOpts.amount) > 0) {
+    const amt = Number(cotisationOpts.amount)
+    if (Number.isFinite(amt) && amt > 0) {
+      body.cotisation_amount = amt
+      body.cotisation_facturee = Boolean(cotisationOpts.facturee)
+      body.cotisation_deduite = Boolean(cotisationOpts.deduite)
+      body.cotisation_mode = body.cotisation_facturee && body.cotisation_deduite ? 'facture' : 'offerte'
+    }
   }
   let response
   try {
-    // arraybuffer + validateStatus : sous Tauri le corps d'erreur n'est pas toujours lisible en Blob
-    response = await api.get(`/imports/${importId}/entity/pdf`, {
-      params,
+    // POST + JSON : les query GET étaient parfois tronquées / mal passées (Tauri, proxies) — cotisation absente du PDF
+    console.debug('[exportEntityPdf] POST', path, body)
+    response = await api.post(path, body, {
       responseType: 'arraybuffer',
       validateStatus: () => true,
     })

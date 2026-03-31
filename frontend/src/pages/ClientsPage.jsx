@@ -80,25 +80,63 @@ function ClientsPage({ importId }) {
     }
   }
 
+  const migrateCotisationMap = (raw) => {
+    if (!raw || typeof raw !== 'object') return {}
+    const out = {}
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'number' && v > 0) {
+        out[k] = { amount: v, facturee: true, deduite: true }
+      } else if (v && typeof v === 'object' && typeof v.amount === 'number' && v.amount > 0) {
+        const amt = Number(v.amount)
+        if ('facturee' in v || 'deduite' in v) {
+          out[k] = {
+            amount: amt,
+            facturee: Boolean(v.facturee),
+            deduite: Boolean(v.deduite),
+          }
+        } else if (v.kind === 'offerte') {
+          out[k] = { amount: amt, facturee: false, deduite: false }
+        } else {
+          out[k] = { amount: amt, facturee: true, deduite: true }
+        }
+      }
+    }
+    return out
+  }
+
   const loadCotisationAmounts = () => {
     if (!importId) return
     const key = `cotisation_amounts_${importId}`
     const stored = localStorage.getItem(key)
     if (stored) {
       try {
-        setCotisationAmounts(JSON.parse(stored))
+        setCotisationAmounts(migrateCotisationMap(JSON.parse(stored)))
       } catch (e) {
         console.error('Erreur chargement cotisations:', e)
       }
     }
   }
 
-  const updateCotisationAmount = (entityId, amount) => {
-    if (!importId) return
+  const updateCotisationAmount = (entityKey, data) => {
+    if (!importId || !entityKey) return
+    const canonical =
+      mode === 'group' ? normalizeValue(entityKey) : entityKey.toString().trim()
+    if (!canonical) return
     const key = `cotisation_amounts_${importId}`
-    const next = { ...cotisationAmounts, [entityId]: amount }
-    if (!amount || Number(amount) <= 0) {
-      delete next[entityId]
+    const next = { ...cotisationAmounts }
+    if (mode === 'group') {
+      for (const k of Object.keys(next)) {
+        if (normalizeValue(k) === canonical) delete next[k]
+      }
+    }
+    if (!data || !data.amount || Number(data.amount) <= 0) {
+      if (mode !== 'group') delete next[canonical]
+    } else {
+      next[canonical] = {
+        amount: Number(data.amount),
+        facturee: Boolean(data.facturee),
+        deduite: Boolean(data.deduite),
+      }
     }
     setCotisationAmounts(next)
     localStorage.setItem(key, JSON.stringify(next))
@@ -136,6 +174,15 @@ function ClientsPage({ importId }) {
   const normalizeValue = (value) => {
     if (!value) return ""
     return value.toString().trim().toUpperCase()
+  }
+
+  /** Clé localStorage cotisation : groupes = même normalisation que l'agrégation backend (.upper()). */
+  const cotisationKeyForEntity = (entity) => {
+    if (!entity || typeof entity !== 'object') return ''
+    if (mode === 'group') {
+      return normalizeValue(entity.groupe_client || entity.id || '')
+    }
+    return (entity.code_union || entity.id || '').toString().trim()
   }
 
   const resolveContractForEntity = (entity) => {
@@ -221,9 +268,48 @@ function ClientsPage({ importId }) {
     }
   }
 
-  const getCotisationAmount = (entityId) => {
-    const value = cotisationAmounts[entityId]
-    return value ? Number(value) : 0
+  const getCotisationInfo = (entityKey) => {
+    const raw = (entityKey || '').toString()
+    let row = cotisationAmounts[raw]
+    if (!row && mode === 'group' && raw) {
+      const target = normalizeValue(raw)
+      for (const [k, v] of Object.entries(cotisationAmounts)) {
+        if (normalizeValue(k) === target) {
+          row = v
+          break
+        }
+      }
+    }
+    if (!row || !row.amount || row.amount <= 0) {
+      return { amount: 0, facturee: true, deduite: true }
+    }
+    if ('deduite' in row || 'facturee' in row) {
+      let facturee = Boolean(row.facturee)
+      let deduite = Boolean(row.deduite)
+      // Ancien UI : deux cases indépendantes — on ramène au modèle binaire Facturer (tout oui) / Offrir (tout non)
+      if (facturee !== deduite) {
+        facturee = true
+        deduite = true
+      }
+      return {
+        amount: Number(row.amount),
+        facturee,
+        deduite,
+      }
+    }
+    if (row.kind === 'offerte') {
+      return { amount: Number(row.amount), facturee: false, deduite: false }
+    }
+    return { amount: Number(row.amount), facturee: true, deduite: true }
+  }
+
+  const mergeCotisationPatch = (entityKey, patch) => {
+    const cur = getCotisationInfo(entityKey)
+    const amount = patch.amount !== undefined ? patch.amount : cur.amount
+    const facturee = patch.facturee !== undefined ? patch.facturee : cur.facturee
+    const deduite = patch.deduite !== undefined ? patch.deduite : cur.deduite
+    if (!amount || amount <= 0) updateCotisationAmount(entityKey, null)
+    else updateCotisationAmount(entityKey, { amount, facturee, deduite })
   }
 
   const formatAmount = (amount) => {
@@ -530,13 +616,30 @@ function ClientsPage({ importId }) {
                   <td className="text-right">
                     {entity.rfa_total !== null && entity.rfa_total !== undefined
                       ? (() => {
-                          const cotisation = mode === 'client' ? getCotisationAmount(entity.id) : 0
-                          const adjusted = cotisation ? Math.max(entity.rfa_total - cotisation, 0) : entity.rfa_total
+                          const storageKey =
+                            mode === 'client' || mode === 'group'
+                              ? cotisationKeyForEntity(entity)
+                              : ''
+                          const { amount: cotisation, facturee: cFact, deduite: cDed } =
+                            mode === 'client' || mode === 'group'
+                              ? getCotisationInfo(storageKey)
+                              : { amount: 0, facturee: true, deduite: true }
+                          const offerte = cotisation > 0 && !cFact && !cDed
+                          const adjusted =
+                            (mode === 'client' || mode === 'group') && cotisation > 0 && cDed
+                              ? Math.max(entity.rfa_total - cotisation, 0)
+                              : entity.rfa_total
                           return (
                             <div className="flex flex-col items-end">
                               <span className="font-semibold text-blue-400">{formatAmount(adjusted)}</span>
-                              {cotisation > 0 && (
+                              {cotisation > 0 && cDed && (
                                 <span className="text-xs text-orange-400">- {formatAmount(cotisation)}</span>
+                              )}
+                              {cotisation > 0 && cFact && (
+                                <span className="text-xs text-blue-300/90">fact. {formatAmount(cotisation)}</span>
+                              )}
+                              {offerte && (
+                                <span className="text-xs text-emerald-400/90">geste GU (PDF 2 lignes)</span>
                               )}
                             </div>
                           )
@@ -655,7 +758,7 @@ function ClientsPage({ importId }) {
           try {
             const entityId = mode === 'client'
               ? (selectedEntity.code_union || selectedEntity.id)
-              : (selectedEntity.groupe_client || selectedEntity.id)
+              : normalizeValue(selectedEntity.groupe_client || selectedEntity.id || '')
             const detail = await getEntityDetail(importId, mode, entityId, contractId)
             setSelectedEntity(detail)
           } catch (err) {
@@ -679,17 +782,33 @@ function ClientsPage({ importId }) {
             : null
           setShowAssignModal({ entity, mode, currentContract: contract, existingAssignment })
         }}
-        cotisationAmount={selectedEntity && mode === 'client' ? getCotisationAmount(selectedEntity.code_union) : 0}
-        onCotisationChange={(amount) => {
-          if (selectedEntity && mode === 'client') {
-            updateCotisationAmount(selectedEntity.code_union, amount)
-          }
+        cotisationAmount={
+          selectedEntity && (mode === 'client' || mode === 'group')
+            ? getCotisationInfo(cotisationKeyForEntity(selectedEntity)).amount
+            : 0
+        }
+        cotisationFacturee={
+          selectedEntity && (mode === 'client' || mode === 'group')
+            ? getCotisationInfo(cotisationKeyForEntity(selectedEntity)).facturee
+            : true
+        }
+        cotisationDeduite={
+          selectedEntity && (mode === 'client' || mode === 'group')
+            ? getCotisationInfo(cotisationKeyForEntity(selectedEntity)).deduite
+            : true
+        }
+        onCotisationChange={(patch) => {
+          if (!selectedEntity || (mode !== 'client' && mode !== 'group')) return
+          mergeCotisationPatch(cotisationKeyForEntity(selectedEntity), patch)
         }}
         onRefresh={async () => {
           if (!selectedEntity) return
           setDetailLoading(true)
           try {
-            const entityId = mode === 'client' ? selectedEntity.code_union : selectedEntity.groupe_client
+            const entityId =
+              mode === 'client'
+                ? (selectedEntity.code_union || selectedEntity.id)
+                : normalizeValue(selectedEntity.groupe_client || selectedEntity.id || '')
             const detail = await getEntityDetail(importId, mode, entityId, selectedContractId)
             setSelectedEntity(detail)
           } catch (err) {

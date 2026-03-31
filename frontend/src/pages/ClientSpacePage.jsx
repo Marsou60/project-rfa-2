@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
+import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
 
 function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }) {
   const { supplierFilter, getKeysForCurrentSupplier } = useSupplierFilter()
@@ -27,6 +28,21 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [loadingPlans, setLoadingPlans] = useState(false)
   const [plansRequested, setPlansRequested] = useState(false)
   const loadIdRef = useRef(null)
+  const [cotisationMap, setCotisationMap] = useState(() => readCotisationMap(importId))
+
+  const refreshCotisationMap = useCallback(() => {
+    setCotisationMap(readCotisationMap(importId))
+  }, [importId])
+
+  useEffect(() => {
+    refreshCotisationMap()
+  }, [refreshCotisationMap])
+
+  useEffect(() => {
+    const onFocus = () => refreshCotisationMap()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refreshCotisationMap])
 
   // Charger les logos fournisseurs
   useEffect(() => {
@@ -188,6 +204,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
         }
       }
       setRulesMap(map)
+      refreshCotisationMap()
     } catch (err) {
       if (loadIdRef.current !== myId) return
       setError(err.response?.data?.detail || `Erreur lors du chargement ${mode === 'client' ? 'du client' : 'du groupe'}`)
@@ -306,6 +323,17 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const achievedCount = achievedGlobal.length + achievedTri.length
   const nearCount = nearGlobal.length + nearTri.length
   const totalObjectives = filteredGlobalRows.length + filteredTriRows.length
+
+  const cotisationInfo = useMemo(
+    () => resolveCotisationInfo(cotisationMap, mode, entity),
+    [cotisationMap, mode, entity],
+  )
+
+  const rfaTotalWithCotisation = useMemo(() => {
+    const base = rfaTotalDisplay
+    if (!cotisationInfo.amount || !cotisationInfo.isFacture) return base
+    return Math.max(base - cotisationInfo.amount, 0)
+  }, [rfaTotalDisplay, cotisationInfo])
 
   // Refs pour scroll
   const rowRefs = useRef({})
@@ -433,11 +461,21 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             <button
               type="button"
               onClick={async () => {
-                const entityId = mode === 'client' ? (entity.code_union || entity.id) : (entity.groupe_client || entity.id)
+                const entityId =
+                  mode === 'client'
+                    ? (entity.code_union || entity.id)
+                    : (entity.groupe_client || entity.id || '').toString().trim().toUpperCase()
                 if (!importId || !entityId) return
                 setExportingPdf(true)
                 try {
-                  await exportEntityPdf(importId, mode, entityId, entity.contract_applied?.id)
+                  const { amount, facturee, deduite } = resolveCotisationInfo(cotisationMap, mode, entity)
+                  await exportEntityPdf(
+                    importId,
+                    mode,
+                    entityId,
+                    entity.contract_applied?.id,
+                    amount > 0 ? { amount, facturee, deduite } : undefined,
+                  )
                 } catch (err) {
                   alert('Erreur lors de l\'export PDF: ' + (err.response?.data?.detail || err.message))
                 } finally {
@@ -463,8 +501,13 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             </div>
             <div className="card p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
               <div className="text-emerald-100 text-xs">💰 RFA Totale{supplierFilter ? ` (${supplierFilter})` : ''}</div>
-              <div className="text-xl font-black">{formatAmount(rfaTotalDisplay)}</div>
+              <div className="text-xl font-black">{formatAmount(cotisationInfo.isFacture ? rfaTotalWithCotisation : rfaTotalDisplay)}</div>
               <div className="text-emerald-100 text-xs">{formatPercent(rfaRateDisplay)}</div>
+              {cotisationInfo.isFacture && cotisationInfo.amount > 0 && (
+                <div className="text-emerald-100/90 text-[10px] mt-1 leading-tight">
+                  après cotisation&nbsp;: brut {formatAmount(rfaTotalDisplay)} − {formatAmount(cotisationInfo.amount)}
+                </div>
+              )}
             </div>
             <div className={`card p-4 text-white ${nearCount > 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-gray-400 to-gray-500'}`}>
               <div className="text-white/80 text-xs">🎯 Gain à portée</div>
@@ -472,6 +515,29 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               <div className="text-white/80 text-xs">{nearCount} objectif{nearCount > 1 ? 's' : ''} proche{nearCount > 1 ? 's' : ''}</div>
             </div>
           </div>
+
+          {/* Cotisation offerte : bandeau sous les KPI (même réglage que la liste adhérents) */}
+          {cotisationInfo.amount > 0 && cotisationInfo.isOfferte && (
+            <div className="rounded-xl border-2 px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-emerald-50 border-emerald-300 text-emerald-900">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union</div>
+                <div className="text-lg font-black">{formatAmount(cotisationInfo.amount)}</div>
+                <p className="text-sm mt-1">
+                  <span className="font-semibold text-emerald-800">Geste commercial</span> — cotisation Union offerte. La RFA
+                  affichée reste intégrale.
+                </p>
+              </div>
+              <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-emerald-200 text-emerald-900">
+                Offerte
+              </span>
+            </div>
+          )}
+          {entity && cotisationInfo.amount === 0 && !isAdherent && (
+            <p className="text-xs text-gray-500 -mt-2">
+              Aucune cotisation enregistrée dans la liste adhérents pour cet adhérent — activez-la là-bas pour l&apos;afficher ici
+              et dans l&apos;export PDF.
+            </p>
+          )}
 
           {/* Stats badges cliquables */}
           <div className="flex flex-wrap gap-2 justify-center">
@@ -885,6 +951,23 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Cotisation facturée : après le dernier bloc tri-partites (bas de page visuel) */}
+          {cotisationInfo.amount > 0 && cotisationInfo.isFacture && (
+            <div className="rounded-xl border-2 px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-orange-50 border-orange-300 text-orange-950">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union</div>
+                <div className="text-lg font-black">{formatAmount(cotisationInfo.amount)}</div>
+                <p className="text-sm mt-1">
+                  <span className="font-semibold text-orange-800">Facturée</span> — déduite de la RFA reversée (montant net dans
+                  la carte « RFA Totale » ci-dessus). Détail dans l&apos;export PDF en bas de rapport.
+                </p>
+              </div>
+              <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-orange-200 text-orange-900">
+                Facturée
+              </span>
             </div>
           )}
         </>

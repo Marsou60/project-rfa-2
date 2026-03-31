@@ -2,7 +2,7 @@
 Routes API FastAPI.
 """
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends, Header, Form, Body
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends, Header, Form, Body, Request
 from fastapi.responses import JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
@@ -49,6 +49,7 @@ from app.schemas import (
     AdResponse,
     LoginRequest,
     LoginResponse,
+    EntityPdfExportBody,
     UserCreate,
     UserUpdate,
     UserResponse,
@@ -1199,18 +1200,148 @@ async def get_global_recap(
         raise HTTPException(status_code=500, detail=f"Erreur lors du calcul du récapitulatif: {str(e)}")
 
 
+def _parse_query_bool01(raw: Optional[str]) -> Optional[bool]:
+    """Parse cotisation_* query (0/1, true/false) — évite les ambiguïtés bool sur certains clients HTTP."""
+    if raw is None or raw == "":
+        return None
+    s = str(raw).strip().lower()
+    if s in ("1", "true", "yes", "on", "y"):
+        return True
+    if s in ("0", "false", "no", "off", "n"):
+        return False
+    try:
+        i = int(s)
+        if i == 0:
+            return False
+        if i == 1:
+            return True
+    except ValueError:
+        pass
+    return None
+
+
+def _normalize_entity_pdf_cotisation(
+    mode: str,
+    c_amt: Optional[float],
+    c_kind: Optional[str],
+    c_fact: Optional[bool],
+    c_ded: Optional[bool],
+    c_mode_raw: Optional[str],
+) -> tuple[Optional[float], Optional[str], Optional[bool], Optional[bool]]:
+    """Logique alignée sur GET /entity/pdf : montant, puis cotisation_mode, puis booléens."""
+    if mode not in ("client", "group"):
+        return None, None, None, None
+    if c_amt is not None and c_amt <= 0:
+        c_amt = None
+        c_kind = None
+    cm = (c_mode_raw or "").strip().lower()
+    if c_amt is not None and c_amt > 0:
+        if cm in ("offerte", "geste", "geste_commercial"):
+            c_fact, c_ded = False, False
+        elif cm in ("facture", "facturer"):
+            c_fact, c_ded = True, True
+        else:
+            if c_fact is None and c_ded is None:
+                c_fact, c_ded = True, True
+            elif c_fact is None:
+                c_fact = bool(c_ded)
+            elif c_ded is None:
+                c_ded = bool(c_fact)
+    return c_amt, c_kind, c_fact, c_ded
+
+
+@router.post("/imports/{import_id}/entity/pdf")
+async def post_entity_pdf(
+    import_id: str,
+    body: EntityPdfExportBody,
+    session: Session = Depends(get_session),
+):
+    """Même PDF que GET, avec cotisation dans le corps JSON (fiable sous Tauri / certains clients HTTP)."""
+    import_data = _resolve_import_data(import_id, session)
+    if not import_data:
+        available_imports = list_imports()
+        raise HTTPException(
+            status_code=404,
+            detail=f"Import non trouve (ID: {import_id}). Les imports sont stockes en memoire et peuvent etre perdus apres un redemarrage du serveur. Imports disponibles: {len(available_imports)}",
+        )
+    mode = body.mode
+    if mode not in ["client", "group"]:
+        raise HTTPException(status_code=400, detail="mode doit etre 'client' ou 'group'")
+    entity_id = (body.entity_id or "").strip()
+    if not entity_id:
+        raise HTTPException(status_code=400, detail="entity_id requis")
+    try:
+        c_amt = body.cotisation_amount if mode in ("client", "group") else None
+        c_kind = None
+        c_fact = body.cotisation_facturee
+        c_ded = body.cotisation_deduite
+        c_amt, c_kind, c_fact, c_ded = _normalize_entity_pdf_cotisation(
+            mode, c_amt, c_kind, c_fact, c_ded, body.cotisation_mode
+        )
+        pdf_buffer = generate_pdf_report(
+            import_id,
+            mode,
+            entity_id,
+            contract_id=body.contract_id,
+            import_data=import_data,
+            cotisation_amount=c_amt,
+            cotisation_kind=c_kind,
+            cotisation_facturee=c_fact,
+            cotisation_deduite=c_ded,
+        )
+        entity_label = entity_id.replace(" ", "_")
+        filename = f"RFA_{entity_label}_{mode}.pdf"
+        return Response(
+            content=pdf_buffer.getvalue(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ValueError as e:
+        msg = str(e)
+        nl = msg.lower()
+        is_not_found = (
+            msg.startswith("Import non trouvé")
+            or (msg.startswith("Client ") and ("non trouvé" in msg or "non trouve" in nl))
+            or (msg.startswith("Groupe ") and ("non trouvé" in msg or "non trouve" in nl))
+            or (msg.startswith("Contrat ") and ("non trouvé" in msg or "non trouve" in nl))
+        )
+        if is_not_found:
+            raise HTTPException(status_code=404, detail=msg)
+        raise HTTPException(status_code=500, detail=msg)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        import traceback
+        print(f"Erreur lors de la generation du PDF: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la generation du PDF: {str(e)}")
+
+
 @router.get("/imports/{import_id}/entity/pdf")
 async def get_entity_pdf(
+    request: Request,
     import_id: str,
     mode: str,
     id: str,
     contract_id: Optional[int] = Query(None, description="ID du contrat pour simulation"),
+    cotisation_amount: Optional[float] = Query(
+        None,
+        ge=0,
+        description="Cotisation Union (client ou groupe) — transmis depuis l'outil liste adhérents",
+    ),
+    cotisation_kind: Optional[str] = Query(
+        None,
+        description="Obsolète si cotisation_facturee / cotisation_deduite fournis : facturee ou offerte",
+    ),
     session: Session = Depends(get_session),
 ):
     """
     Génère un PDF pour une entité (client ou groupe) avec calcul RFA.
     mode: "client" ou "group"
     id: code_union (si mode=client) ou groupe_client (si mode=group)
+
+    Query (optionnel) : cotisation_facturee, cotisation_deduite (true/false ou 0/1),
+    et surtout cotisation_mode = facture | offerte (recommandé — évite les ambiguïtés quand « Offrir » envoie deux false).
     """
     import_data = _resolve_import_data(import_id, session)
     if not import_data:
@@ -1224,8 +1355,25 @@ async def get_entity_pdf(
         raise HTTPException(status_code=400, detail="mode doit etre 'client' ou 'group'")
     
     try:
+        c_amt = cotisation_amount if mode in ("client", "group") else None
+        c_kind = cotisation_kind if mode in ("client", "group") else None
+        qp = request.query_params
+        c_fact = _parse_query_bool01(qp.get("cotisation_facturee"))
+        c_ded = _parse_query_bool01(qp.get("cotisation_deduite"))
+        c_mode_raw = qp.get("cotisation_mode")
+        c_amt, c_kind, c_fact, c_ded = _normalize_entity_pdf_cotisation(
+            mode, c_amt, c_kind, c_fact, c_ded, c_mode_raw
+        )
         pdf_buffer = generate_pdf_report(
-            import_id, mode, id, contract_id=contract_id, import_data=import_data
+            import_id,
+            mode,
+            id,
+            contract_id=contract_id,
+            import_data=import_data,
+            cotisation_amount=c_amt,
+            cotisation_kind=c_kind,
+            cotisation_facturee=c_fact,
+            cotisation_deduite=c_ded,
         )
         
         # Déterminer le nom du fichier

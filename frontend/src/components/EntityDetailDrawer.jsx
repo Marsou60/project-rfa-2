@@ -12,7 +12,21 @@ const DEFAULT_SUPPLIER_RATES = {
   GLOBAL_EXADIS:   { label: 'EXADIS',  rate: 13, emoji: '🟢', color: 'from-emerald-500 to-teal-600',    badge: 'bg-emerald-500/20 text-emerald-300' },
 }
 
-function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContractChange, onAssignContract, cotisationAmount = 0, onCotisationChange, onRefresh, listGrandTotal = null }) {
+function EntityDetailDrawer({
+  entity,
+  mode,
+  loading,
+  onClose,
+  importId,
+  onContractChange,
+  onAssignContract,
+  cotisationAmount = 0,
+  cotisationFacturee = true,
+  cotisationDeduite = true,
+  onCotisationChange,
+  onRefresh,
+  listGrandTotal = null,
+}) {
   const [editingOverride, setEditingOverride] = useState(null)
   const [contractRules, setContractRules] = useState({})
   const [marginRateReceived, setMarginRateReceived] = useState('')
@@ -152,9 +166,15 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
   }
 
   const rawGrandTotal = entity?.rfa?.totals?.grand_total || 0
-  const adjustedGrandTotal = mode === 'client' && cotisationAmount > 0
-    ? Math.max(rawGrandTotal - cotisationAmount, 0)
-    : rawGrandTotal
+  const cotisationApplies = mode === 'client' || mode === 'group'
+  const adjustedGrandTotal =
+    cotisationApplies && cotisationAmount > 0 && cotisationDeduite
+      ? Math.max(rawGrandTotal - cotisationAmount, 0)
+      : rawGrandTotal
+  const cotisationOfferte =
+    cotisationApplies && cotisationAmount > 0 && !cotisationFacturee && !cotisationDeduite
+  const cotisationModeFacture =
+    cotisationApplies && cotisationAmount > 0 && cotisationFacturee && cotisationDeduite
 
   const totalCaGlobal = entity?.ca?.totals?.global_total || 0
   const totalCaTri = entity?.ca?.totals?.tri_total || 0
@@ -215,12 +235,27 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
                     try {
                       const entityId = mode === 'client'
                         ? (entity.code_union || entity.id)
-                        : (entity.groupe_client || entity.id)
+                        : (entity.groupe_client || entity.id || '')
+                            .toString()
+                            .trim()
+                            .toUpperCase()
                       if (!entityId) {
                         alert('Identifiant client/groupe manquant pour l\'export PDF.')
                         return
                       }
-                      await exportEntityPdf(importId, mode, entityId, entity.contract_applied?.id)
+                      await exportEntityPdf(
+                        importId,
+                        mode,
+                        entityId,
+                        entity.contract_applied?.id,
+                        cotisationApplies && cotisationAmount > 0
+                          ? {
+                              amount: cotisationAmount,
+                              facturee: cotisationFacturee,
+                              deduite: cotisationDeduite,
+                            }
+                          : undefined,
+                      )
                     } catch (err) {
                       console.error('Erreur export PDF:', err)
                       alert('Erreur lors de l\'export PDF: ' + (err.response?.data?.detail || err.message))
@@ -250,6 +285,106 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
               </div>
             ) : entity ? (
               <div className="space-y-6">
+
+                {cotisationApplies && (
+                  <div className="p-4 glass-card-dark border border-orange-500/20 rounded-xl">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-medium text-white">Cotisation Union</h3>
+                        <p className="text-xs text-glass-muted">
+                          {cotisationAmount > 0
+                            ? cotisationOfferte
+                              ? 'Mode offrir : pas de charge ni de déduction sur la RFA. Le PDF affiche quand même 2 lignes (référence du montant + geste commercial), sans versement supplémentaire au-delà de la RFA.'
+                              : 'Mode facturer : ligne facturation + déduction sur la RFA reversée sur le PDF (1. et 2.), comme aujourd’hui en comptabilité.'
+                            : 'Choisissez ensuite Facturer (cotisation retenue sur la RFA) ou Offrir (geste commercial : le PDF montre la valeur de référence puis l’offre du GU).'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!onCotisationChange) return
+                          if (cotisationAmount > 0) onCotisationChange({ amount: 0 })
+                          else
+                            onCotisationChange({
+                              amount: cotisationAmount || 1500,
+                              facturee: true,
+                              deduite: true,
+                            })
+                        }}
+                        className={`text-xs px-3 py-2 rounded-full font-semibold transition-all ${
+                          cotisationAmount > 0 ? 'glass-badge-emerald' : 'glass-badge-gray'
+                        }`}
+                        title="Activer / désactiver la cotisation"
+                      >
+                        {cotisationAmount > 0 ? (
+                          <span className="flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            Cotisation activée
+                          </span>
+                        ) : (
+                          'Activer cotisation'
+                        )}
+                      </button>
+                    </div>
+                    {cotisationAmount > 0 && (
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <label className="block text-xs text-glass-muted mb-1">Montant (€)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="10"
+                            value={cotisationAmount}
+                            onChange={(e) => {
+                              if (!onCotisationChange) return
+                              onCotisationChange({ amount: Number(e.target.value || 0) })
+                            }}
+                            className="glass-input"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] text-glass-muted uppercase tracking-wider">
+                            Traitement de la cotisation
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onCotisationChange?.({ facturee: true, deduite: true })
+                              }
+                              className={`text-left rounded-xl border px-3 py-2.5 text-xs transition-all ${
+                                cotisationModeFacture
+                                  ? 'border-blue-400/80 bg-blue-500/15 text-white ring-1 ring-blue-400/50'
+                                  : 'border-white/15 bg-white/5 text-glass-secondary hover:border-white/25 hover:bg-white/[0.07]'
+                              }`}
+                            >
+                              <span className="font-semibold text-white block">Facturer</span>
+                              <span className="text-[10px] text-glass-muted mt-1 block leading-snug">
+                                Cotisation rappelée sur le rapport et déduite de la RFA finale (PDF : 1. Facturation, 2. Déduction RFA).
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onCotisationChange?.({ facturee: false, deduite: false })
+                              }
+                              className={`text-left rounded-xl border px-3 py-2.5 text-xs transition-all ${
+                                cotisationOfferte
+                                  ? 'border-emerald-400/80 bg-emerald-500/15 text-white ring-1 ring-emerald-400/50'
+                                  : 'border-white/15 bg-white/5 text-glass-secondary hover:border-white/25 hover:bg-white/[0.07]'
+                              }`}
+                            >
+                              <span className="font-semibold text-white block">Offrir (geste commercial)</span>
+                              <span className="text-[10px] text-glass-muted mt-1 block leading-snug">
+                                Comme sur votre modèle : tableau « Détail des RFA » avec « Cotisation Union - Facturée » (montant négatif) puis « Cotisation Union - Offerte » (montant positif), CA = montant, taux 0&nbsp;% — total RFA inchangé.
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ── Analyse Marge Groupement Union ── */}
                 {(() => {
@@ -305,8 +440,14 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
                             <div className="text-center border-x border-white/10">
                               <p className="text-orange-300/70 text-[10px] uppercase tracking-wider mb-1">Reversé adhérent</p>
                               <p className="text-xl font-black text-orange-300">{formatAmount(totalReverse)}</p>
-                              {cotisationAmount > 0 && (
-                                <p className="text-white/30 text-[10px] mt-0.5">cotis. -{formatAmount(cotisationAmount)}</p>
+                              {cotisationAmount > 0 && cotisationDeduite && (
+                                <p className="text-white/30 text-[10px] mt-0.5">déduc. -{formatAmount(cotisationAmount)}</p>
+                              )}
+                              {cotisationAmount > 0 && cotisationFacturee && (
+                                <p className="text-blue-300/60 text-[10px] mt-0.5">fact. {formatAmount(cotisationAmount)}</p>
+                              )}
+                              {cotisationAmount > 0 && cotisationOfferte && (
+                                <p className="text-emerald-400/70 text-[10px] mt-0.5">geste GU — PDF 2 lignes, RFA intégrale</p>
                               )}
                             </div>
                             <div className="text-center">
@@ -404,54 +545,6 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
                           <p className="text-lg text-glass-primary">{entity.groupe_client}</p>
                         </>
                       )}
-
-                      {/* Cotisation Union */}
-                      <div className="mt-5 p-4 glass-card-dark border-orange-500/20">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <h3 className="text-sm font-medium text-white">Cotisation Union</h3>
-                            <p className="text-xs text-glass-muted">Déduction de la RFA client</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!onCotisationChange) return
-                              onCotisationChange(cotisationAmount > 0 ? 0 : (cotisationAmount || 1500))
-                            }}
-                            className={`text-xs px-3 py-2 rounded-full font-semibold transition-all ${
-                              cotisationAmount > 0
-                                ? 'glass-badge-emerald'
-                                : 'glass-badge-gray'
-                            }`}
-                            title="Activer / désactiver la cotisation"
-                          >
-                            {cotisationAmount > 0 ? (
-                              <span className="flex items-center gap-1">
-                                <Check className="w-3 h-3" />
-                                Cotisation activée
-                              </span>
-                            ) : (
-                              'Activer cotisation'
-                            )}
-                          </button>
-                        </div>
-                        {cotisationAmount > 0 && (
-                          <div className="mt-3">
-                            <label className="block text-xs text-glass-muted mb-1">Montant (€)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="10"
-                              value={cotisationAmount}
-                              onChange={(e) => {
-                                if (!onCotisationChange) return
-                                onCotisationChange(Number(e.target.value || 0))
-                              }}
-                              className="glass-input"
-                            />
-                          </div>
-                        )}
-                      </div>
                     </>
                   ) : (
                     <>
@@ -722,10 +815,27 @@ function EntityDetailDrawer({ entity, mode, loading, onClose, importId, onContra
                           {formatAmount(adjustedGrandTotal)}
                         </span>
                       </div>
-                      {mode === 'client' && cotisationAmount > 0 && (
+                      {cotisationApplies && cotisationAmount > 0 && cotisationDeduite && (
                         <div className="flex items-center justify-between text-xs text-orange-400">
-                          <span>Déduction cotisation</span>
+                          <span>Déduction cotisation (RFA)</span>
                           <span>- {formatAmount(cotisationAmount)} (brut: {formatAmount(rawGrandTotal)})</span>
+                        </div>
+                      )}
+                      {cotisationApplies && cotisationAmount > 0 && cotisationFacturee && (
+                        <div className="flex items-center justify-between text-xs text-blue-300/90">
+                          <span>Ligne facturation cotisation</span>
+                          <span>{formatAmount(cotisationAmount)} (adhésion)</span>
+                        </div>
+                      )}
+                      {cotisationApplies && cotisationAmount > 0 && cotisationOfferte && (
+                        <div className="space-y-1 text-xs text-emerald-400/90">
+                          <div className="flex items-center justify-between">
+                            <span>Geste commercial GU (réf. {formatAmount(cotisationAmount)})</span>
+                            <span>RFA intégrale {formatAmount(rawGrandTotal)}</span>
+                          </div>
+                          <p className="text-[10px] text-glass-muted leading-snug">
+                            Pas de déduction ni facturation effective. Le PDF reprend 2 lignes : référence du montant d’adhésion + prise en charge par le GU (sans versement au-delà de la RFA).
+                          </p>
                         </div>
                       )}
                       <div className="pt-4 border-t border-white/10">
