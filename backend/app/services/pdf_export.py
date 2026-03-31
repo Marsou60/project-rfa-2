@@ -649,18 +649,6 @@ def generate_espace_client_pdf_html(
     date_generated = datetime.now().strftime("%d/%m/%Y")
     hero_banner_data_uri = build_pdf_hero_banner_data_uri(header_assets.get("union_logo_data_uri"))
 
-    cotisation_detail_rows_all = build_cotisation_pdf_detail_rows(
-        mode, c_amt, cotisation_active, cotisation_offerte, c_ded
-    )
-    cotisation_detail_rows_top = (
-        cotisation_detail_rows_all if cotisation_offerte else []
-    )
-    cotisation_detail_rows_bottom = (
-        cotisation_detail_rows_all
-        if cotisation_active and not cotisation_offerte
-        else []
-    )
-
     template_str = _get_espace_client_template()
     template = Template(template_str)
     html_content = template.render(
@@ -679,9 +667,6 @@ def generate_espace_client_pdf_html(
         cotisation_offerte=cotisation_offerte,
         cotisation_amount=c_amt if cotisation_active else 0.0,
         cotisation_mode_label_offerte=cotisation_mode_label_offerte,
-        cotisation_mode_label_facturee=cotisation_mode_label_facturee,
-        cotisation_detail_rows_top=cotisation_detail_rows_top,
-        cotisation_detail_rows_bottom=cotisation_detail_rows_bottom,
         rfa_invoice_ht_formatted=format_amount(rfa_invoice_ht),
         rfa_invoice_ttc_formatted=format_amount(rfa_total_ttc),
         rfa_rate_global=rfa_rate_global,
@@ -892,11 +877,20 @@ def _get_espace_client_template() -> str:
 </div>
 {% endif %}
 
-{% if cotisation_detail_rows_top %}
-<div class="sec-wrap" style="margin-top:14px;">
-    <span class="sec-title">Détail des RFA : Cotisation Union</span>
-</div>
-{{ cotisation_union_detail_rows_table(cotisation_detail_rows_top) }}
+{% if cotisation_active and cotisation_offerte %}
+<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:12px 0 14px 0; border:2px solid #2d6a4f; background:#ecfdf5;">
+<tr>
+    <td style="padding:14px 18px; vertical-align:middle; border-right:1px solid #2d6a4f; width:60%;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#2d6a4f; font-weight:bold; margin-bottom:4px;">Cotisation Union — Geste commercial</div>
+        <div style="font-size:11px; color:#1a4a3a; line-height:1.45;">Le Groupement Union prend en charge la cotisation d'adhésion pour cette période. <strong>Elle n'est ni facturée ni déduite</strong> de votre RFA — votre reversement reste intégral.</div>
+    </td>
+    <td style="padding:14px 18px; text-align:center; vertical-align:middle;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#2d6a4f; font-weight:bold; margin-bottom:6px;">Montant offert</div>
+        <div style="font-size:22px; font-weight:bold; color:#1a7a45;">{{ format_amount(cotisation_amount) }}</div>
+        <div style="font-size:9px; color:#2d6a4f; margin-top:4px;">offert par le Groupement Union</div>
+    </td>
+</tr>
+</table>
 {% endif %}
 
 {% if cotisation_active and not global_rows and cotisation_offerte %}
@@ -1023,21 +1017,20 @@ def _get_espace_client_template() -> str:
 </div>
 {% endif %}
 
-{% if cotisation_mode_label_facturee or cotisation_detail_rows_bottom %}
-<div class="sec-wrap" style="margin-top:18px;">
-    <span class="sec-title">Cotisation Union (facturation)</span>
-</div>
-{% if cotisation_mode_label_facturee %}
-<div style="font-size:10px; color:#222; margin:8px 0 6px 0; padding:9px 12px; border:1px solid #000000; background:#fff5eb; line-height:1.5;">
-    {{ cotisation_mode_label_facturee }}
-</div>
-{% endif %}
-{% if cotisation_detail_rows_bottom %}
-<div class="sec-wrap" style="margin-top:6px;">
-    <span class="sec-title">Détail des RFA : Cotisation Union</span>
-</div>
-{{ cotisation_union_detail_rows_table(cotisation_detail_rows_bottom) }}
-{% endif %}
+{% if cotisation_active and not cotisation_offerte %}
+<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:18px 0 14px 0; border:2px solid #c2410c; background:#fff5eb;">
+<tr>
+    <td style="padding:14px 18px; vertical-align:middle; border-right:1px solid #c2410c; width:60%;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#c2410c; font-weight:bold; margin-bottom:4px;">Cotisation Union — Facturation &amp; Déduction</div>
+        <div style="font-size:11px; color:#7c2d12; line-height:1.45;">La cotisation d'adhésion est <strong>rappelée sur ce rapport</strong> et <strong>déduite de votre RFA brute</strong>. Le montant « RFA Acquise » ci-dessus s'entend <strong>net</strong> après déduction.</div>
+    </td>
+    <td style="padding:14px 18px; text-align:center; vertical-align:middle;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#c2410c; font-weight:bold; margin-bottom:6px;">Montant déduit</div>
+        <div style="font-size:22px; font-weight:bold; color:#c2410c;">&minus;{{ format_amount(cotisation_amount) }}</div>
+        <div style="font-size:9px; color:#c2410c; margin-top:4px;">RFA brute&nbsp;: {{ format_amount(rfa_gross_total) }}</div>
+    </td>
+</tr>
+</table>
 {% endif %}
 
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:22px;font-size:1px;">&nbsp;</td></tr></table>
