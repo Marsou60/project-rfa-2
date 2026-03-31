@@ -430,6 +430,32 @@ def format_percent(value: float) -> str:
     return f"{float(value) * 100:.2f}%"
 
 
+def build_pdf_hero_banner_data_uri() -> Optional[str]:
+    """
+    Bandeau décoratif (dégradé bleu GU + liseré or) en PNG embarqué en data URI pour xhtml2pdf.
+    """
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return None
+    w, h = 540, 70
+    img = Image.new("RGB", (w, h))
+    px = img.load()
+    for x in range(w):
+        t = x / (w - 1) if w > 1 else 0.0
+        r = int(22 + (45 - 22) * t)
+        g = int(58 + (110 - 58) * t)
+        b = int(118 + (175 - 118) * t)
+        for y in range(h - 5):
+            px[x, y] = (r, g, b)
+    draw = ImageDraw.Draw(img)
+    gold = (197, 165, 75)
+    draw.rectangle([0, h - 5, w, h], fill=gold)
+    buf = BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 def get_client_ca_category_label(ca_global: Optional[float]) -> str:
     """
     Catégorie adhérent selon le CA global d'achat (tranches commerciales).
@@ -478,6 +504,7 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         entity_label = entity_data.get("groupe_client") or entity_id
 
     date_generated = datetime.now().strftime("%d/%m/%Y")
+    hero_banner_data_uri = build_pdf_hero_banner_data_uri()
 
     template_str = _get_espace_client_template()
     template = Template(template_str)
@@ -503,6 +530,7 @@ def generate_espace_client_pdf_html(entity_data: Dict, mode: str) -> str:
         format_percent=format_percent,
         union_logo_data_uri=header_assets.get("union_logo_data_uri"),
         partner_logo_data_uris=header_assets.get("partner_logo_data_uris") or [],
+        hero_banner_data_uri=hero_banner_data_uri,
     )
     return html_content
 
@@ -560,22 +588,25 @@ def _get_espace_client_template() -> str:
         .pdf-message p:last-child { margin-bottom: 0; }
         .pdf-message strong { color: #1a1a1a; }
 
-        /* Annonce solennelle (PDF : pas de Google Fonts — italique serif, centré) */
+        /* Annonce réseau : visuel + texte plus chaleureux */
         .pdf-message-hero {
             margin-top: 16px;
-            padding: 20px 22px;
-            border: 2px solid #1a4a8a;
-            background: #f4f7fb;
-            font-size: 15px;
-            line-height: 1.6;
-            font-style: italic;
-            font-weight: normal;
-            font-family: Georgia, "Palatino Linotype", Palatino, "Book Antiqua", "Times New Roman", Times, serif;
-            color: #152a45;
-            text-align: center;
+            border: 1px solid #c4a84a;
+            background: #fffbf3;
         }
-        .pdf-message-hero p { margin: 0 0 14px 0; }
-        .pdf-message-hero p:last-child { margin-bottom: 0; }
+        .pdf-message-hero-banner { text-align: center; padding: 12px 14px 0 14px; }
+        .pdf-message-hero-banner img { max-height: 58px; }
+        .pdf-message-hero-text {
+            margin: 0;
+            padding: 14px 18px 18px 18px;
+            font-size: 15px;
+            line-height: 1.68;
+            font-style: italic;
+            font-family: Georgia, "Palatino Linotype", Palatino, "Book Antiqua", "Times New Roman", Times, serif;
+            color: #1a2d4d;
+            text-align: justify;
+        }
+        .pdf-message-hero-text strong { color: #143a6e; font-style: normal; }
 
         /* ── FOOTER PAGE ── */
         .pg-foot   { border-top: 1px solid #000000; padding-top: 10px; text-align: center; font-size: 9px; color: #555; }
@@ -782,15 +813,23 @@ def _get_espace_client_template() -> str:
 </div>
 
 <div class="pdf-message-hero">
-    <p>
-        Le <strong>Groupement Union</strong> a l'honneur de vous présenter son nouveau contrat, pensé en adéquation avec les évolutions du marché
-        et l'ambition collective de notre réseau d'adhérents. Il institue une rémunération évolutive qui reconnaît le Groupement Union dans son intégralité&nbsp;:
-        votre engagement et vos achats au sein du réseau s'inscrivent dans une même dynamique de progrès.
-    </p>
-    <p>
-        Tout est lié&nbsp;: lorsque vous développez vos achats auprès des partenaires du réseau, c'est l'ensemble de votre rémunération qui peut s'améliorer,
-        car la réussite du collectif renforce celle de chacun. Nous sommes fiers de bâtir cette aventure avec vous et vous remercions chaleureusement de votre confiance.
-    </p>
+    <table cellpadding="0" cellspacing="0" style="width:100%;">
+    {% if hero_banner_data_uri %}
+    <tr>
+        <td colspan="2" class="pdf-message-hero-banner">
+            <img src="{{ hero_banner_data_uri }}" alt="" />
+        </td>
+    </tr>
+    {% endif %}
+    <tr>
+        <td style="width:7px; background:#c5a059; font-size:1px;">&nbsp;</td>
+        <td>
+            <p class="pdf-message-hero-text">
+                Le <strong>Groupement Union</strong> a l'honneur de vous présenter son nouveau contrat, pensé en adéquation avec les évolutions du marché et l'ambition collective de notre réseau d'adhérents. Il institue une rémunération évolutive qui reconnaît le <strong>Groupement Union</strong> dans son intégralité&nbsp;: votre engagement et vos achats au sein du réseau s'inscrivent dans une même dynamique de progrès. Tout est lié&nbsp;: lorsque vous développez vos achats auprès des partenaires du réseau, c'est l'ensemble de votre rémunération qui peut s'améliorer, car la réussite du collectif renforce celle de chacun. Nous sommes fiers de bâtir cette aventure avec vous et vous remercions chaleureusement de votre confiance.
+            </p>
+        </td>
+    </tr>
+    </table>
 </div>
 
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:14px;font-size:1px;">&nbsp;</td></tr></table>
