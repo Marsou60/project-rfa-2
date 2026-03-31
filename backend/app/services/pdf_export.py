@@ -516,6 +516,8 @@ def _get_espace_client_template() -> str:
 
         /* ── SECTION ── */
         .sec-wrap  { padding-bottom: 8px; border-bottom: 1px solid #000000; margin-top: 22px; margin-bottom: 14px; }
+        .sec-tri-page { page-break-before: always; }
+        .sec-tri-page .sec-wrap { margin-top: 0; }
         .sec-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #333; }
         .pill      { font-size: 9px; padding: 3px 8px; margin-left: 6px; }
         .pill-g    { background: #d4edda; color: #155724; }
@@ -545,7 +547,7 @@ def _get_espace_client_template() -> str:
 {% if union_logo_data_uri %}
 <tr>
     <td style="text-align:center; padding-bottom:8px; vertical-align:middle;">
-        <img src="{{ union_logo_data_uri }}" alt="" style="max-height:40px; max-width:200px;" />
+        <img src="{{ union_logo_data_uri }}" alt="" style="max-height:30px; max-width:160px;" />
     </td>
 </tr>
 {% endif %}
@@ -556,7 +558,7 @@ def _get_espace_client_template() -> str:
         <tr>
             {% for plogo in partner_logo_data_uris %}
             <td style="text-align:center; vertical-align:middle; border:1px solid #000000; padding:6px 8px; background:#fafafa;">
-                <img src="{{ plogo }}" alt="" style="max-height:92px; max-width:240px;" />
+                <img src="{{ plogo }}" alt="" style="max-height:108px; max-width:280px;" />
             </td>
             {% endfor %}
         </tr>
@@ -649,12 +651,12 @@ def _get_espace_client_template() -> str:
             <div style="font-size:8px; color:#1a7a45; margin-top:4px;">Palier atteint</div>
             {% endif %}
         </td>
-        <td style="vertical-align:middle; text-align:right; padding-left:8px;">
-            <div style="font-size:8px; color:#555; text-transform:uppercase; letter-spacing:0.3px;">Montant RFA réalisé</div>
+        <td style="width:26%; vertical-align:middle; text-align:right; padding-left:14px; padding-right:10px;">
+            <div style="font-size:8px; color:#555; text-transform:uppercase; letter-spacing:0.3px; padding-right:2px;">Montant RFA réalisé</div>
             {% if row.achieved %}
-            <div style="font-size:14px; font-weight:700; color:#1a7a45; margin-top:3px;">{{ format_amount(row.current_rfa_amount) }} &#10003;</div>
+            <div style="font-size:13px; font-weight:700; color:#1a7a45; margin-top:3px; padding-right:2px;">{{ format_amount(row.current_rfa_amount) }} &#10003;</div>
             {% else %}
-            <div style="font-size:14px; font-weight:700; color:#1a1a1a; margin-top:3px;">{{ format_amount(row.current_rfa_amount) }}</div>
+            <div style="font-size:13px; font-weight:700; color:#1a1a1a; margin-top:3px; padding-right:2px;">{{ format_amount(row.current_rfa_amount) }}</div>
             {% endif %}
         </td>
     </tr>
@@ -664,10 +666,9 @@ def _get_espace_client_template() -> str:
 {% endfor %}
 {% endif %}
 
-<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
-
-<!-- ══ SECTION TRI-PARTITES ══ -->
+<!-- ══ SECTION TRI-PARTITES (haut page 2 si des plateformes précèdent) ══ -->
 {% if tri_rows %}
+<div {% if global_rows %}class="sec-tri-page"{% endif %}>
 <div class="sec-wrap">
     <span class="sec-title">Objectifs Tri-partites</span>
     {% set t_ok = tri_rows | selectattr('achieved') | list | length %}
@@ -707,12 +708,12 @@ def _get_espace_client_template() -> str:
             <div style="font-size:8px; color:#1a7a45; margin-top:4px;">Palier atteint</div>
             {% endif %}
         </td>
-        <td style="vertical-align:middle; text-align:right; padding-left:8px;">
-            <div style="font-size:8px; color:#555; text-transform:uppercase; letter-spacing:0.3px;">Montant RFA réalisé</div>
+        <td style="width:26%; vertical-align:middle; text-align:right; padding-left:14px; padding-right:10px;">
+            <div style="font-size:8px; color:#555; text-transform:uppercase; letter-spacing:0.3px; padding-right:2px;">Montant RFA réalisé</div>
             {% if row.achieved %}
-            <div style="font-size:14px; font-weight:700; color:#1a7a45; margin-top:3px;">{{ format_amount(row.current_rfa_amount) }} &#10003;</div>
+            <div style="font-size:13px; font-weight:700; color:#1a7a45; margin-top:3px; padding-right:2px;">{{ format_amount(row.current_rfa_amount) }} &#10003;</div>
             {% else %}
-            <div style="font-size:14px; font-weight:700; color:#1a1a1a; margin-top:3px;">{{ format_amount(row.current_rfa_amount) }}</div>
+            <div style="font-size:13px; font-weight:700; color:#1a1a1a; margin-top:3px; padding-right:2px;">{{ format_amount(row.current_rfa_amount) }}</div>
             {% endif %}
         </td>
     </tr>
@@ -720,6 +721,7 @@ def _get_espace_client_template() -> str:
 
 </div>
 {% endfor %}
+</div>
 {% endif %}
 
 <table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:22px;font-size:1px;">&nbsp;</td></tr></table>
