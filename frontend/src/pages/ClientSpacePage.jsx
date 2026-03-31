@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -28,11 +28,26 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [loadingPlans, setLoadingPlans] = useState(false)
   const [plansRequested, setPlansRequested] = useState(false)
   const loadIdRef = useRef(null)
-  const [cotisationMap, setCotisationMap] = useState(() => readCotisationMap(importId))
+  const [cotisationMap, setCotisationMap] = useState({})
 
-  const refreshCotisationMap = useCallback(() => {
-    setCotisationMap(readCotisationMap(importId))
-  }, [importId])
+  const refreshCotisationMap = useCallback(async () => {
+    try {
+      const list = await getCotisations(mode)
+      const map = {}
+      for (const item of list || []) {
+        map[item.entity_key] = { amount: item.amount, facturee: item.facturee, deduite: item.deduite }
+      }
+      setCotisationMap(map)
+    } catch {
+      // Fallback localStorage si API indisponible
+      if (importId) {
+        try {
+          const s = localStorage.getItem(`cotisation_amounts_${importId}`)
+          if (s) setCotisationMap(JSON.parse(s))
+        } catch (_) {}
+      }
+    }
+  }, [importId, mode])
 
   useEffect(() => {
     refreshCotisationMap()
@@ -43,8 +58,6 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [refreshCotisationMap])
-
-  // Charger les logos fournisseurs
   useEffect(() => {
     getSupplierLogos().then(logos => {
       const map = {}

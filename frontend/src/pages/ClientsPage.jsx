@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { User, Users, Search, Check, Clock, RotateCcw, Lock, Unlock, ChevronUp, ChevronDown } from 'lucide-react'
-import { getEntities, getEntityDetail, getAssignments, getContracts, createAssignment, deleteAssignment } from '../api/client'
+import { getEntities, getEntityDetail, getAssignments, getContracts, createAssignment, deleteAssignment, getCotisations, upsertCotisation, deleteCotisation } from '../api/client'
 import EntityDetailDrawer from '../components/EntityDetailDrawer'
 import ContractAssignmentModal from '../components/ContractAssignmentModal'
 
@@ -104,42 +104,55 @@ function ClientsPage({ importId }) {
     return out
   }
 
-  const loadCotisationAmounts = () => {
-    if (!importId) return
-    const key = `cotisation_amounts_${importId}`
-    const stored = localStorage.getItem(key)
-    if (stored) {
-      try {
-        setCotisationAmounts(migrateCotisationMap(JSON.parse(stored)))
-      } catch (e) {
-        console.error('Erreur chargement cotisations:', e)
+  const loadCotisationAmounts = async () => {
+    try {
+      const list = await getCotisations(mode)
+      const map = {}
+      for (const item of list || []) {
+        map[item.entity_key] = { amount: item.amount, facturee: item.facturee, deduite: item.deduite }
+      }
+      setCotisationAmounts(map)
+      // Sync localStorage en cache pour l'espace client (cotisationStorage.js)
+      if (importId) {
+        try { localStorage.setItem(`cotisation_amounts_${importId}`, JSON.stringify(map)) } catch (_) {}
+      }
+    } catch (e) {
+      console.error('Erreur chargement cotisations:', e)
+      // Fallback localStorage
+      if (importId) {
+        const stored = localStorage.getItem(`cotisation_amounts_${importId}`)
+        if (stored) {
+          try { setCotisationAmounts(migrateCotisationMap(JSON.parse(stored))) } catch (_) {}
+        }
       }
     }
   }
 
-  const updateCotisationAmount = (entityKey, data) => {
-    if (!importId || !entityKey) return
-    const canonical =
-      mode === 'group' ? normalizeValue(entityKey) : entityKey.toString().trim()
+  const updateCotisationAmount = async (entityKey, data) => {
+    if (!entityKey) return
+    const canonical = normalizeValue(entityKey)
     if (!canonical) return
-    const key = `cotisation_amounts_${importId}`
     const next = { ...cotisationAmounts }
-    if (mode === 'group') {
-      for (const k of Object.keys(next)) {
-        if (normalizeValue(k) === canonical) delete next[k]
-      }
+    // Supprimer les anciennes clés (groupe) avant mise à jour
+    for (const k of Object.keys(next)) {
+      if (normalizeValue(k) === canonical) delete next[k]
     }
-    if (!data || !data.amount || Number(data.amount) <= 0) {
-      if (mode !== 'group') delete next[canonical]
-    } else {
-      next[canonical] = {
-        amount: Number(data.amount),
-        facturee: Boolean(data.facturee),
-        deduite: Boolean(data.deduite),
+    try {
+      if (!data || !data.amount || Number(data.amount) <= 0) {
+        await deleteCotisation(mode, canonical)
+      } else {
+        const entry = { amount: Number(data.amount), facturee: Boolean(data.facturee), deduite: Boolean(data.deduite) }
+        await upsertCotisation(mode, canonical, entry)
+        next[canonical] = entry
       }
+    } catch (e) {
+      console.error('Erreur sauvegarde cotisation:', e)
     }
     setCotisationAmounts(next)
-    localStorage.setItem(key, JSON.stringify(next))
+    // Sync cache localStorage
+    if (importId) {
+      try { localStorage.setItem(`cotisation_amounts_${importId}`, JSON.stringify(next)) } catch (_) {}
+    }
   }
 
   const saveCalculatedClient = (entityId) => {

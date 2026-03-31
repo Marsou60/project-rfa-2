@@ -349,6 +349,31 @@ export const exportEntityPdf = async (importId, mode, entityId, contractId = nul
   throw new Error(detail)
 }
 
+// ── Cotisation Union (stockée en DB — partagée browser / Tauri / prod) ───────────
+
+export const getCotisations = async (entityType = null) => {
+  const params = entityType ? { entity_type: entityType } : {}
+  const response = await api.get('/cotisations', { params })
+  return response.data // [{entity_key, entity_type, amount, facturee, deduite}, ...]
+}
+
+export const upsertCotisation = async (entityType, entityKey, data) => {
+  const key = String(entityKey || '').trim().toUpperCase()
+  const response = await api.put(
+    `/cotisations/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`,
+    { amount: data.amount, facturee: Boolean(data.facturee), deduite: Boolean(data.deduite) },
+  )
+  return response.data
+}
+
+export const deleteCotisation = async (entityType, entityKey) => {
+  const key = String(entityKey || '').trim().toUpperCase()
+  const response = await api.delete(
+    `/cotisations/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`,
+  )
+  return response.data
+}
+
 export const exportUnionPdf = async (importId) => {
   const response = await api.get(`/imports/${importId}/union/export-pdf`, { responseType: 'blob' })
   return response.data

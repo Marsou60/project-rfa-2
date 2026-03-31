@@ -2,7 +2,7 @@
 Configuration de la base de données SQLite.
 """
 from sqlmodel import SQLModel, create_engine, Session, select
-from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, Ad, User, UserRole, AppSettings, SupplierLogo
+from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting
 from fastapi import HTTPException
 import os
 import sqlite3

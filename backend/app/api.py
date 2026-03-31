@@ -50,12 +50,13 @@ from app.schemas import (
     LoginRequest,
     LoginResponse,
     EntityPdfExportBody,
+    CotisationSettingBody,
     UserCreate,
     UserUpdate,
     UserResponse,
 )
 from app.database import get_session, hash_password, verify_password, UPLOADS_DIR, AVATARS_DIR, LOGOS_DIR, SUPPLIER_LOGOS_DIR
-from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, RuleScope, TargetType, OverrideTierType, Ad, User, UserRole, AppSettings, SupplierLogo
+from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, RuleScope, TargetType, OverrideTierType, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting
 from app.services import nathalie_service
 
 router = APIRouter()
@@ -1417,6 +1418,82 @@ async def get_entity_pdf(
         print(f"Erreur lors de la generation du PDF: {e}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur lors de la generation du PDF: {str(e)}")
+
+
+# ==================== ENDPOINTS COTISATION (DB — partagé browser/Tauri/prod) ====================
+
+@router.get("/cotisations")
+async def list_cotisations(
+    entity_type: Optional[str] = Query(None, description="'client' ou 'group' — filtre optionnel"),
+    session: Session = Depends(get_session),
+):
+    """Retourne toutes les cotisations enregistrées, filtrées par entity_type si précisé."""
+    stmt = select(CotisationSetting)
+    if entity_type:
+        stmt = stmt.where(CotisationSetting.entity_type == entity_type)
+    return session.exec(stmt).all()
+
+
+@router.put("/cotisations/{entity_type}/{entity_key}")
+async def upsert_cotisation(
+    entity_type: str,
+    entity_key: str,
+    body: CotisationSettingBody,
+    session: Session = Depends(get_session),
+):
+    """Crée ou met à jour la cotisation d'un adhérent/groupe. amount <= 0 = suppression."""
+    key = (entity_key or "").strip().upper()
+    if not key:
+        raise HTTPException(status_code=400, detail="entity_key requis")
+    existing = session.exec(
+        select(CotisationSetting).where(
+            CotisationSetting.entity_key == key,
+            CotisationSetting.entity_type == entity_type,
+        )
+    ).first()
+    if body.amount <= 0:
+        if existing:
+            session.delete(existing)
+            session.commit()
+        return {"ok": True, "deleted": True}
+    now = datetime.now()
+    if existing:
+        existing.amount = body.amount
+        existing.facturee = body.facturee
+        existing.deduite = body.deduite
+        existing.updated_at = now
+        session.add(existing)
+    else:
+        session.add(CotisationSetting(
+            entity_key=key,
+            entity_type=entity_type,
+            amount=body.amount,
+            facturee=body.facturee,
+            deduite=body.deduite,
+            updated_at=now,
+        ))
+    session.commit()
+    return {"ok": True}
+
+
+@router.delete("/cotisations/{entity_type}/{entity_key}")
+async def delete_cotisation(
+    entity_type: str,
+    entity_key: str,
+    session: Session = Depends(get_session),
+):
+    """Supprime la cotisation d'un adhérent/groupe."""
+    key = (entity_key or "").strip().upper()
+    existing = session.exec(
+        select(CotisationSetting).where(
+            CotisationSetting.entity_key == key,
+            CotisationSetting.entity_type == entity_type,
+        )
+    ).first()
+    if existing:
+        session.delete(existing)
+        session.commit()
+    return {"ok": True}
 
 
 # ==================== ENDPOINTS CONTRATS ====================

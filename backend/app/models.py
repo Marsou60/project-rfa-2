@@ -169,5 +169,16 @@ class AppSettings(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class CotisationSetting(SQLModel, table=True):
+    """Cotisation Union par adhérent/groupe — stockée en DB (partagée browser / Tauri / prod)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entity_key: str = Field(index=True)   # code_union ou groupe_client — MAJUSCULES
+    entity_type: str = Field(index=True)  # 'client' ou 'group'
+    amount: float = Field(default=0.0)
+    facturee: bool = Field(default=True)
+    deduite: bool = Field(default=True)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
 
 

@@ -32,6 +32,13 @@ class EntityPdfExportBody(BaseModel):
     cotisation_mode: Optional[str] = None
 
 
+class CotisationSettingBody(BaseModel):
+    """Corps PUT cotisation (upsert)."""
+    amount: float
+    facturee: bool = True
+    deduite: bool = True
+
+
 class ClientSummary(BaseModel):
     """Résumé client pour la liste."""
     code_union: str
