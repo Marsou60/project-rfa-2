@@ -290,17 +290,12 @@ def _get_espace_client_template() -> str:
         /* ── HEADER ── */
         .hdr-table  { width: 100%; border-collapse: collapse; padding-bottom: 12px; border-bottom: 2px solid #1a1a1a; margin-bottom: 14px; }
         .hdr-label  { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: #aaa; margin-bottom: 6px; }
-        .hdr-name   { font-size: 20px; font-weight: bold; color: #1a1a1a; }
         .hdr-right  { text-align: right; vertical-align: bottom; font-size: 8px; color: #777; }
         .hdr-gu     { font-size: 9px; font-weight: bold; color: #1a1a1a; }
 
         /* ── KPI ── */
         .kpi-table { width: 100%; border-collapse: separate; border-spacing: 10px; margin-bottom: 16px; }
-        .kpi-box   { background: #f5f5f3; padding: 14px 16px; }
         .kpi-lbl   { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 3px; }
-        .kpi-val   { font-size: 22px; font-weight: bold; color: #1a1a1a; }
-        .kpi-green { color: #1a7a45; }
-        .kpi-blue  { color: #1a4a8a; }
         .kpi-sub   { font-size: 8px; color: #aaa; margin-top: 2px; }
 
         /* ── SECTION ── */
@@ -311,20 +306,12 @@ def _get_espace_client_template() -> str:
         .pill-y    { background: #fff3cd; color: #856404; }
 
         /* ── CARDS ── */
-        .card      { border: 0.5px solid #e0e0e0; border-left: 3px solid #e0e0e0; padding: 12px 14px; margin-bottom: 10px; page-break-inside: avoid; }
+        .card      { border: 0.5px solid #e0e0e0; border-left: 3px solid #e0e0e0; page-break-inside: avoid; }
         .card-pri  { border-left: 3px solid #1a4a8a; }
         .card-top  { width: 100%; border-collapse: collapse; margin-bottom: 3px; }
-        .c-name    { font-size: 11px; font-weight: 600; color: #1a1a1a; }
         .c-tag     { font-size: 8px; color: #1a4a8a; margin-left: 4px; }
-        .c-rfa-ok  { font-size: 12px; font-weight: 700; color: #1a7a45; text-align: right; }
         .c-rfa-run { font-size: 9px; color: #888; text-align: right; }
         .c-meta    { font-size: 9px; color: #666; margin-bottom: 6px; }
-
-        /* ── BARRE DE PROGRESSION ── */
-        .bar-bg    { background: #ebebeb; height: 6px; width: 100%; margin: 6px 0 7px 0; }
-        .bar-green { height: 6px; background: #1a7a45; }
-        .bar-blue  { height: 6px; background: #1a4a8a; }
-        .bar-amber { height: 6px; background: #c07800; }
 
         /* ── PIED DE CARTE ── */
         .c-foot    { width: 100%; border-collapse: collapse; margin-top: 4px; padding-top: 4px; }
@@ -332,7 +319,7 @@ def _get_espace_client_template() -> str:
         .c-gain    { font-size: 9px; color: #1a4a8a; text-align: right; font-weight: 600; }
 
         /* ── FOOTER PAGE ── */
-        .pg-foot   { margin-top: 22px; border-top: 0.5px solid #ddd; padding-top: 8px; text-align: center; font-size: 8px; color: #bbb; }
+        .pg-foot   { border-top: 0.5px solid #ddd; padding-top: 8px; text-align: center; font-size: 8px; color: #bbb; }
     </style>
 </head>
 <body>
@@ -342,7 +329,7 @@ def _get_espace_client_template() -> str:
 <tr>
     <td style="vertical-align:bottom">
         <div class="hdr-label">Espace Client &mdash; Recapitulatif RFA</div>
-        <div class="hdr-name">{{ entity_label }}</div>
+        <div style="font-size:20px; font-weight:bold; color:#1a1a1a;">{{ entity_label }}</div>
     </td>
     <td class="hdr-right">
         <div class="hdr-gu">Groupement Union</div>
@@ -352,32 +339,30 @@ def _get_espace_client_template() -> str:
 </tr>
 </table>
 
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
+
 <!-- ══ KPI ══ -->
 <table class="kpi-table" cellpadding="0" cellspacing="10">
 <tr>
-    <td style="width:33%">
-        <div class="kpi-box">
-            <div class="kpi-lbl">Chiffre d'Affaires</div>
-            <div class="kpi-val">{{ format_amount(ca_total) }}</div>
-            <div class="kpi-sub">CA global cumule</div>
-        </div>
+    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top;">
+        <div class="kpi-lbl">Chiffre d'Affaires</div>
+        <div style="font-size:22px; font-weight:bold; color:#1a1a1a;">{{ format_amount(ca_total) }}</div>
+        <div class="kpi-sub">CA global cumule</div>
     </td>
-    <td style="width:33%">
-        <div class="kpi-box">
-            <div class="kpi-lbl">RFA Acquise</div>
-            <div class="kpi-val kpi-green">{{ format_amount(rfa_total) }}</div>
-            <div class="kpi-sub">{{ format_percent(rfa_rate_global / 100) }} du CA</div>
-        </div>
+    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top;">
+        <div class="kpi-lbl">RFA Acquise</div>
+        <div style="font-size:22px; font-weight:bold; color:#1a7a45;">{{ format_amount(rfa_total) }}</div>
+        <div class="kpi-sub">{{ format_percent(rfa_rate_global / 100) }} du CA</div>
     </td>
-    <td style="width:33%">
-        <div class="kpi-box">
-            <div class="kpi-lbl">Gain Potentiel</div>
-            <div class="kpi-val kpi-blue">{{ ('+' + format_amount(potential_gain_near)) if near_count > 0 else '—' }}</div>
-            <div class="kpi-sub">{{ near_count }} objectif(s) proche(s)</div>
-        </div>
+    <td style="width:33%; background:#f5f5f3; padding:14px 16px; vertical-align:top;">
+        <div class="kpi-lbl">Gain Potentiel</div>
+        <div style="font-size:22px; font-weight:bold; color:#1a4a8a;">{{ ('+' + format_amount(potential_gain_near)) if near_count > 0 else '—' }}</div>
+        <div class="kpi-sub">{{ near_count }} objectif(s) proche(s)</div>
     </td>
 </tr>
 </table>
+
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
 
 <!-- ══ SECTION PLATEFORMES ══ -->
 {% if global_rows %}
@@ -389,21 +374,23 @@ def _get_espace_client_template() -> str:
     {% if g_run > 0 %}<span class="pill pill-y">{{ g_run }} en cours</span>{% endif %}
 </div>
 
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
+
 {% for row in global_rows %}
 {% set pct = row.combined_progress|round(0)|int %}
 {% set is_pri = row.near and not row.achieved %}
-<div class="card{% if is_pri %} card-pri{% endif %}">
+<div class="card{% if is_pri %} card-pri{% endif %}" style="margin-bottom:12px; padding:12px 14px;">
 
     <table class="card-top" cellpadding="0" cellspacing="0">
     <tr>
         <td>
-            <span class="c-name">{{ row.label }}</span>
+            <span style="font-size:11px; font-weight:600; color:#1a1a1a;">{{ row.label }}</span>
             {% if is_pri %}<span class="c-tag">&#8599; Proche du seuil</span>{% endif %}
             {% if row.has_override %}<span style="font-size:8px;color:#7c3aed;margin-left:4px;">&#9998; perso</span>{% endif %}
         </td>
-        <td>
+        <td style="text-align:right; vertical-align:top;">
             {% if row.achieved %}
-            <span class="c-rfa-ok">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
+            <span style="font-size:12px; font-weight:700; color:#1a7a45;">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
             {% else %}
             <span class="c-rfa-run">{{ format_amount(row.current_rfa_amount) }}</span>
             {% endif %}
@@ -419,15 +406,19 @@ def _get_espace_client_template() -> str:
         Progression : {{ pct }}%
     </div>
 
-    <div class="bar-bg">
+    <table cellpadding="0" cellspacing="0" style="width:100%; margin:6px 0 8px 0;">
+    <tr>
         {% if row.achieved %}
-        <div class="bar-green" style="width:100%"></div>
+        <td style="width:100%; background:#1a7a45; height:6px; font-size:1px;">&nbsp;</td>
         {% elif pct >= 60 %}
-        <div class="bar-blue" style="width:{{ pct }}%"></div>
+        <td style="width:{{ pct }}%; background:#1a4a8a; height:6px; font-size:1px;">&nbsp;</td>
+        <td style="background:#ebebeb; height:6px; font-size:1px;">&nbsp;</td>
         {% else %}
-        <div class="bar-amber" style="width:{{ pct }}%"></div>
+        <td style="width:{{ pct }}%; background:#c07800; height:6px; font-size:1px;">&nbsp;</td>
+        <td style="background:#ebebeb; height:6px; font-size:1px;">&nbsp;</td>
         {% endif %}
-    </div>
+    </tr>
+    </table>
 
     {% if not row.achieved %}
     <table class="c-foot" cellpadding="0" cellspacing="0">
@@ -450,6 +441,8 @@ def _get_espace_client_template() -> str:
 {% endfor %}
 {% endif %}
 
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
+
 <!-- ══ SECTION TRI-PARTITES ══ -->
 {% if tri_rows %}
 <div class="sec-wrap">
@@ -460,21 +453,23 @@ def _get_espace_client_template() -> str:
     {% if t_run > 0 %}<span class="pill pill-y">{{ t_run }} en cours</span>{% endif %}
 </div>
 
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:10px;font-size:1px;">&nbsp;</td></tr></table>
+
 {% for row in tri_rows %}
 {% set pct = row.tri_progress.progress|round(0)|int %}
 {% set is_pri = row.near and not row.achieved %}
-<div class="card{% if is_pri %} card-pri{% endif %}">
+<div class="card{% if is_pri %} card-pri{% endif %}" style="margin-bottom:12px; padding:12px 14px;">
 
     <table class="card-top" cellpadding="0" cellspacing="0">
     <tr>
         <td>
-            <span class="c-name">{{ row.label }}</span>
+            <span style="font-size:11px; font-weight:600; color:#1a1a1a;">{{ row.label }}</span>
             {% if is_pri %}<span class="c-tag">&#8599; Proche du seuil</span>{% endif %}
             {% if row.has_override %}<span style="font-size:8px;color:#7c3aed;margin-left:4px;">&#9998; perso</span>{% endif %}
         </td>
-        <td>
+        <td style="text-align:right; vertical-align:top;">
             {% if row.achieved %}
-            <span class="c-rfa-ok">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
+            <span style="font-size:12px; font-weight:700; color:#1a7a45;">{{ format_amount(row.current_rfa_amount) }} &#10003;</span>
             {% else %}
             <span class="c-rfa-run">{{ format_amount(row.current_rfa_amount) }}</span>
             {% endif %}
@@ -490,15 +485,19 @@ def _get_espace_client_template() -> str:
         Progression : {{ pct }}%
     </div>
 
-    <div class="bar-bg">
+    <table cellpadding="0" cellspacing="0" style="width:100%; margin:6px 0 8px 0;">
+    <tr>
         {% if row.achieved %}
-        <div class="bar-green" style="width:100%"></div>
+        <td style="width:100%; background:#1a7a45; height:6px; font-size:1px;">&nbsp;</td>
         {% elif pct >= 60 %}
-        <div class="bar-blue" style="width:{{ pct }}%"></div>
+        <td style="width:{{ pct }}%; background:#1a4a8a; height:6px; font-size:1px;">&nbsp;</td>
+        <td style="background:#ebebeb; height:6px; font-size:1px;">&nbsp;</td>
         {% else %}
-        <div class="bar-amber" style="width:{{ pct }}%"></div>
+        <td style="width:{{ pct }}%; background:#c07800; height:6px; font-size:1px;">&nbsp;</td>
+        <td style="background:#ebebeb; height:6px; font-size:1px;">&nbsp;</td>
         {% endif %}
-    </div>
+    </tr>
+    </table>
 
     {% if not row.achieved %}
     <table class="c-foot" cellpadding="0" cellspacing="0">
@@ -520,6 +519,8 @@ def _get_espace_client_template() -> str:
 </div>
 {% endfor %}
 {% endif %}
+
+<table cellpadding="0" cellspacing="0" style="width:100%;"><tr><td style="height:22px;font-size:1px;">&nbsp;</td></tr></table>
 
 <!-- ══ FOOTER ══ -->
 <div class="pg-foot">
