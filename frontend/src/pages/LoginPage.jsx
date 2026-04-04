@@ -81,7 +81,7 @@ function LoginPage() {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="glass-input pl-12"
-                    placeholder="admin"
+                    placeholder="Identifiant"
                     required
                   />
                 </div>
@@ -125,11 +125,6 @@ function LoginPage() {
               </button>
             </form>
 
-            <div className="mt-8 pt-6 border-t border-white/10">
-              <p className="text-center text-glass-muted text-xs">
-                Compte par défaut : <span className="text-blue-300">admin</span> / <span className="text-blue-300">admin123</span>
-              </p>
-            </div>
           </div>
 
           {/* Footer */}
