@@ -41,6 +41,7 @@ import PureDataMonthlyImportPage from './pages/PureDataMonthlyImportPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AppUpdaterEffect } from './components/AppUpdater'
 import { useUpdater } from './components/AppUpdater'
+import { UpdateProgressOverlay } from './components/AppUpdater'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SupplierFilterProvider, useSupplierFilter } from './context/SupplierFilterContext'
 import { SUPPLIER_KEYS, SUPPLIER_LABELS } from './constants/suppliers'
@@ -49,7 +50,7 @@ import { getSetting, getImageUrl, getRfaSheetsCurrent } from './api/client'
 function AppContent() {
   const { user, loading, logout, isAdmin, isCommercial, isAdherent, isAuthenticated } = useAuth()
   const { supplierFilter, setSupplierFilter } = useSupplierFilter()
-  const { update, checking, downloading, checkForUpdates, downloadAndInstall } = useUpdater()
+  const { update, checking, downloading, progress, checkForUpdates, downloadAndInstall } = useUpdater()
   const [isTauri, setIsTauri] = useState(false)
   useEffect(() => {
     // Détection après montage — Tauri injecte __TAURI__ de façon async
@@ -196,6 +197,10 @@ function AppContent() {
   return (
     <div className="glass-background">
       <AppUpdaterEffect />
+      {/* Overlay progression mise à jour (depuis bouton header) */}
+      {downloading && progress && (
+        <UpdateProgressOverlay progress={progress} version={update?.version} />
+      )}
       {/* Particules flottantes en arrière-plan */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-20 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-float" />
