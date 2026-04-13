@@ -50,7 +50,7 @@ import { getSetting, getImageUrl, getRfaSheetsCurrent } from './api/client'
 function AppContent() {
   const { user, loading, logout, isAdmin, isCommercial, isAdherent, isAuthenticated } = useAuth()
   const { supplierFilter, setSupplierFilter } = useSupplierFilter()
-  const { update, checking, downloading, progress, checkForUpdates, downloadAndInstall } = useUpdater()
+  const { update, checking, downloading, progress, error: updateError, checkForUpdates, downloadAndInstall } = useUpdater()
   const [isTauri, setIsTauri] = useState(false)
   useEffect(() => {
     // Détection après montage — Tauri injecte __TAURI__ de façon async
@@ -198,8 +198,8 @@ function AppContent() {
     <div className="glass-background">
       <AppUpdaterEffect />
       {/* Overlay progression mise à jour (depuis bouton header) */}
-      {downloading && progress && (
-        <UpdateProgressOverlay progress={progress} version={update?.version} />
+      {downloading && (
+        <UpdateProgressOverlay progress={progress} version={update?.version} error={updateError} />
       )}
       {/* Particules flottantes en arrière-plan */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
