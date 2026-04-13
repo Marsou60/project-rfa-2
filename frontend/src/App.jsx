@@ -50,7 +50,14 @@ function AppContent() {
   const { user, loading, logout, isAdmin, isCommercial, isAdherent, isAuthenticated } = useAuth()
   const { supplierFilter, setSupplierFilter } = useSupplierFilter()
   const { update, checking, downloading, checkForUpdates, downloadAndInstall } = useUpdater()
-  const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined
+  const [isTauri, setIsTauri] = useState(false)
+  useEffect(() => {
+    // Détection après montage — Tauri injecte __TAURI__ de façon async
+    const check = () => !!(window.__TAURI__ || window.__TAURI_INTERNALS__)
+    setIsTauri(check())
+    const t = setTimeout(() => setIsTauri(check()), 500)
+    return () => clearTimeout(t)
+  }, [])
   const [currentImportId, setCurrentImportId] = useState(null)
   const [currentPage, setCurrentPage] = useState('hub')
   const [companyLogo, setCompanyLogo] = useState(null)
@@ -569,16 +576,17 @@ function AppContent() {
                     title={`Version ${update.version} disponible`}
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${downloading ? 'animate-spin' : ''}`} />
-                    {downloading ? 'Mise à jour…' : 'Mettre à jour'}
+                    {downloading ? 'Mise à jour…' : `Mettre à jour v${update.version}`}
                   </button>
                 ) : (
                   <button
                     onClick={checkForUpdates}
                     disabled={checking}
-                    className="glass-btn-icon opacity-50 hover:opacity-100"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all border border-white/10"
                     title="Vérifier les mises à jour"
                   >
-                    <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">{checking ? 'Vérification…' : 'Mise à jour'}</span>
                   </button>
                 )
               )}
