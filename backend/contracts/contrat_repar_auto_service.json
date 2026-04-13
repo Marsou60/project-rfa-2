@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "description": "Contrat Repar'auto Service - 100% Alliance. Trois paliers RFA/Bonus ; ACR, DCA, EXADIS sans barème.",
+  "contracts": [
+    {
+      "id": "CONTRAT_REPAR_AUTO_SERVICE",
+      "name": "Repar'auto Service",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat Repar'auto Service - 100% Alliance. 20-50k : RFA 1% / bonus 0,5% ; 50-75k : RFA 1,5% / bonus 1% ; 75-100k : RFA 2% / bonus 1,5%. Pas de tripartites.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02}
+          ],
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015}
+          ]
+        }
+      },
+      "triRules": {}
+    }
+  ]
+}

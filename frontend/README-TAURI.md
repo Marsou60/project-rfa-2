@@ -13,7 +13,9 @@ Version bureau de l'application RFA. Deux modes :
 
 ## Build pour Railway (le plus simple à diffuser)
 
-1. Dans `frontend/`, copier `.env.example` en `.env` et vérifier l'URL du backend (celle de ton projet Railway).
+1. Dans `frontend/`, copier `.env.example` en `.env` et vérifier:
+   - `VITE_USE_REMOTE_API=1`
+   - `VITE_API_URL=<URL Railway cible>`
 2. Générer les icônes (une fois) : `npm run tauri icon chemin/vers/logo.png`
 3. Build :
    ```bash
@@ -34,10 +36,12 @@ Version bureau de l'application RFA. Deux modes :
    - Terminal 2 : `cd frontend` puis `npm run tauri:dev`
 
 2. L'app s'ouvre dans une fenêtre et appelle le backend sur `http://localhost:8001`. Les données restent sur la machine → **très réactif**.
+   (En dev, le mode local est prioritaire tant que `VITE_USE_REMOTE_API` n'est pas à `1`.)
 
 ## Build avec backend local (optionnel)
 
-Si tu veux un build où l'app appelle localhost (meilleures perfs, mais l'utilisateur doit lancer le backend) : ne pas définir `VITE_API_URL` dans `.env` (ou laisser le fichier vide), puis `npm run build` et `npm run tauri build`.
+Si tu veux un build où l'app appelle localhost (meilleures perfs, mais l'utilisateur doit lancer le backend) :
+mettre `VITE_USE_REMOTE_API=0` dans `.env`, puis `npm run build` et `npm run tauri build`.
 
 Les binaires sont dans :
 `frontend/src-tauri/target/release/bundle/`

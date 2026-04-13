@@ -184,6 +184,51 @@ def seed_admin_user():
             print("[SEED] Utilisateur admin créé (login: admin / mdp: admin123)")
 
 
+def _is_local_dev_mode() -> bool:
+    """Détermine si on est en mode dev local (pas Railway/prod)."""
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        return False
+    if os.environ.get("RFA_ENV", "dev").lower() == "prod":
+        return False
+    return True
+
+
+def seed_dev_test_user():
+    """
+    Crée un utilisateur de test local en environnement dev.
+    N'est jamais exécuté sur Railway/prod.
+    """
+    if not _is_local_dev_mode():
+        return
+
+    username = os.environ.get("DEV_TEST_USERNAME", "test")
+    password = os.environ.get("DEV_TEST_PASSWORD", "test123")
+    role_name = os.environ.get("DEV_TEST_ROLE", "COMMERCIAL").upper()
+    display_name = os.environ.get("DEV_TEST_DISPLAY_NAME", "Compte test local")
+
+    try:
+        role = UserRole(role_name)
+    except ValueError:
+        role = UserRole.COMMERCIAL
+
+    with Session(engine) as session:
+        statement = select(User).where(User.username == username)
+        existing = session.exec(statement).first()
+        if existing:
+            return
+
+        user = User(
+            username=username,
+            password_hash=hash_password(password),
+            display_name=display_name,
+            role=role,
+            is_active=True,
+        )
+        session.add(user)
+        session.commit()
+        print(f"[SEED DEV] Utilisateur test créé (login: {username} / mdp: {password})")
+
+
 def init_db():
     """Crée les tables si elles n'existent pas et execute les migrations."""
     # Créer les dossiers uploads si nécessaire
@@ -205,6 +250,7 @@ def init_db():
 
     run_migrations()
     seed_admin_user()
+    seed_dev_test_user()
 
 
 def get_session():

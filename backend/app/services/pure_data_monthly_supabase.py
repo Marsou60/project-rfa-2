@@ -1,15 +1,20 @@
 """
-Lecture / écriture des données Pure Data dans Supabase.
+Stockage Supabase dédié au mode Pure Data mensuel (isolé de l'existant).
 """
 import re
 from typing import List, Dict, Tuple, Optional
 from app.database import engine
 
-PURE_DATA_TABLE = "pure_data"
+PURE_DATA_MONTHLY_TABLE = "pure_data_monthly"
+
+COLUMNS = [
+    "mois", "annee", "code_union", "raison_sociale", "groupe_client",
+    "region_commerciale", "fournisseur", "marque", "groupe_frs",
+    "famille", "sous_famille", "ca", "commercial",
+]
 
 
 def _norm_year(value) -> Optional[int]:
-    """Dérive year (int) depuis annee pour compatibilité avec filter_rows."""
     if value is None:
         return None
     try:
@@ -22,7 +27,6 @@ def _norm_year(value) -> Optional[int]:
 
 
 def _norm_month(value) -> Optional[int]:
-    """Dérive month (int 1-12) depuis mois pour compatibilité avec filter_rows."""
     if value is None:
         return None
     try:
@@ -32,126 +36,56 @@ def _norm_month(value) -> Optional[int]:
         pass
     s = str(value).strip().lower()
     months = {
-        "janvier": 1,
-        "fevrier": 2,
-        "février": 2,
-        "mars": 3,
-        "avril": 4,
-        "mai": 5,
-        "juin": 6,
-        "juillet": 7,
-        "aout": 8,
-        "août": 8,
-        "septembre": 9,
-        "octobre": 10,
-        "novembre": 11,
-        "decembre": 12,
-        "décembre": 12,
+        "janvier": 1, "fevrier": 2, "février": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6,
+        "juillet": 7, "aout": 8, "août": 8, "septembre": 9, "octobre": 10, "novembre": 11,
+        "decembre": 12, "décembre": 12,
     }
-    for key, value in months.items():
+    for key, val in months.items():
         if key in s:
-            return value
+            return val
     m = re.search(r"(\d{1,2})", s)
     if m:
         x = int(m.group(1))
         return x if 1 <= x <= 12 else None
     return None
 
-COLUMNS = [
-    "mois", "annee", "code_union", "raison_sociale", "groupe_client",
-    "region_commerciale", "fournisseur", "marque", "groupe_frs",
-    "famille", "sous_famille", "ca", "commercial",
-]
-
 
 def _table_exists() -> bool:
     try:
         with engine.connect() as conn:
             from sqlalchemy import text
-            conn.execute(text(f'SELECT 1 FROM "{PURE_DATA_TABLE}" LIMIT 1'))
+            conn.execute(text(f'SELECT 1 FROM "{PURE_DATA_MONTHLY_TABLE}" LIMIT 1'))
         return True
     except Exception:
         return False
 
 
-def write_pure_data_to_supabase(rows: List[Dict]) -> int:
-    if not rows:
-        return 0
-
-    col_list    = ", ".join(f'"{c}"' for c in COLUMNS)
-    placeholders = ", ".join(f":{c}" for c in COLUMNS)
-    insert_sql  = f'INSERT INTO "{PURE_DATA_TABLE}" ({col_list}) VALUES ({placeholders})'
-
-    clean_rows = []
-    for row in rows:
-        clean = {}
-        for col in COLUMNS:
-            val = row.get(col)
-            if col == "ca":
-                try:
-                    val = float(val) if val is not None else 0.0
-                except (ValueError, TypeError):
-                    val = 0.0
-            elif col in ("mois", "annee"):
-                try:
-                    val = int(val) if val is not None else None
-                except (ValueError, TypeError):
-                    val = None
-            else:
-                val = str(val).strip() if val is not None else None
-            clean[col] = val
-        clean_rows.append(clean)
-
+def _ensure_table() -> None:
+    """Crée la table mensuelle si absente (isolation complète de l'historique)."""
+    if _table_exists():
+        return
     from sqlalchemy import text
-    # Découper en lots de 500 pour éviter les limites PostgreSQL
-    BATCH = 500
+    create_sql = text(
+        f'''
+        CREATE TABLE IF NOT EXISTS "{PURE_DATA_MONTHLY_TABLE}" (
+          "mois" INTEGER NULL,
+          "annee" INTEGER NULL,
+          "code_union" TEXT NULL,
+          "raison_sociale" TEXT NULL,
+          "groupe_client" TEXT NULL,
+          "region_commerciale" TEXT NULL,
+          "fournisseur" TEXT NULL,
+          "marque" TEXT NULL,
+          "groupe_frs" TEXT NULL,
+          "famille" TEXT NULL,
+          "sous_famille" TEXT NULL,
+          "ca" DOUBLE PRECISION NULL,
+          "commercial" TEXT NULL
+        )
+        '''
+    )
     with engine.begin() as conn:
-        conn.execute(text(f'DELETE FROM "{PURE_DATA_TABLE}"'))
-        for i in range(0, len(clean_rows), BATCH):
-            batch = clean_rows[i:i + BATCH]
-            conn.execute(text(insert_sql), batch)
-
-    return len(clean_rows)
-
-
-def append_pure_data_rows(rows: List[Dict]) -> int:
-    """Ajoute des lignes Pure Data sans supprimer l'existant."""
-    if not rows:
-        return 0
-
-    col_list = ", ".join(f'"{c}"' for c in COLUMNS)
-    placeholders = ", ".join(f":{c}" for c in COLUMNS)
-    insert_sql = f'INSERT INTO "{PURE_DATA_TABLE}" ({col_list}) VALUES ({placeholders})'
-
-    clean_rows = []
-    for row in rows:
-        clean = {}
-        for col in COLUMNS:
-            val = row.get(col)
-            if col == "ca":
-                try:
-                    val = float(val) if val is not None else 0.0
-                except (ValueError, TypeError):
-                    val = 0.0
-            elif col == "annee":
-                year = _norm_year(val if val is not None else row.get("year"))
-                val = year
-            elif col == "mois":
-                month = _norm_month(val if val is not None else row.get("month"))
-                val = month
-            else:
-                val = str(val).strip() if val is not None else None
-            clean[col] = val
-        clean_rows.append(clean)
-
-    from sqlalchemy import text
-    BATCH = 500
-    with engine.begin() as conn:
-        for i in range(0, len(clean_rows), BATCH):
-            batch = clean_rows[i:i + BATCH]
-            conn.execute(text(insert_sql), batch)
-
-    return len(clean_rows)
+        conn.execute(create_sql)
 
 
 def _build_in_clause(values: List, prefix: str) -> Tuple[str, Dict]:
@@ -164,47 +98,80 @@ def _build_in_clause(values: List, prefix: str) -> Tuple[str, Dict]:
     return ", ".join(placeholders), params
 
 
-def delete_pure_data_rows(
+def append_monthly_rows(rows: List[Dict]) -> int:
+    if not rows:
+        return 0
+    _ensure_table()
+
+    col_list = ", ".join(f'"{c}"' for c in COLUMNS)
+    placeholders = ", ".join(f":{c}" for c in COLUMNS)
+    insert_sql = f'INSERT INTO "{PURE_DATA_MONTHLY_TABLE}" ({col_list}) VALUES ({placeholders})'
+
+    clean_rows = []
+    for row in rows:
+        clean = {}
+        for col in COLUMNS:
+            val = row.get(col)
+            if col == "ca":
+                try:
+                    val = float(val) if val is not None else 0.0
+                except (ValueError, TypeError):
+                    val = 0.0
+            elif col == "annee":
+                val = _norm_year(val if val is not None else row.get("year"))
+            elif col == "mois":
+                val = _norm_month(val if val is not None else row.get("month"))
+            else:
+                val = str(val).strip() if val is not None else None
+            clean[col] = val
+        clean_rows.append(clean)
+
+    from sqlalchemy import text
+    BATCH = 500
+    with engine.begin() as conn:
+        for i in range(0, len(clean_rows), BATCH):
+            conn.execute(text(insert_sql), clean_rows[i:i + BATCH])
+    return len(clean_rows)
+
+
+def delete_monthly_rows(
     years: Optional[List[int]] = None,
     months: Optional[List[int]] = None,
     fournisseurs: Optional[List[str]] = None,
 ) -> int:
-    """Supprime les lignes selon des filtres; sans filtre, supprime tout."""
+    _ensure_table()
     from sqlalchemy import text
-
     where_parts: List[str] = []
     params: Dict = {}
 
     if years:
         clean_years = sorted({int(y) for y in years if y is not None})
         if clean_years:
-            placeholders, local_params = _build_in_clause(clean_years, "year")
+            placeholders, p = _build_in_clause(clean_years, "year")
             where_parts.append(f'"annee" IN ({placeholders})')
-            params.update(local_params)
+            params.update(p)
 
     if months:
         clean_months = sorted({int(m) for m in months if m is not None and 1 <= int(m) <= 12})
         if clean_months:
-            placeholders, local_params = _build_in_clause(clean_months, "month")
+            placeholders, p = _build_in_clause(clean_months, "month")
             where_parts.append(f'"mois" IN ({placeholders})')
-            params.update(local_params)
+            params.update(p)
 
     if fournisseurs:
         clean_fournisseurs = sorted({str(f).strip() for f in fournisseurs if str(f).strip()})
         if clean_fournisseurs:
-            placeholders, local_params = _build_in_clause(clean_fournisseurs, "frs")
+            placeholders, p = _build_in_clause(clean_fournisseurs, "frs")
             where_parts.append(f'UPPER(TRIM("fournisseur")) IN ({placeholders})')
-            params.update({k: str(v).upper() for k, v in local_params.items()})
+            params.update({k: str(v).upper() for k, v in p.items()})
 
     where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-
     with engine.begin() as conn:
-        res = conn.execute(text(f'DELETE FROM "{PURE_DATA_TABLE}" {where_clause}'), params)
+        res = conn.execute(text(f'DELETE FROM "{PURE_DATA_MONTHLY_TABLE}" {where_clause}'), params)
         return int(res.rowcount or 0)
 
 
-def get_pure_data_scope(rows: List[Dict]) -> Dict[str, List]:
-    """Déduit le scope (années/mois/fournisseurs) présent dans un import."""
+def get_monthly_scope(rows: List[Dict]) -> Dict[str, List]:
     years = set()
     months = set()
     fournisseurs = set()
@@ -218,18 +185,12 @@ def get_pure_data_scope(rows: List[Dict]) -> Dict[str, List]:
             months.add(int(m))
         if f:
             fournisseurs.add(f.upper())
-    return {
-        "years": sorted(years),
-        "months": sorted(months),
-        "fournisseurs": sorted(fournisseurs),
-    }
+    return {"years": sorted(years), "months": sorted(months), "fournisseurs": sorted(fournisseurs)}
 
 
-def list_pure_data_periods() -> List[Dict]:
-    """Liste des périodes existantes (année, mois, fournisseur, nb lignes, total CA)."""
+def list_monthly_periods() -> List[Dict]:
     if not _table_exists():
         return []
-
     from sqlalchemy import text
     sql = text(
         f'''
@@ -239,7 +200,7 @@ def list_pure_data_periods() -> List[Dict]:
           UPPER(TRIM("fournisseur")) AS fournisseur,
           COUNT(*) AS row_count,
           COALESCE(SUM("ca"), 0) AS total_ca
-        FROM "{PURE_DATA_TABLE}"
+        FROM "{PURE_DATA_MONTHLY_TABLE}"
         GROUP BY "annee", "mois", UPPER(TRIM("fournisseur"))
         ORDER BY "annee" DESC, "mois" DESC, UPPER(TRIM("fournisseur")) ASC
         '''
@@ -258,11 +219,10 @@ def list_pure_data_periods() -> List[Dict]:
     return out
 
 
-def read_pure_data_from_supabase(
+def read_monthly_rows(
     year: Optional[int] = None,
     month: Optional[int] = None,
 ) -> Tuple[List[Dict], List[str], Dict[str, str]]:
-    """Lit les données depuis Supabase avec filtres optionnels pour réduire le volume."""
     if not _table_exists():
         return [], list(COLUMNS), {col: col for col in COLUMNS}
 
@@ -280,7 +240,7 @@ def read_pure_data_from_supabase(
 
     with engine.connect() as conn:
         result = conn.execute(
-            text(f'SELECT {col_select} FROM "{PURE_DATA_TABLE}" {where_clause}'),
+            text(f'SELECT {col_select} FROM "{PURE_DATA_MONTHLY_TABLE}" {where_clause}'),
             params,
         )
         rows_raw = result.fetchall()
@@ -292,10 +252,10 @@ def read_pure_data_from_supabase(
     return rows, list(COLUMNS), {col: col for col in COLUMNS}
 
 
-def count_pure_data_rows() -> int:
+def count_monthly_rows() -> int:
     if not _table_exists():
         return 0
     from sqlalchemy import text
     with engine.connect() as conn:
-        result = conn.execute(text(f'SELECT COUNT(*) FROM "{PURE_DATA_TABLE}"'))
+        result = conn.execute(text(f'SELECT COUNT(*) FROM "{PURE_DATA_MONTHLY_TABLE}"'))
         return result.scalar() or 0

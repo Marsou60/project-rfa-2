@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "Contrat PPA Plaisir - 100% Alliance. Quatre paliers RFA/Bonus ; tripartites Schaeffler, Delphi, Brembo, Purflux Group. RFA et bonus au plus tard le 30 juillet de l'année suivante si préconisations validées (article 4).",
+  "contracts": [
+    {
+      "id": "CONTRAT_PPA_PLAISIR",
+      "name": "PPA Plaisir",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat PPA Plaisir - 100% Alliance. 20-50k : RFA 2% / bonus 0,5% ; 50-75k : RFA 2,5% / bonus 0,5% ; 75-100k : RFA 3,5% / bonus 0,5% ; 100-150k : RFA 4,5% / bonus 0,5%. RFA et bonus versés au plus tard le 30 juillet N+1 si préconisations article 4 validées. Tripartites : Schaeffler, Delphi, Brembo, Purflux Group (≥20k = 2%, ≥25k = 2,5%).",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 50000, "rate": 0.025},
+            {"min": 75000, "rate": 0.035},
+            {"min": 100000, "rate": 0.045}
+          ],
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.005},
+            {"min": 75000, "rate": 0.005},
+            {"min": 100000, "rate": 0.005}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 25000, "rate": 0.025}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 25000, "rate": 0.025}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 25000, "rate": 0.025}
+          ]
+        },
+        "TRI_PURFLUX_COOPERS": {
+          "tiers": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 25000, "rate": 0.025}
+          ]
+        }
+      }
+    }
+  ]
+}

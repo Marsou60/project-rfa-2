@@ -2167,6 +2167,15 @@ def require_admin(user: Optional[User] = Depends(get_current_user)) -> User:
     return user
 
 
+def require_staff(user: Optional[User] = Depends(get_current_user)) -> User:
+    """Autorise ADMIN et COMMERCIAL."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    if user.role not in (UserRole.ADMIN, UserRole.COMMERCIAL):
+        raise HTTPException(status_code=403, detail="Accès réservé à l'équipe commerciale")
+    return user
+
+
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest, session: Session = Depends(get_session)):
     """Connexion utilisateur."""
@@ -2848,6 +2857,556 @@ async def sync_pure_data_from_sheets(admin: User = Depends(require_admin)):
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur sync Pure Data Sheets: {str(e)}")
+
+
+@router.get("/pure-data/monthly/periods")
+async def pure_data_monthly_periods(user: User = Depends(require_staff)):
+    """
+    Liste les périodes actuellement en base (année/mois/fournisseur).
+    Sert à vérifier ce qui est chargé et à préparer des suppressions ciblées.
+    """
+    try:
+        from app.services.pure_data_monthly_supabase import list_monthly_periods
+        return {"items": list_monthly_periods()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lecture périodes Pure Data mensuel: {str(e)}")
+
+
+@router.post("/pure-data/monthly/import-excel")
+async def import_pure_data_monthly_excel(
+    file: UploadFile = File(...),
+    mode: str = Form("append"),  # append | replace_scope
+    user: User = Depends(require_staff),
+):
+    """
+    Importe un fichier Excel Pure Data:
+    - append: ajoute sans toucher l'existant
+    - replace_scope: supprime d'abord le scope détecté (année/mois/fournisseur), puis réinsère
+    """
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Fichier .xlsx ou .xls requis")
+    if mode not in ("append", "replace_scope"):
+        raise HTTPException(status_code=400, detail="Mode invalide. Utiliser 'append' ou 'replace_scope'.")
+
+    tmp_path = None
+    try:
+        from app.services.pure_data_import import load_pure_data
+        from app.services.pure_data_monthly_supabase import (
+            append_monthly_rows,
+            delete_monthly_rows,
+            get_monthly_scope,
+        )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+
+        rows, _, _ = load_pure_data(tmp_path)
+        if not rows:
+            raise HTTPException(status_code=400, detail="Aucune donnée exploitable trouvée dans le fichier.")
+
+        scope = get_monthly_scope(rows)
+        deleted = 0
+        if mode == "replace_scope":
+            if not scope["years"] or not scope["months"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Impossible de détecter l'année/mois dans le fichier. Vérifiez les colonnes Mois/Année.",
+                )
+            deleted = delete_monthly_rows(
+                years=scope["years"],
+                months=scope["months"],
+                fournisseurs=scope["fournisseurs"] or None,
+            )
+
+        inserted = append_monthly_rows(rows)
+
+        # Invalider le cache mémoire
+        from app.storage import _pure_data_imports
+        _pure_data_imports.pop("monthly_live", None)
+
+        return {
+            "success": True,
+            "mode": mode,
+            "filename": file.filename,
+            "rows_inserted": inserted,
+            "rows_deleted": deleted,
+            "scope": scope,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur import Excel Pure Data mensuel: {str(e)}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+@router.delete("/pure-data/monthly/rows")
+async def delete_pure_data_monthly_scope(
+    years: Optional[str] = Query(None, description="Liste années, ex: 2025,2026"),
+    months: Optional[str] = Query(None, description="Liste mois 1-12, ex: 1,2,3"),
+    fournisseurs: Optional[str] = Query(None, description="Liste fournisseurs, ex: ALLIANCE,EXADIS"),
+    user: User = Depends(require_staff),
+):
+    """
+    Supprime des données Pure Data mensuel par scope.
+    Sans filtres => suppression complète.
+    """
+    try:
+        from app.services.pure_data_monthly_supabase import delete_monthly_rows
+
+        year_list = [int(x.strip()) for x in years.split(",")] if years else None
+        month_list = [int(x.strip()) for x in months.split(",")] if months else None
+        fournisseur_list = [x.strip() for x in fournisseurs.split(",") if x.strip()] if fournisseurs else None
+
+        deleted = delete_monthly_rows(
+            years=year_list,
+            months=month_list,
+            fournisseurs=fournisseur_list,
+        )
+
+        # Invalider le cache mémoire
+        from app.storage import _pure_data_imports
+        _pure_data_imports.pop("monthly_live", None)
+
+        return {
+            "success": True,
+            "deleted_rows": deleted,
+            "filters": {
+                "years": year_list,
+                "months": month_list,
+                "fournisseurs": fournisseur_list,
+            },
+        }
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Paramètres years/months invalides.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur suppression Pure Data mensuel: {str(e)}")
+
+
+@router.get("/pure-data/monthly/load")
+async def load_pure_data_monthly(
+    year_current: Optional[int] = 2026,
+    year_previous: Optional[int] = 2025,
+    month: Optional[int] = None,
+):
+    """
+    Charge la comparaison Pure Data en mode mensuel (table dédiée),
+    sans impacter la table historique 2024/2025.
+    """
+    try:
+        from app.services.pure_data_import import filter_rows, aggregate_rows, build_comparison
+        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.storage import create_pure_data_import, _pure_data_imports
+
+        if count_monthly_rows() == 0:
+            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible. Importez un fichier mensuel.")
+
+        rows, columns, mapping = read_monthly_rows()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
+
+        current_filtered = filter_rows(rows, year_current, month)
+        previous_filtered = filter_rows(rows, year_previous, month)
+        current_agg = aggregate_rows(current_filtered)
+        previous_agg = aggregate_rows(previous_filtered)
+        comparison = build_comparison(current_agg, previous_agg)
+
+        # cache en mémoire pour réutiliser les endpoints de détail existants
+        pure_data_id = create_pure_data_import(columns, mapping, rows)
+        _pure_data_imports["monthly_live"] = _pure_data_imports[pure_data_id]
+
+        return {
+            "pure_data_id": pure_data_id,
+            "source": "monthly",
+            "current": {"year": year_current, "month": month, "total_ca": current_agg["total_ca"], "row_count": len(current_filtered)},
+            "previous": {"year": year_previous, "month": month, "total_ca": previous_agg["total_ca"], "row_count": len(previous_filtered)},
+            "comparison": comparison,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur chargement Pure Data mensuel: {str(e)}")
+
+
+@router.get("/pure-data/monthly/evolution")
+async def pure_data_monthly_evolution(
+    year_current: Optional[int] = 2026,
+    year_previous: Optional[int] = 2025,
+    fournisseur: Optional[str] = None,
+    top_clients: int = 0,
+    user: User = Depends(require_staff),
+):
+    """
+    Retourne une vraie lecture mensuelle:
+    - évolution globale par mois (N vs N-1)
+    - top clients avec détail delta mois par mois
+    """
+    try:
+        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_import import filter_rows_by_fournisseur
+
+        if count_monthly_rows() == 0:
+            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
+
+        rows, _, _ = read_monthly_rows()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
+
+        rows = filter_rows_by_fournisseur(rows, fournisseur)
+
+        months = sorted({int(r.get("month")) for r in rows if r.get("month") is not None})
+
+        def _pct(delta: float, base: float):
+            return (delta / base) * 100 if base else None
+
+        monthly_totals = []
+        for m in months:
+            current = sum(
+                float(r.get("ca") or 0.0)
+                for r in rows
+                if r.get("year") == year_current and r.get("month") == m
+            )
+            previous = sum(
+                float(r.get("ca") or 0.0)
+                for r in rows
+                if r.get("year") == year_previous and r.get("month") == m
+            )
+            delta = current - previous
+            monthly_totals.append({
+                "month": m,
+                "current": current,
+                "previous": previous,
+                "delta": delta,
+                "delta_pct": _pct(delta, previous),
+            })
+
+        client_map: Dict[str, Dict] = {}
+        for r in rows:
+            y = r.get("year")
+            m = r.get("month")
+            if y not in (year_current, year_previous) or m is None:
+                continue
+            code = (r.get("code_union") or "").strip() or "Inconnu"
+            if code not in client_map:
+                client_map[code] = {
+                    "code_union": code,
+                    "raison_sociale": (r.get("raison_sociale") or "").strip(),
+                    "commercial": (r.get("commercial") or "").strip(),
+                    "total_current": 0.0,
+                    "total_previous": 0.0,
+                    "by_month": {mm: {"current": 0.0, "previous": 0.0} for mm in months},
+                }
+            ca = float(r.get("ca") or 0.0)
+            if y == year_current:
+                client_map[code]["total_current"] += ca
+                client_map[code]["by_month"][m]["current"] += ca
+            else:
+                client_map[code]["total_previous"] += ca
+                client_map[code]["by_month"][m]["previous"] += ca
+
+        clients = []
+        for _, c in client_map.items():
+            delta = c["total_current"] - c["total_previous"]
+            clients.append({
+                "code_union": c["code_union"],
+                "raison_sociale": c["raison_sociale"],
+                "commercial": c["commercial"],
+                "total_current": c["total_current"],
+                "total_previous": c["total_previous"],
+                "delta": delta,
+                "delta_pct": _pct(delta, c["total_previous"]),
+                "months": [
+                    {
+                        "month": mm,
+                        "current": c["by_month"][mm]["current"],
+                        "previous": c["by_month"][mm]["previous"],
+                        "delta": c["by_month"][mm]["current"] - c["by_month"][mm]["previous"],
+                        "delta_pct": _pct(
+                            c["by_month"][mm]["current"] - c["by_month"][mm]["previous"],
+                            c["by_month"][mm]["previous"],
+                        ),
+                    }
+                    for mm in months
+                ],
+            })
+
+        clients.sort(key=lambda x: abs(x["delta"]), reverse=True)
+        if top_clients and top_clients > 0:
+            clients = clients[:top_clients]
+
+        return {
+            "year_current": year_current,
+            "year_previous": year_previous,
+            "fournisseur": fournisseur,
+            "months": monthly_totals,
+            "clients": clients,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur évolution mensuelle: {str(e)}")
+
+
+@router.get("/pure-data/monthly/evolution/entity-detail")
+async def pure_data_monthly_entity_detail(
+    code_union: Optional[str] = None,
+    commercial: Optional[str] = None,
+    year_current: int = 2026,
+    year_previous: int = 2025,
+    user: User = Depends(require_staff),
+):
+    """
+    Détail mensuel d'un client (code_union) ou d'un commercial:
+    Pour chaque plateforme (fournisseur), retourne le CA N, N-1, delta par mois.
+    Permet de voir ex: EXADIS baisse mais ALLIANCE hausse.
+    """
+    if not code_union and not commercial:
+        raise HTTPException(status_code=400, detail="Fournir code_union ou commercial.")
+
+    try:
+        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+
+        if count_monthly_rows() == 0:
+            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
+
+        rows, _, _ = read_monthly_rows()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
+
+        def _norm(s):
+            import unicodedata, re
+            s = (s or "").strip()
+            s = unicodedata.normalize("NFD", s)
+            s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+            return re.sub(r"\s+", " ", s).strip().upper()
+
+        # Filtre client ou commercial
+        if code_union:
+            target = code_union.strip().upper()
+            rows = [r for r in rows if (r.get("code_union") or "").strip().upper() == target]
+            label_key = "code_union"
+            label = code_union
+            raison = next((r.get("raison_sociale") or "" for r in rows), "")
+            display_label = f"{code_union} — {raison}".strip(" —")
+        else:
+            target = _norm(commercial)
+            rows = [r for r in rows if _norm(r.get("commercial") or "") == target]
+            label_key = "commercial"
+            label = commercial
+            display_label = commercial
+
+        months_set = sorted({int(r["month"]) for r in rows if r.get("month") is not None})
+        platforms_set = sorted({(r.get("fournisseur") or "Non renseigné").strip().upper() for r in rows if (r.get("fournisseur") or "").strip()})
+
+        def _pct(delta, base):
+            return (delta / base) * 100 if base else None
+
+        # Agrégation platform × year × month
+        agg: Dict[str, Dict] = {}
+        for r in rows:
+            plat = (r.get("fournisseur") or "Non renseigné").strip().upper()
+            y = r.get("year")
+            m = r.get("month")
+            if y not in (year_current, year_previous) or m is None:
+                continue
+            ca = float(r.get("ca") or 0.0)
+            if plat not in agg:
+                agg[plat] = {
+                    "platform": plat,
+                    "total_current": 0.0,
+                    "total_previous": 0.0,
+                    "by_month": {mm: {"current": 0.0, "previous": 0.0} for mm in months_set},
+                }
+            if y == year_current:
+                agg[plat]["total_current"] += ca
+                if m in agg[plat]["by_month"]:
+                    agg[plat]["by_month"][m]["current"] += ca
+            else:
+                agg[plat]["total_previous"] += ca
+                if m in agg[plat]["by_month"]:
+                    agg[plat]["by_month"][m]["previous"] += ca
+
+        platforms_out = []
+        for plat, d in sorted(agg.items(), key=lambda x: -abs(x[1]["total_current"] - x[1]["total_previous"])):
+            delta = d["total_current"] - d["total_previous"]
+            platforms_out.append({
+                "platform": plat,
+                "total_current": d["total_current"],
+                "total_previous": d["total_previous"],
+                "delta": delta,
+                "delta_pct": _pct(delta, d["total_previous"]),
+                "months": [
+                    {
+                        "month": mm,
+                        "current": d["by_month"][mm]["current"],
+                        "previous": d["by_month"][mm]["previous"],
+                        "delta": d["by_month"][mm]["current"] - d["by_month"][mm]["previous"],
+                        "delta_pct": _pct(
+                            d["by_month"][mm]["current"] - d["by_month"][mm]["previous"],
+                            d["by_month"][mm]["previous"],
+                        ),
+                    }
+                    for mm in months_set
+                ],
+            })
+
+        # Totaux globaux par mois
+        totals_by_month = []
+        for mm in months_set:
+            curr = sum(p["by_month"][mm]["current"] for p in agg.values() if mm in p["by_month"])
+            prev = sum(p["by_month"][mm]["previous"] for p in agg.values() if mm in p["by_month"])
+            delta = curr - prev
+            totals_by_month.append({
+                "month": mm,
+                "current": curr,
+                "previous": prev,
+                "delta": delta,
+                "delta_pct": _pct(delta, prev),
+            })
+
+        grand_current = sum(p["total_current"] for p in agg.values())
+        grand_previous = sum(p["total_previous"] for p in agg.values())
+        grand_delta = grand_current - grand_previous
+
+        # Clients du commercial (uniquement si vue commercial)
+        clients_out = []
+        if commercial and not code_union:
+            client_agg: Dict[str, Dict] = {}
+            for r in rows:
+                y = r.get("year")
+                if y not in (year_current, year_previous):
+                    continue
+                cu = (r.get("code_union") or "").strip() or "Inconnu"
+                ca = float(r.get("ca") or 0.0)
+                if cu not in client_agg:
+                    client_agg[cu] = {
+                        "code_union": cu,
+                        "raison_sociale": (r.get("raison_sociale") or "").strip(),
+                        "total_current": 0.0,
+                        "total_previous": 0.0,
+                    }
+                if y == year_current:
+                    client_agg[cu]["total_current"] += ca
+                else:
+                    client_agg[cu]["total_previous"] += ca
+            for cu, c in client_agg.items():
+                delta = c["total_current"] - c["total_previous"]
+                clients_out.append({
+                    "code_union": cu,
+                    "raison_sociale": c["raison_sociale"],
+                    "total_current": c["total_current"],
+                    "total_previous": c["total_previous"],
+                    "delta": delta,
+                    "delta_pct": _pct(delta, c["total_previous"]),
+                })
+            clients_out.sort(key=lambda x: abs(x["delta"]), reverse=True)
+
+        return {
+            "label": display_label,
+            "code_union": code_union,
+            "commercial": commercial,
+            "year_current": year_current,
+            "year_previous": year_previous,
+            "months": months_set,
+            "totals": {
+                "current": grand_current,
+                "previous": grand_previous,
+                "delta": grand_delta,
+                "delta_pct": _pct(grand_delta, grand_previous),
+            },
+            "totals_by_month": totals_by_month,
+            "platforms": platforms_out,
+            "clients": clients_out,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur détail mensuel entité: {str(e)}")
+
+
+@router.get("/pure-data/monthly/evolution/month-detail")
+async def pure_data_monthly_month_detail(
+    month: int,
+    year_current: int = 2026,
+    year_previous: int = 2025,
+    user: User = Depends(require_staff),
+):
+    """
+    Pour un mois donné, retourne le CA N vs N-1 par plateforme (fournisseur).
+    """
+    try:
+        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+
+        if count_monthly_rows() == 0:
+            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
+
+        rows, _, _ = read_monthly_rows(month=month)
+
+        def _pct(delta, base):
+            return (delta / base) * 100 if base else None
+
+        plat_map: Dict[str, Dict] = {}
+        for r in rows:
+            y = r.get("year")
+            if y not in (year_current, year_previous):
+                continue
+            plat = (r.get("fournisseur") or "Non renseigné").strip().upper()
+            ca = float(r.get("ca") or 0.0)
+            if plat not in plat_map:
+                plat_map[plat] = {"platform": plat, "current": 0.0, "previous": 0.0}
+            if y == year_current:
+                plat_map[plat]["current"] += ca
+            else:
+                plat_map[plat]["previous"] += ca
+
+        platforms = []
+        for plat, d in sorted(plat_map.items(), key=lambda x: -abs(x[1]["current"] - x[1]["previous"])):
+            delta = d["current"] - d["previous"]
+            platforms.append({
+                "platform": plat,
+                "current": d["current"],
+                "previous": d["previous"],
+                "delta": delta,
+                "delta_pct": _pct(delta, d["previous"]),
+            })
+
+        grand_current = sum(p["current"] for p in platforms)
+        grand_previous = sum(p["previous"] for p in platforms)
+        grand_delta = grand_current - grand_previous
+
+        return {
+            "month": month,
+            "year_current": year_current,
+            "year_previous": year_previous,
+            "totals": {
+                "current": grand_current,
+                "previous": grand_previous,
+                "delta": grand_delta,
+                "delta_pct": _pct(grand_delta, grand_previous),
+            },
+            "platforms": platforms,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur détail mois: {str(e)}")
 
 
 def _resolve_pure_data(pure_data_id: str):

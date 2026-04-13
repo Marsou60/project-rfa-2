@@ -36,6 +36,7 @@ import LoginPage from './pages/LoginPage'
 import HubPage from './pages/HubPage'
 import NathaliePage from './pages/NathaliePage'
 import PaulPage from './pages/PaulPage'
+import PureDataMonthlyImportPage from './pages/PureDataMonthlyImportPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AppUpdaterEffect } from './components/AppUpdater'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -55,18 +56,27 @@ function AppContent() {
   useEffect(() => {
     const savedImportId = localStorage.getItem('currentImportId')
     const savedPage = localStorage.getItem('currentPage')
-    if (savedImportId) {
-      setCurrentImportId(savedImportId)
-    } else {
-      getRfaSheetsCurrent()
-        .then((r) => {
-          if (r && r.has_data) {
-            setCurrentImportId('sheets_live')
-            localStorage.setItem('currentImportId', 'sheets_live')
-          }
-        })
-        .catch(() => {})
-    }
+    getRfaSheetsCurrent()
+      .then((r) => {
+        const hasSheetsLive = Boolean(r && r.has_data)
+        if (savedImportId === 'sheets_live' && !hasSheetsLive) {
+          setCurrentImportId(null)
+          localStorage.removeItem('currentImportId')
+          return
+        }
+        if (savedImportId) {
+          setCurrentImportId(savedImportId)
+          return
+        }
+        if (hasSheetsLive) {
+          setCurrentImportId('sheets_live')
+          localStorage.setItem('currentImportId', 'sheets_live')
+        }
+      })
+      .catch(() => {
+        if (savedImportId) setCurrentImportId(savedImportId)
+      })
+
     if (savedPage) {
       setCurrentPage(savedPage)
     }
@@ -159,7 +169,7 @@ function AppContent() {
   // Pages accessibles uniquement aux admins
   const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'paul', 'union-space']
   // Pages accessibles aux commerciaux (Nicolas + Nathalie)
-  const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'nathalie']
+  const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'pure-data-monthly', 'nathalie']
 
   // Adhérent : redirige vers espace client seulement si les données sont prêtes
   // (sans données, on laisse afficher le message de bienvenue)
@@ -226,7 +236,7 @@ function AppContent() {
                     <button
                       onClick={() => setOpenMenu(openMenu === 'nicolas' ? null : 'nicolas')}
                       className={`glass-nav-item text-sm flex items-center gap-1.5 ${
-                        ['client-space', 'genie', 'pure-data'].includes(effectivePage) ? 'active' : ''
+                        ['client-space', 'genie', 'pure-data', 'pure-data-monthly'].includes(effectivePage) ? 'active' : ''
                       }`}
                     >
                       <span className="text-base leading-none">📊</span>
@@ -265,6 +275,16 @@ function AppContent() {
                             <div className="text-[10px] text-white/40">Données brutes N-1</div>
                           </div>
                         </button>
+                        <button
+                          onClick={() => { setCurrentPage('pure-data-monthly'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data-monthly' ? 'active' : ''}`}
+                        >
+                          <TrendingUp className="w-4 h-4 text-emerald-400" />
+                          <div>
+                            <div className="font-semibold">2025 / 2026 Mensuel</div>
+                            <div className="text-[10px] text-white/40">Suivi mensuel clients</div>
+                          </div>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -292,7 +312,7 @@ function AppContent() {
                     <button
                       onClick={() => setOpenMenu(openMenu === 'nicolas' ? null : 'nicolas')}
                       className={`glass-nav-item text-sm flex items-center gap-1.5 ${
-                        ['nicolas', 'client-space', 'genie', 'pure-data'].includes(effectivePage) ? 'active' : ''
+                        ['nicolas', 'client-space', 'genie', 'pure-data', 'pure-data-monthly'].includes(effectivePage) ? 'active' : ''
                       }`}
                     >
                       <span className="text-base leading-none">📊</span>
@@ -329,6 +349,16 @@ function AppContent() {
                           <div>
                             <div className="font-semibold">Pure Data</div>
                             <div className="text-[10px] text-white/40">Données brutes N-1</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage('pure-data-monthly'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data-monthly' ? 'active' : ''}`}
+                        >
+                          <TrendingUp className="w-4 h-4 text-emerald-400" />
+                          <div>
+                            <div className="font-semibold">2025 / 2026 Mensuel</div>
+                            <div className="text-[10px] text-white/40">Suivi mensuel clients</div>
                           </div>
                         </button>
                       </div>
@@ -461,6 +491,12 @@ function AppContent() {
                           <FlaskConical className="w-4 h-4" />
                           <span>Test Import Brut</span>
                         </button>
+                        <div className="border-t border-white/10 my-1" />
+                        <button onClick={() => { setCurrentPage('pure-data-monthly-import'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data-monthly-import' ? 'active' : ''}`}>
+                          <TrendingUp className="w-4 h-4 text-teal-400" />
+                          <span>Import mensuel 2025/2026</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -483,7 +519,7 @@ function AppContent() {
               )}
 
               {/* Filtre fournisseur (mode ACR, DCA, etc.) — visible avec un import ou sur Pure Data */}
-              {(currentImportId || currentPage === 'pure-data') && (
+              {(currentImportId || currentPage === 'pure-data' || currentPage === 'pure-data-monthly') && (
                 <div className="relative dropdown-container">
                   <button
                     onClick={() => setOpenSupplierFilter(openSupplierFilter ? null : 'open')}
@@ -609,7 +645,10 @@ function AppContent() {
           <MarginSimulatorPage />
         )}
         {effectivePage === 'pure-data' && (isAdmin || isCommercial) && (
-          <PureDataPage />
+          <PureDataPage monthlyEntry={false} />
+        )}
+        {effectivePage === 'pure-data-monthly' && (isAdmin || isCommercial) && (
+          <PureDataPage monthlyEntry={true} />
         )}
         {effectivePage === 'union-space' && isAdmin && currentImportId && (
           <UnionSpacePage importId={currentImportId} />
@@ -619,6 +658,9 @@ function AppContent() {
         )}
         {effectivePage === 'test-raw-import' && isAdmin && (
           <TestRawImportPage />
+        )}
+        {effectivePage === 'pure-data-monthly-import' && isAdmin && (
+          <PureDataMonthlyImportPage />
         )}
 
         {/* Message si adhérent sans import */}

@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "description": "Contrat DPA Montreuil - 100% Alliance. RFA/Bonus et tripartites Alliance uniquement ; ACR, DCA, EXADIS sans barème.",
+  "contracts": [
+    {
+      "id": "CONTRAT_DPA_MONTREUIL",
+      "name": "DPA Montreuil",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat DPA Montreuil - 100% Alliance. 150-180k : RFA 4% / bonus 2,5% ; 180-225k : RFA 4,5% / bonus 2,5% ; >225k : RFA 5% / bonus 3%. RFA et bonus versés au plus tard le 30 juillet de l'année suivante si toutes les préconisations de l'article 4 sont validées. Tripartites Alliance : Schaeffler (25-50k = 3%, ≥50k = 5%), Delphi/Brembo (≥20k = 4%, ≥40k = 6%, ≥60k = 8%), Sogefi (≥20k = 6%).",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 150000, "rate": 0.04},
+            {"min": 180000, "rate": 0.045},
+            {"min": 225000, "rate": 0.05}
+          ],
+          "tiersBonus": [
+            {"min": 150000, "rate": 0.025},
+            {"min": 180000, "rate": 0.025},
+            {"min": 225000, "rate": 0.03}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03},
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 60000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.06}
+          ]
+        }
+      }
+    }
+  ]
+}

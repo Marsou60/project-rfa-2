@@ -38,7 +38,7 @@ cd /d "%BACKEND_DIR%"
 echo [1/3] Demarrage du backend...
 set "PYTHON_EXE=python"
 if exist "%BACKEND_DIR%\venv\Scripts\python.exe" set "PYTHON_EXE=%BACKEND_DIR%\venv\Scripts\python.exe"
-start "Backend RFA (localhost:8001)" cmd /k "cd /d ""%BACKEND_DIR%"" && ""%PYTHON_EXE%"" run.py"
+start "Backend RFA (localhost:8001)" cmd /k "cd /d ""%BACKEND_DIR%"" && set RFA_ENV=dev && ""%PYTHON_EXE%"" run.py"
 
 REM Attendre un peu que le backend demarre
 timeout /t 3 /nobreak >nul
@@ -46,7 +46,7 @@ timeout /t 3 /nobreak >nul
 REM Aller dans le dossier frontend
 cd /d "%FRONTEND_DIR%"
 echo [2/3] Demarrage du frontend...
-start "Frontend RFA (localhost:5173)" cmd /k "cd /d ""%FRONTEND_DIR%"" && npm run dev"
+start "Frontend RFA (localhost:5173)" cmd /k "cd /d ""%FRONTEND_DIR%"" && npm run dev:local"
 
 REM Attendre un peu puis ouvrir le navigateur
 timeout /t 3 /nobreak >nul

@@ -1,0 +1,75 @@
+{
+  "version": "1.0",
+  "description": "Contrat Destock Villetaneuse - 100% Alliance. Six paliers RFA/Bonus ; tripartites Schaeffler, Delphi, Brembo, Purflux Group. RFA et bonus au plus tard le 30 juillet de l'année suivante si préconisations validées (article 4).",
+  "contracts": [
+    {
+      "id": "CONTRAT_DESTOCK_VILLETANEUSE",
+      "name": "Destock Villetaneuse",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat Destock Villetaneuse - 100% Alliance. 20-50k : RFA 2,5% / bonus 0,5% ; 50-75k : RFA 3% / bonus 1% ; 75-100k : RFA 3,5% / bonus 1,5% ; 100-150k : RFA 4,5% / bonus 2% ; 150-200k : RFA 5% / bonus 2,5% ; >200k : RFA 5,5% / bonus 3%. RFA et bonus versés au plus tard le 30 juillet N+1 si préconisations article 4 validées. Tripartites : Schaeffler (25-50k = 3%, ≥50k = 5%), Delphi/Brembo (≥20k = 2%, ≥30k = 4%, ≥40k = 6%, ≥50k = 8%), Purflux Group (≥20k = 4%).",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 20000, "rate": 0.025},
+            {"min": 50000, "rate": 0.03},
+            {"min": 75000, "rate": 0.035},
+            {"min": 100000, "rate": 0.045},
+            {"min": 150000, "rate": 0.05},
+            {"min": 200000, "rate": 0.055}
+          ],
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03}
+          ]
+        }
+      },
+      "triRules": {
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03},
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 30000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 50000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 30000, "rate": 0.04},
+            {"min": 40000, "rate": 0.06},
+            {"min": 50000, "rate": 0.08}
+          ]
+        },
+        "TRI_PURFLUX_COOPERS": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04}
+          ]
+        }
+      }
+    }
+  ]
+}

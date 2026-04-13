@@ -243,7 +243,7 @@
   }
 
   .glass-table thead th {
-    padding: 1rem;
+    padding: 0.5rem 0.75rem;
     text-align: left;
     font-weight: 600;
     color: rgba(255, 255, 255, 0.9);
@@ -252,6 +252,10 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+
+  /* Permet de surcharger l'alignement header depuis Tailwind (text-right, text-center) */
+  .glass-table thead th.text-right { text-align: right; }
+  .glass-table thead th.text-center { text-align: center; }
 
   .glass-table tbody tr {
     transition: background 0.2s ease;
@@ -262,7 +266,7 @@
   }
 
   .glass-table tbody td {
-    padding: 1rem;
+    padding: 0.5rem 0.75rem;
     color: rgba(255, 255, 255, 0.85);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }

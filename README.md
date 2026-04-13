@@ -66,21 +66,30 @@ npm install
 
 ## Lancement
 
+### Environnements DEV / PROD (recommandé)
+
+- **DEV local (par défaut)** : backend local + frontend local, sans dépendre de Railway.
+- **DEV distant / PROD** : front pointe vers `VITE_API_URL`.
+
+Fichiers utiles :
+- `backend/.env.dev.example` / `backend/.env.prod.example`
+- `frontend/.env.development` / `frontend/.env.remote.example`
+
 ### Backend
 
 1. Dans le dossier `backend`, activer l'environnement virtuel si ce n'est pas déjà fait
 2. Lancer le serveur FastAPI :
 ```bash
-uvicorn app.main:app --reload --port 8000
+python run.py
 ```
 
-Le backend sera accessible sur `http://localhost:8000`
+Le backend sera accessible sur `http://localhost:8001`
 
 ### Frontend
 
 1. Dans le dossier `frontend`, lancer le serveur de développement :
 ```bash
-npm run dev
+npm run dev:local
 ```
 
 Le frontend sera accessible sur `http://localhost:5173`

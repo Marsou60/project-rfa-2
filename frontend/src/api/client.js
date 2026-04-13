@@ -1,13 +1,19 @@
 import axios from 'axios'
 
 // Détection de l'environnement :
-// - Tauri : VITE_API_URL si défini (backend cloud), sinon localhost:8001 (backend local = meilleures perfs)
+// - En DEV: on utilise LOCAL par défaut pour éviter de dépendre de Railway
+//   (mettre VITE_USE_REMOTE_API=1 pour forcer l'API distante)
+// - Tauri : VITE_API_URL si autorisé, sinon localhost:8001 (backend local = meilleures perfs)
 // - Dev web local : proxy Vite → localhost:8001
 // - Production Vercel : Railway backend (VITE_API_URL)
 const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined
 
 export const getApiBaseUrl = () => {
-  if (import.meta.env.VITE_API_URL) return `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api`
+  const remoteUrl = import.meta.env.VITE_API_URL
+  const useRemoteInDev = import.meta.env.DEV && import.meta.env.VITE_USE_REMOTE_API === '1'
+  if (remoteUrl && (!import.meta.env.DEV || useRemoteInDev)) {
+    return `${remoteUrl.replace(/\/$/, '')}/api`
+  }
   if (isTauri) return 'http://localhost:8001/api'
   return '/api'
 }
@@ -587,6 +593,76 @@ export const loadPureDataFromSupabase = async ({ yearCurrent, yearPrevious, mont
 
 export const syncPureDataFromSheets = async () => {
   const response = await api.post('/pure-data/sync-sheets')
+  return response.data
+}
+
+export const importPureDataMonthlyExcel = async ({ file, mode = 'append' }) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('mode', mode)
+  const response = await api.post('/pure-data/monthly/import-excel', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
+export const getPureDataMonthlyPeriods = async () => {
+  const response = await api.get('/pure-data/monthly/periods')
+  return response.data
+}
+
+export const deletePureDataMonthlyRows = async ({ years, months, fournisseurs } = {}) => {
+  const params = {}
+  if (years?.length) params.years = years.join(',')
+  if (months?.length) params.months = months.join(',')
+  if (fournisseurs?.length) params.fournisseurs = fournisseurs.join(',')
+  const response = await api.delete('/pure-data/monthly/rows', { params })
+  return response.data
+}
+
+export const loadPureDataMonthly = async ({ yearCurrent, yearPrevious, month } = {}) => {
+  const response = await api.get('/pure-data/monthly/load', {
+    params: {
+      year_current: yearCurrent ?? undefined,
+      year_previous: yearPrevious ?? undefined,
+      month: month ?? undefined,
+    }
+  })
+  return response.data
+}
+
+export const getPureDataMonthlyMonthDetail = async ({ month, yearCurrent, yearPrevious } = {}) => {
+  const response = await api.get('/pure-data/monthly/evolution/month-detail', {
+    params: {
+      month,
+      year_current: yearCurrent ?? undefined,
+      year_previous: yearPrevious ?? undefined,
+    }
+  })
+  return response.data
+}
+
+export const getPureDataMonthlyEntityDetail = async ({ codeUnion, commercial, yearCurrent, yearPrevious } = {}) => {
+  const response = await api.get('/pure-data/monthly/evolution/entity-detail', {
+    params: {
+      code_union: codeUnion || undefined,
+      commercial: commercial || undefined,
+      year_current: yearCurrent ?? undefined,
+      year_previous: yearPrevious ?? undefined,
+    }
+  })
+  return response.data
+}
+
+export const getPureDataMonthlyEvolution = async ({ yearCurrent, yearPrevious, fournisseur, topClients = 20 } = {}) => {
+  const response = await api.get('/pure-data/monthly/evolution', {
+    params: {
+      year_current: yearCurrent ?? undefined,
+      year_previous: yearPrevious ?? undefined,
+      fournisseur: fournisseur || undefined,
+      top_clients: topClients ?? undefined,
+    }
+  })
   return response.data
 }
 

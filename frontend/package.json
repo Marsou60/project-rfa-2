@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "vite --mode development",
+    "dev:remote": "vite --mode remote",
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",

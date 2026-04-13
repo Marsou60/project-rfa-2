@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "description": "Contrat Kit Auto 92 - 100% Alliance. Trois paliers RFA/Bonus ; ACR, DCA, EXADIS sans barème.",
+  "contracts": [
+    {
+      "id": "CONTRAT_KIT_AUTO_92",
+      "name": "Kit Auto 92",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat Kit Auto 92 - 100% Alliance. 50-80k : RFA 2,5% / bonus 0,5% ; 80-100k : RFA 3% / bonus 1% ; ≥100k : RFA 3,5% / bonus 1,5%. Pas de tripartites.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 50000, "rate": 0.025},
+            {"min": 80000, "rate": 0.03},
+            {"min": 100000, "rate": 0.035}
+          ],
+          "tiersBonus": [
+            {"min": 50000, "rate": 0.005},
+            {"min": 80000, "rate": 0.01},
+            {"min": 100000, "rate": 0.015}
+          ]
+        }
+      },
+      "triRules": {}
+    }
+  ]
+}

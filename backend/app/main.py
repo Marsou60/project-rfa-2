@@ -10,9 +10,18 @@ from app.api import router
 from app.database import init_db
 from app.services.seed import seed_base_standard
 
-# Charger le .env situé dans le dossier backend/ (un niveau au-dessus de app/)
-_env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(_env_path)
+# Charger le profil d'environnement depuis backend/
+# - dev: .env.dev (isole les tests locaux de la prod)
+# - prod: .env.prod puis .env (compat historique)
+_backend_dir = Path(__file__).parent.parent
+_profile = os.environ.get("RFA_ENV")
+if not _profile:
+    _profile = "prod" if os.environ.get("RAILWAY_ENVIRONMENT") else "dev"
+if _profile == "prod":
+    load_dotenv(_backend_dir / ".env.prod", override=False)
+    load_dotenv(_backend_dir / ".env", override=False)
+else:
+    load_dotenv(_backend_dir / ".env.dev", override=False)
 
 app = FastAPI(title="RFA Excel Import API", version="0.2.0")
 

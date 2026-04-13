@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   BarChart3,
   Users,
@@ -9,173 +9,30 @@ import {
   Calculator,
   UserPlus,
   ChevronRight,
-  Activity,
-  Briefcase,
   Database,
   Euro,
-  Target,
+  Activity,
 } from 'lucide-react'
 import { getUnionEntity, getEntities } from '../api/client'
 
-/* ── Compteur animé (ease-out quintic — lent et théâtral) ────── */
-function useAnimatedCounter(target, duration = 20000, delay = 0) {
+/* ── Compteur animé ───────────────────────────────────────────── */
+function useAnimatedCounter(target, duration = 2000) {
   const [value, setValue] = useState(0)
   useEffect(() => {
     if (!target) return
     let raf
-    const timeout = setTimeout(() => {
-      const start = performance.now()
-      const animate = (now) => {
-        const elapsed = now - start
-        const progress = Math.min(elapsed / duration, 1)
-        // ease-out quintic : démarre vite, ralentit dramatiquement à la fin
-        const eased = 1 - Math.pow(1 - progress, 5)
-        setValue(Math.round(target * eased))
-        if (progress < 1) raf = requestAnimationFrame(animate)
-      }
-      raf = requestAnimationFrame(animate)
-    }, delay)
-    return () => { clearTimeout(timeout); cancelAnimationFrame(raf) }
-  }, [target, duration, delay])
-  return value
-}
-
-// Injection CSS animation une seule fois
-let _kpiCssInjected = false
-function injectKpiCss() {
-  if (_kpiCssInjected) return
-  _kpiCssInjected = true
-  const style = document.createElement('style')
-  style.textContent = `
-    @keyframes kpiEntrance {
-      0%   { opacity: 0; transform: perspective(500px) translateZ(-300px) scale(0.5) rotateX(20deg); }
-      60%  { opacity: 1; transform: perspective(500px) translateZ(20px) scale(1.05) rotateX(-2deg); }
-      100% { opacity: 1; transform: perspective(500px) translateZ(0) scale(1) rotateX(0deg); }
+    const start = performance.now()
+    const animate = (now) => {
+      const elapsed = now - start
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 4)
+      setValue(Math.round(target * eased))
+      if (progress < 1) raf = requestAnimationFrame(animate)
     }
-  `
-  document.head.appendChild(style)
-}
-
-/* ── Tilt handler partagé ───────────────────────────────────── */
-function useTilt(color) {
-  const ref = useRef(null)
-  const handleMouseMove = (e) => {
-    const el = ref.current; if (!el) return
-    const rect = el.getBoundingClientRect()
-    const x = (e.clientX - rect.left) / rect.width - 0.5
-    const y = (e.clientY - rect.top) / rect.height - 0.5
-    el.style.transform = `perspective(500px) rotateY(${x * 30}deg) rotateX(${-y * 30}deg) scale(1.1) translateZ(30px)`
-    el.style.boxShadow = `${-x * 30}px ${y * 30}px 60px rgba(0,0,0,0.6), 0 0 50px ${color}70`
-  }
-  const handleMouseLeave = () => {
-    const el = ref.current; if (!el) return
-    el.style.transform = 'perspective(500px) rotateY(0deg) rotateX(0deg) scale(1) translateZ(0)'
-    el.style.boxShadow = ''
-  }
-  return { ref, handleMouseMove, handleMouseLeave }
-}
-
-/* ── Carte "Score à battre" ──────────────────────────────────── */
-function ScoreCard({ value }) {
-  const { ref, handleMouseMove, handleMouseLeave } = useTilt('#f59e0b')
-  const animated = useAnimatedCounter(value, 20000, 0)
-  useEffect(() => { injectKpiCss() }, [])
-  const pct = value > 0 ? Math.min(Math.round((animated / value) * 100), 100) : 0
-
-  return (
-    <div
-      ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
-        animation: `kpiEntrance 0.9s cubic-bezier(0.34,1.56,0.64,1) both`,
-      }}
-      className="relative rounded-2xl overflow-hidden cursor-default select-none"
-    >
-      <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-yellow-600/10 backdrop-blur-xl border border-amber-400/30 rounded-2xl" />
-      <div className="absolute inset-0 bg-gradient-to-br from-white/8 via-transparent to-transparent rounded-2xl" />
-      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-25 animate-pulse" style={{ background: '#f59e0b' }} />
-
-      <div className="relative p-6 space-y-4">
-
-        {/* Badge OBJECTIF 2025 */}
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-black tracking-[0.3em] uppercase text-amber-300/70">
-            CA Groupement Union
-          </span>
-          <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-amber-400 text-gray-900 tracking-widest animate-pulse">
-            🎯 OBJECTIF 2025
-          </span>
-        </div>
-
-        {/* SCORE À BATTRE — le message */}
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🏆</span>
-          <span className="text-2xl font-black text-amber-300 uppercase tracking-[0.15em] leading-tight">
-            Score à battre
-          </span>
-        </div>
-
-        {/* Chiffre */}
-        <div className="text-5xl font-black text-white leading-none tracking-tight tabular-nums">
-          {animated.toLocaleString('fr-FR')}
-          <span className="text-2xl text-amber-300 ml-1">€</span>
-        </div>
-
-        {/* Barre */}
-        <div className="space-y-1.5">
-          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-300 shadow shadow-amber-400/50 transition-all duration-500"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <div className="flex justify-between text-[10px] text-white/40 font-bold">
-            <span>0 €</span>
-            <span className="text-amber-300 font-black">{pct} % décompté</span>
-            <span>{value > 0 ? value.toLocaleString('fr-FR') + ' €' : '—'}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── Carte KPI 3D standard ──────────────────────────────────── */
-function KpiCard3D({ label, value, icon, color, suffix = '', delay = 0 }) {
-  const { ref, handleMouseMove, handleMouseLeave } = useTilt(color)
-  const animated = useAnimatedCounter(value, 20000, delay)
-  useEffect(() => { injectKpiCss() }, [])
-
-  return (
-    <div
-      ref={ref}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
-        animation: `kpiEntrance 0.9s cubic-bezier(0.34,1.56,0.64,1) ${delay}ms both`,
-      }}
-      className="relative rounded-2xl overflow-hidden cursor-default select-none"
-    >
-      <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/20 rounded-2xl" />
-      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent rounded-2xl" />
-      <div className="absolute -inset-1 rounded-2xl blur-xl opacity-25" style={{ background: color }} />
-
-      <div className="relative p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-white/50 text-xs font-bold uppercase tracking-widest">{label}</span>
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}30` }}>
-            <span style={{ color }}>{icon}</span>
-          </div>
-        </div>
-        <div className="text-5xl font-black text-white leading-none tracking-tight">
-          {animated.toLocaleString('fr-FR')}{suffix}
-        </div>
-      </div>
-    </div>
-  )
+    raf = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(raf)
+  }, [target, duration])
+  return value
 }
 
 export default function HubPage({ user, currentImportId, isCommercial = false, onNavigate }) {
@@ -193,7 +50,7 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
       getUnionEntity(currentImportId).catch(() => null),
       getEntities(currentImportId, 'client').catch(() => []),
     ]).then(([union, clients]) => {
-      const caTotal   = union?.ca?.totals?.global_total || 0
+      const caTotal = union?.ca?.totals?.global_total || 0
       const nbClients = Array.isArray(clients) ? clients.length : 0
       setKpis({ caTotal, nbClients })
     })
@@ -204,264 +61,225 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
   const displayName = user?.displayName || user?.username || 'Martin'
 
   return (
-    <div className="min-h-screen space-y-10 pb-16">
+    <div className="fixed inset-0 top-16 bg-gradient-to-br from-slate-50 via-white to-blue-50/30 overflow-auto z-20">
+      <div className="max-w-6xl mx-auto px-6 py-8">
 
-      {/* ── Hero greeting ── */}
-      <div className="pt-2">
-        <div className="flex items-end justify-between flex-wrap gap-4">
-          <div>
-            <p className="text-blue-300/70 text-sm font-medium uppercase tracking-widest mb-1">
-              {time.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
-            <h1 className="text-4xl font-black text-white leading-tight">
-              {greeting},{' '}
-              <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                {displayName}
-              </span>{' '}
-              👋
-            </h1>
-            <p className="text-blue-300/60 mt-2 text-base">
-              Qui souhaitez-vous consulter aujourd&apos;hui ?
-            </p>
-          </div>
-          {currentImportId && (
-            <div className="hidden md:flex items-center gap-2 glass-card px-4 py-2">
-              <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
-              <span className="text-emerald-300 text-sm font-medium">Données RFA chargées</span>
+        {/* ── Header ── */}
+        <header className="mb-10">
+          <div className="flex items-end justify-between flex-wrap gap-4">
+            <div>
+              <p className="text-slate-400 text-sm font-medium mb-1">
+                {time.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+              <h1 className="text-3xl font-bold text-slate-800">
+                {greeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">{displayName}</span>
+              </h1>
+              <p className="text-slate-500 mt-1">
+                Bienvenue sur votre espace de gestion RFA
+              </p>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── KPIs 3D animés ── */}
-      {currentImportId && kpis && (
-        <div>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-blue-300/50 mb-4">
-            Chiffres clés — Groupement Union
-          </h2>
-          <div className="grid grid-cols-2 gap-6">
-            <ScoreCard value={kpis.caTotal} />
-            <KpiCard3D
-              label="Adhérents actifs"
-              value={kpis.nbClients}
-              icon={<Users className="w-5 h-5" />}
-              color="#8b5cf6"
-              delay={1500}
-            />
+            {currentImportId && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-full">
+                <Activity className="w-4 h-4 text-emerald-500" />
+                <span className="text-emerald-700 text-sm font-medium">Données synchronisées</span>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        </header>
 
-      {/* ── Les 3 agents ── */}
-      <div>
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-blue-300/50 mb-5">
-          Vos collaborateurs IA
-        </h2>
-        <div className={`grid grid-cols-1 gap-5 ${isCommercial ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
-
-          {/* ── Nicolas ── */}
-          <AgentCard
-            name="Nicolas"
-            role="Pure Data & Adhérents"
-            description="Analyse les chiffres clients, calcule les RFA, interroge Union Intelligence et pilote la liste des adhérents."
-            emoji="📊"
-            gradient="from-blue-600 via-indigo-600 to-purple-700"
-            glowColor="hover:shadow-blue-500/30"
-            badge="Données"
-            badgeColor="bg-blue-500/20 text-blue-300"
-            actions={[
-              {
-                label: 'Espace client',
-                icon: <Users className="w-4 h-4" />,
-                onClick: () => onNavigate(currentImportId ? 'client-space' : 'upload'),
-                primary: true,
-                disabled: !currentImportId,
-              },
-              {
-                label: 'Union Intelligence',
-                icon: <Sparkles className="w-4 h-4" />,
-                onClick: () => onNavigate(currentImportId ? 'genie' : 'upload'),
-                disabled: !currentImportId,
-              },
-              {
-                label: 'Pure Data',
-                icon: <BarChart3 className="w-4 h-4" />,
-                onClick: () => onNavigate('pure-data'),
-              },
-            ]}
-          />
-
-          {/* ── Paul (admin uniquement) ── */}
-          {!isCommercial && (
-            <AgentCard
-              name="Paul"
-              role="Pilotage financier DAF"
-              description="Tableau de bord DAF, récapitulatif général des RFA et simulateur de marge pour optimiser la performance."
-              emoji="💼"
-              gradient="from-yellow-500 via-amber-600 to-orange-600"
-              glowColor="hover:shadow-amber-500/30"
-              badge="DAF"
-              badgeColor="bg-amber-500/20 text-amber-300"
-              actions={[
-                {
-                  label: 'Tableau de bord DAF',
-                  icon: <Briefcase className="w-4 h-4" />,
-                  onClick: () => onNavigate(currentImportId ? 'paul' : 'upload'),
-                  primary: true,
-                },
-                {
-                  label: 'Liste adhérents',
-                  icon: <BarChart3 className="w-4 h-4" />,
-                  onClick: () => onNavigate(currentImportId ? 'clients' : 'upload'),
-                  disabled: !currentImportId,
-                },
-                {
-                  label: 'Récap général',
-                  icon: <Calculator className="w-4 h-4" />,
-                  onClick: () => onNavigate(currentImportId ? 'recap' : 'upload'),
-                  disabled: !currentImportId,
-                },
-              ]}
-            />
-          )}
-
-          {/* ── Nathalie ── */}
-          <AgentCard
-            name="Nathalie"
-            role="Ouverture de comptes"
-            description="Gère le processus d'ouverture de compte adhérent : formulaire guidé, pièces justificatives, notifications automatiques."
-            emoji="🤝"
-            gradient="from-emerald-600 via-teal-600 to-cyan-700"
-            glowColor="hover:shadow-emerald-500/30"
-            badge="Comptes"
-            badgeColor="bg-emerald-500/20 text-emerald-300"
-            actions={[
-              {
-                label: 'Créer un dossier',
-                icon: <UserPlus className="w-4 h-4" />,
-                onClick: () => onNavigate('nathalie'),
-                primary: true,
-              },
-              {
-                label: 'Dossiers en cours',
-                icon: <FileText className="w-4 h-4" />,
-                onClick: () => onNavigate('nathalie'),
-              },
-            ]}
-          />
-        </div>
-      </div>
-
-      {/* ── Accès rapide ── */}
-      <div>
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-blue-300/50 mb-4">
-          Accès rapide
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {/* Tuiles communes */}
-          <QuickTile icon={<TrendingUp className="w-5 h-5" />} label="Pure Data"  color="text-teal-400"  onClick={() => onNavigate('pure-data')} />
-          {/* Tuiles admin uniquement */}
-          {!isCommercial && <>
-            <QuickTile icon={<FileText   className="w-5 h-5" />} label="Contrats"     color="text-purple-400" onClick={() => onNavigate('contracts')} />
-            <QuickTile icon={<Calculator className="w-5 h-5" />} label="Simulateur"   color="text-amber-400"  onClick={() => onNavigate('margin-simulator')} />
-            <QuickTile icon={<Users      className="w-5 h-5" />} label="Utilisateurs" color="text-blue-400"   onClick={() => onNavigate('users')} />
-            <QuickTile icon={<Settings   className="w-5 h-5" />} label="Paramètres"   color="text-slate-400"  onClick={() => onNavigate('settings')} />
-          </>}
-        </div>
-      </div>
-
-      {/* ── Statut données ── */}
-      {!currentImportId && (
-        <div className="glass-card p-6 border border-amber-500/20 bg-amber-500/5">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
-              <Database className="w-5 h-5 text-amber-400" />
+        {/* ── Alerte données manquantes ── */}
+        {!currentImportId && (
+          <div className="mb-8 p-5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
+              <Database className="w-6 h-6 text-amber-600" />
             </div>
             <div className="flex-1">
-              <h3 className="font-bold text-white text-sm">Aucune donnée RFA chargée</h3>
-              <p className="text-xs text-white/50 mt-0.5">
-                Connectez la feuille Google Sheets pour activer Nicolas, Paul et Union Intelligence.
-              </p>
+              <p className="text-slate-800 font-semibold">Aucune donnée RFA chargée</p>
+              <p className="text-slate-500 text-sm">Connectez la feuille Google Sheets pour commencer l'analyse.</p>
             </div>
             <button
               onClick={() => onNavigate('upload')}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-gray-900 font-bold text-sm transition-all"
+              className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold rounded-xl shadow-lg shadow-amber-500/25 transition-all hover:shadow-xl hover:shadow-amber-500/30 hover:-translate-y-0.5"
             >
               Connecter
-              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* ── KPIs ── */}
+        {currentImportId && kpis && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10">
+            <KpiCard
+              label="CA Groupement Union"
+              sublabel="Objectif 2025"
+              value={kpis.caTotal}
+              suffix=" €"
+              icon={<Euro className="w-6 h-6" />}
+              gradient="from-blue-500 to-indigo-600"
+              bgGradient="from-blue-50 to-indigo-50"
+            />
+            <KpiCard
+              label="Adhérents actifs"
+              sublabel="Réseau national"
+              value={kpis.nbClients}
+              icon={<Users className="w-6 h-6" />}
+              gradient="from-violet-500 to-purple-600"
+              bgGradient="from-violet-50 to-purple-50"
+            />
+          </div>
+        )}
+
+        {/* ── Modules principaux ── */}
+        <section className="mb-10">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-5">
+            Vos espaces de travail
+          </h2>
+          <div className={`grid gap-5 ${isCommercial ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+
+            {/* Nicolas - Données */}
+            <ModuleCard
+              title="Espace Client"
+              subtitle="Données & Intelligence"
+              description="Consultez les RFA par client, analysez les tendances avec l'IA."
+              icon={<BarChart3 className="w-7 h-7" />}
+              gradient="from-blue-500 to-cyan-500"
+              actions={[
+                { label: 'Clients', onClick: () => onNavigate(currentImportId ? 'client-space' : 'upload'), primary: true },
+                { label: 'Intelligence', onClick: () => onNavigate(currentImportId ? 'genie' : 'upload'), icon: <Sparkles className="w-3.5 h-3.5" /> },
+                { label: 'Pure Data', onClick: () => onNavigate('pure-data') },
+              ]}
+            />
+
+            {/* Paul - DAF */}
+            {!isCommercial && (
+              <ModuleCard
+                title="Pilotage DAF"
+                subtitle="Finance & Performance"
+                description="Tableau de bord financier, récapitulatif et simulateur de marge."
+                icon={<TrendingUp className="w-7 h-7" />}
+                gradient="from-amber-500 to-orange-500"
+                actions={[
+                  { label: 'Dashboard', onClick: () => onNavigate(currentImportId ? 'paul' : 'upload'), primary: true },
+                  { label: 'Adhérents', onClick: () => onNavigate(currentImportId ? 'clients' : 'upload') },
+                  { label: 'Récap', onClick: () => onNavigate(currentImportId ? 'recap' : 'upload') },
+                ]}
+              />
+            )}
+
+            {/* Nathalie - Comptes */}
+            <ModuleCard
+              title="Gestion Comptes"
+              subtitle="Ouverture & Suivi"
+              description="Créez et suivez les dossiers d'ouverture de compte adhérent."
+              icon={<UserPlus className="w-7 h-7" />}
+              gradient="from-emerald-500 to-teal-500"
+              actions={[
+                { label: 'Nouveau dossier', onClick: () => onNavigate('nathalie'), primary: true },
+                { label: 'En cours', onClick: () => onNavigate('nathalie') },
+              ]}
+            />
+          </div>
+        </section>
+
+        {/* ── Accès rapide ── */}
+        <section>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
+            Accès rapide
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            <QuickLink icon={<TrendingUp className="w-4 h-4" />} label="Pure Data" onClick={() => onNavigate('pure-data')} />
+            {!isCommercial && (
+              <>
+                <QuickLink icon={<FileText className="w-4 h-4" />} label="Contrats" onClick={() => onNavigate('contracts')} />
+                <QuickLink icon={<Calculator className="w-4 h-4" />} label="Simulateur" onClick={() => onNavigate('margin-simulator')} />
+                <QuickLink icon={<Users className="w-4 h-4" />} label="Utilisateurs" onClick={() => onNavigate('users')} />
+                <QuickLink icon={<Settings className="w-4 h-4" />} label="Paramètres" onClick={() => onNavigate('settings')} />
+              </>
+            )}
+          </div>
+        </section>
+
+      </div>
     </div>
   )
 }
 
-/* ── Agent Card ─────────────────────────────────────────────── */
-function AgentCard({ name, role, description, emoji, gradient, glowColor, badge, badgeColor, actions }) {
+/* ── KPI Card ─────────────────────────────────────────────────── */
+function KpiCard({ label, sublabel, value, suffix = '', icon, gradient, bgGradient }) {
+  const animated = useAnimatedCounter(value)
+
   return (
-    <div className={`glass-card flex flex-col overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl ${glowColor}`}>
-      {/* Header */}
-      <div className={`bg-gradient-to-br ${gradient} p-5 relative overflow-hidden`}>
-        <div className="absolute inset-0 bg-black/20" />
-        <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-white/5 blur-xl" />
-        <div className="relative flex items-start justify-between">
-          <div>
-            <span className="text-4xl">{emoji}</span>
-            <div className="mt-3">
-              <h3 className="text-xl font-black text-white">{name}</h3>
-              <p className="text-white/70 text-sm font-medium">{role}</p>
-            </div>
-          </div>
-          <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${badgeColor} border border-white/10`}>
-            {badge}
-          </span>
-        </div>
-      </div>
+    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${bgGradient} border border-white/60 p-6 shadow-lg shadow-slate-200/50`}>
+      {/* Decorative circle */}
+      <div className={`absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${gradient} opacity-10 rounded-full blur-2xl`} />
 
-      {/* Body */}
-      <div className="p-5 flex flex-col flex-1 gap-4">
-        <p className="text-blue-300/70 text-sm leading-relaxed">{description}</p>
-        <div className="flex flex-col gap-2 mt-auto">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              onClick={action.onClick}
-              disabled={action.disabled}
-              className={`flex items-center justify-between w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                action.primary
-                  ? `bg-gradient-to-r ${gradient} text-white shadow-lg hover:opacity-90 hover:shadow-xl`
-                  : action.disabled
-                  ? 'bg-white/5 text-white/25 cursor-not-allowed'
-                  : 'bg-white/10 text-white/80 hover:bg-white/20'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                {action.icon}
-                {action.label}
-              </span>
-              {!action.disabled && <ChevronRight className="w-4 h-4 opacity-60" />}
-            </button>
-          ))}
+      <div className="relative">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <p className="text-slate-500 text-sm font-medium">{label}</p>
+            {sublabel && <p className="text-slate-400 text-xs">{sublabel}</p>}
+          </div>
+          <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg`}>
+            {icon}
+          </div>
         </div>
+        <p className="text-4xl font-bold text-slate-800 tabular-nums">
+          {animated.toLocaleString('fr-FR')}<span className="text-2xl text-slate-400 ml-1">{suffix}</span>
+        </p>
       </div>
     </div>
   )
 }
 
-/* ── Quick Tile ─────────────────────────────────────────────── */
-function QuickTile({ icon, label, color, onClick }) {
+/* ── Module Card ──────────────────────────────────────────────── */
+function ModuleCard({ title, subtitle, description, icon, gradient, actions }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200/60 shadow-lg shadow-slate-200/50 overflow-hidden hover:shadow-xl hover:shadow-slate-200/60 transition-all duration-300 hover:-translate-y-1 flex flex-col">
+      {/* Header with gradient accent */}
+      <div className="p-5 border-b border-slate-100">
+        <div className="flex items-start gap-4">
+          <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-lg`}>
+            {icon}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-semibold text-slate-800">{title}</h3>
+            <p className="text-sm text-slate-400">{subtitle}</p>
+          </div>
+        </div>
+        <p className="text-sm text-slate-500 mt-3 leading-relaxed">{description}</p>
+      </div>
+
+      {/* Actions */}
+      <div className="p-4 bg-slate-50/50 flex flex-wrap gap-2 mt-auto">
+        {actions.map((action) => (
+          <button
+            key={action.label}
+            onClick={action.onClick}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+              action.primary
+                ? `bg-gradient-to-r ${gradient} text-white shadow-md hover:shadow-lg hover:-translate-y-0.5`
+                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+            }`}
+          >
+            {action.icon}
+            {action.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Quick Link ───────────────────────────────────────────────── */
+function QuickLink({ icon, label, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="glass-card p-4 flex flex-col items-center gap-2 hover:scale-105 hover:bg-white/10 transition-all duration-200 group"
+      className="group inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 transition-all shadow-sm hover:shadow"
     >
-      <div className={`${color} group-hover:scale-110 transition-transform duration-200`}>
-        {icon}
-      </div>
-      <span className="text-white/70 text-xs font-medium group-hover:text-white transition-colors">
-        {label}
-      </span>
+      <span className="text-slate-400 group-hover:text-slate-500 transition-colors">{icon}</span>
+      {label}
+      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-400 group-hover:translate-x-0.5 transition-all" />
     </button>
   )
 }

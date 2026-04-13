@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "description": "Contrat GDRP - 100% Alliance. Objectifs du Réseau : deux paliers RFA/Bonus uniquement ; ACR, DCA, EXADIS sans barème.",
+  "contracts": [
+    {
+      "id": "CONTRAT_GDRP",
+      "name": "GDRP",
+      "scope": "ADHERENT",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "notes": "Contrat GDRP - 100% Alliance (Objectifs du Réseau). 20-60k : RFA 2% / bonus 0,5% ; 60-75k : RFA 2,5% / bonus 0,5%. Pas de tripartites.",
+      "globalRules": {
+        "GLOBAL_ACR": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 20000, "rate": 0.02},
+            {"min": 60000, "rate": 0.025}
+          ],
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 60000, "rate": 0.005}
+          ]
+        }
+      },
+      "triRules": {}
+    }
+  ]
+}
