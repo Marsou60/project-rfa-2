@@ -17,6 +17,7 @@ import {
   Sparkles,
   Home,
   MoreHorizontal,
+  RefreshCw,
 } from 'lucide-react'
 import UploadPage from './pages/UploadPage'
 import ClientsPage from './pages/ClientsPage'
@@ -39,6 +40,7 @@ import PaulPage from './pages/PaulPage'
 import PureDataMonthlyImportPage from './pages/PureDataMonthlyImportPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AppUpdaterEffect } from './components/AppUpdater'
+import { useUpdater } from './components/AppUpdater'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { SupplierFilterProvider, useSupplierFilter } from './context/SupplierFilterContext'
 import { SUPPLIER_KEYS, SUPPLIER_LABELS } from './constants/suppliers'
@@ -47,6 +49,8 @@ import { getSetting, getImageUrl, getRfaSheetsCurrent } from './api/client'
 function AppContent() {
   const { user, loading, logout, isAdmin, isCommercial, isAdherent, isAuthenticated } = useAuth()
   const { supplierFilter, setSupplierFilter } = useSupplierFilter()
+  const { update, checking, downloading, checkForUpdates, downloadAndInstall } = useUpdater()
+  const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined
   const [currentImportId, setCurrentImportId] = useState(null)
   const [currentPage, setCurrentPage] = useState('hub')
   const [companyLogo, setCompanyLogo] = useState(null)
@@ -554,6 +558,30 @@ function AppContent() {
 
               {/* Séparateur */}
               <div className="w-px h-8 bg-white/20 mx-3" />
+
+              {/* Bouton mise à jour Tauri — visible pour tous */}
+              {isTauri && (
+                update ? (
+                  <button
+                    onClick={() => downloadAndInstall()}
+                    disabled={downloading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold transition-all animate-pulse"
+                    title={`Version ${update.version} disponible`}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${downloading ? 'animate-spin' : ''}`} />
+                    {downloading ? 'Mise à jour…' : 'Mettre à jour'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={checkForUpdates}
+                    disabled={checking}
+                    className="glass-btn-icon opacity-50 hover:opacity-100"
+                    title="Vérifier les mises à jour"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} />
+                  </button>
+                )
+              )}
 
               {/* User Profile */}
               <div className="flex items-center gap-3 pl-2">
