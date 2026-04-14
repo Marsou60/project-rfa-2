@@ -3145,12 +3145,63 @@ async def pure_data_monthly_evolution(
         if top_clients and top_clients > 0:
             clients = clients[:top_clients]
 
+        # Agrégation par groupe client
+        group_map: Dict[str, Dict] = {}
+        for r in rows:
+            y = r.get("year")
+            m = r.get("month")
+            if y not in (year_current, year_previous) or m is None:
+                continue
+            gc = (r.get("groupe_client") or "Sans groupe").strip() or "Sans groupe"
+            ca = float(r.get("ca") or 0.0)
+            if gc not in group_map:
+                group_map[gc] = {
+                    "groupe_client": gc,
+                    "total_current": 0.0,
+                    "total_previous": 0.0,
+                    "by_month": {mm: {"current": 0.0, "previous": 0.0} for mm in months},
+                }
+            if y == year_current:
+                group_map[gc]["total_current"] += ca
+                if m in group_map[gc]["by_month"]:
+                    group_map[gc]["by_month"][m]["current"] += ca
+            else:
+                group_map[gc]["total_previous"] += ca
+                if m in group_map[gc]["by_month"]:
+                    group_map[gc]["by_month"][m]["previous"] += ca
+
+        groups = []
+        for gc, g in group_map.items():
+            delta = g["total_current"] - g["total_previous"]
+            groups.append({
+                "groupe_client": gc,
+                "total_current": g["total_current"],
+                "total_previous": g["total_previous"],
+                "delta": delta,
+                "delta_pct": _pct(delta, g["total_previous"]),
+                "months": [
+                    {
+                        "month": mm,
+                        "current": g["by_month"][mm]["current"],
+                        "previous": g["by_month"][mm]["previous"],
+                        "delta": g["by_month"][mm]["current"] - g["by_month"][mm]["previous"],
+                        "delta_pct": _pct(
+                            g["by_month"][mm]["current"] - g["by_month"][mm]["previous"],
+                            g["by_month"][mm]["previous"],
+                        ),
+                    }
+                    for mm in months
+                ],
+            })
+        groups.sort(key=lambda x: abs(x["delta"]), reverse=True)
+
         return {
             "year_current": year_current,
             "year_previous": year_previous,
             "fournisseur": fournisseur,
             "months": monthly_totals,
             "clients": clients,
+            "groups": groups,
         }
     except HTTPException:
         raise
@@ -3164,17 +3215,17 @@ async def pure_data_monthly_evolution(
 async def pure_data_monthly_entity_detail(
     code_union: Optional[str] = None,
     commercial: Optional[str] = None,
+    groupe_client: Optional[str] = None,
     year_current: int = 2026,
     year_previous: int = 2025,
     user: User = Depends(require_staff),
 ):
     """
-    Détail mensuel d'un client (code_union) ou d'un commercial:
-    Pour chaque plateforme (fournisseur), retourne le CA N, N-1, delta par mois.
-    Permet de voir ex: EXADIS baisse mais ALLIANCE hausse.
+    Détail mensuel d'un client (code_union), commercial, ou groupe client:
+    Pour chaque plateforme, retourne le CA N, N-1, delta par mois.
     """
-    if not code_union and not commercial:
-        raise HTTPException(status_code=400, detail="Fournir code_union ou commercial.")
+    if not code_union and not commercial and not groupe_client:
+        raise HTTPException(status_code=400, detail="Fournir code_union, commercial ou groupe_client.")
 
     try:
         from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
@@ -3193,18 +3244,21 @@ async def pure_data_monthly_entity_detail(
             s = "".join(c for c in s if unicodedata.category(c) != "Mn")
             return re.sub(r"\s+", " ", s).strip().upper()
 
-        # Filtre client ou commercial
+        # Filtre client, commercial ou groupe
         if code_union:
             target = code_union.strip().upper()
             rows = [r for r in rows if (r.get("code_union") or "").strip().upper() == target]
-            label_key = "code_union"
             label = code_union
             raison = next((r.get("raison_sociale") or "" for r in rows), "")
             display_label = f"{code_union} — {raison}".strip(" —")
+        elif groupe_client:
+            target = groupe_client.strip().upper()
+            rows = [r for r in rows if (r.get("groupe_client") or "").strip().upper() == target]
+            label = groupe_client
+            display_label = groupe_client
         else:
             target = _norm(commercial)
             rows = [r for r in rows if _norm(r.get("commercial") or "") == target]
-            label_key = "commercial"
             label = commercial
             display_label = commercial
 
@@ -3281,9 +3335,9 @@ async def pure_data_monthly_entity_detail(
         grand_previous = sum(p["total_previous"] for p in agg.values())
         grand_delta = grand_current - grand_previous
 
-        # Clients du commercial (uniquement si vue commercial)
+        # Clients du commercial ou du groupe
         clients_out = []
-        if commercial and not code_union:
+        if (commercial and not code_union) or groupe_client:
             client_agg: Dict[str, Dict] = {}
             for r in rows:
                 y = r.get("year")
@@ -3318,6 +3372,7 @@ async def pure_data_monthly_entity_detail(
             "label": display_label,
             "code_union": code_union,
             "commercial": commercial,
+            "groupe_client": groupe_client,
             "year_current": year_current,
             "year_previous": year_previous,
             "months": months_set,

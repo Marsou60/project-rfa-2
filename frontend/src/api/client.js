@@ -642,11 +642,12 @@ export const getPureDataMonthlyMonthDetail = async ({ month, yearCurrent, yearPr
   return response.data
 }
 
-export const getPureDataMonthlyEntityDetail = async ({ codeUnion, commercial, yearCurrent, yearPrevious } = {}) => {
+export const getPureDataMonthlyEntityDetail = async ({ codeUnion, commercial, groupeClient, yearCurrent, yearPrevious } = {}) => {
   const response = await api.get('/pure-data/monthly/evolution/entity-detail', {
     params: {
       code_union: codeUnion || undefined,
       commercial: commercial || undefined,
+      groupe_client: groupeClient || undefined,
       year_current: yearCurrent ?? undefined,
       year_previous: yearPrevious ?? undefined,
     }

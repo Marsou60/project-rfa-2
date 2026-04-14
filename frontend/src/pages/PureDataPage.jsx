@@ -348,6 +348,7 @@ function MonthlyEntityDetailModal({ entity, yearCurrent, yearPrevious, onClose, 
     const params = { yearCurrent, yearPrevious }
     if (entity.code_union) params.codeUnion = entity.code_union
     else if (entity.commercial) params.commercial = entity.commercial
+    else if (entity.groupe_client) params.groupeClient = entity.groupe_client
     getPureDataMonthlyEntityDetail(params)
       .then(setData)
       .catch((e) => setError(e.response?.data?.detail || e.message || 'Erreur'))
@@ -1413,6 +1414,74 @@ function PureDataPage({ monthlyEntry = false }) {
               </div>
             </div>
           </div>
+
+          {/* ── Par groupe client (mensuel) ── */}
+          {monthlyEntry && monthlyEvolution?.groups?.length > 0 && (
+            <div className="glass-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-glass-primary font-semibold">
+                    Par groupe client ({monthlyEvolution.groups.length})
+                  </h2>
+                  <p className="text-xs text-white/40 mt-0.5">Cliquez pour le détail plateforme × mois + clients du groupe</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="glass-table text-sm">
+                  <thead>
+                    <tr>
+                      <th className="text-left px-3 py-2">Groupe</th>
+                      <th className="text-right px-3 py-2">CA {yearCurrent}</th>
+                      <th className="text-right px-3 py-2">CA {yearPrevious}</th>
+                      <th className="text-right px-3 py-2">Delta</th>
+                      <th className="text-right px-3 py-2">Delta %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlyEvolution.groups.map((g) => {
+                      const isExpanded = monthlyDetailEntity?.groupe_client === g.groupe_client
+                      return (
+                        <Fragment key={g.groupe_client}>
+                          <tr
+                            className="cursor-pointer hover:bg-white/10"
+                            onClick={() => setMonthlyDetailEntity(
+                              isExpanded ? null : { groupe_client: g.groupe_client, label: g.groupe_client }
+                            )}
+                          >
+                            <td className="px-3 py-2 font-medium flex items-center gap-2">
+                              <ChevronDown className={`w-3 h-3 text-white/40 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                              {g.groupe_client}
+                            </td>
+                            <td className="px-3 py-2 text-right">{formatCurrency(g.total_current)}</td>
+                            <td className="px-3 py-2 text-right">{formatCurrency(g.total_previous)}</td>
+                            <td className="px-3 py-2 text-right font-semibold">
+                              <span className={getDeltaClass(g.delta)}>{formatDelta(g.delta)}</span>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <span className={getDeltaPctClass(g.delta_pct)}>{formatPercent(g.delta_pct)}</span>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan={5} className="px-3 pb-3 bg-white/[0.02]">
+                                <MonthlyEntityDetailModal
+                                  entity={{ groupe_client: g.groupe_client, label: g.groupe_client }}
+                                  yearCurrent={yearCurrent}
+                                  yearPrevious={yearPrevious}
+                                  onClose={() => setMonthlyDetailEntity(null)}
+                                  inline
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* ── Par adhérent (fusionné avec la liste mensuelle) ── */}
           <div className="glass-card p-6">
