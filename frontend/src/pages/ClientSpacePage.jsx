@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getClientMonthlyEvolution } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -983,8 +983,204 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               </span>
             </div>
           )}
+
+          {/* ── Évolution mensuelle 2025/2026 ── */}
+          <ClientMonthlySection
+            codeUnion={mode === 'client' ? entity?.code_union : null}
+            groupeClient={mode === 'group' ? entity?.groupe_client : null}
+            isAdherent={isAdherent}
+          />
         </>
       )}
+    </div>
+  )
+}
+
+/* ── Évolution mensuelle 2025/2026 — composant sécurisé ── */
+function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [expandedPlatform, setExpandedPlatform] = useState(null)
+
+  const MONTHS = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
+  const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
+  const fmtD = (v) => { if (v == null) return '—'; const s = v > 0 ? '+' : ''; return `${s}${fmt(v)}` }
+  const fmtP = (v) => { if (v == null) return '—'; const s = v > 0 ? '+' : ''; return `${s}${Number(v).toFixed(1)}%` }
+  const dc = (v) => v == null ? 'text-gray-400' : v > 0 ? 'text-emerald-600' : v < 0 ? 'text-rose-600' : 'text-gray-400'
+  const bg = (v) => v == null ? '' : v > 0 ? 'bg-emerald-50' : v < 0 ? 'bg-rose-50' : ''
+
+  useEffect(() => {
+    if (!codeUnion && !groupeClient) { setData(null); return }
+    setLoading(true)
+    setData(null)
+    setExpandedPlatform(null)
+    getClientMonthlyEvolution({ codeUnion, groupeClient })
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false))
+  }, [codeUnion, groupeClient])
+
+  if (loading) return (
+    <div className="rounded-2xl border border-blue-100 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-3 text-blue-500 text-sm">
+        <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+        Chargement de l'évolution mensuelle…
+      </div>
+    </div>
+  )
+
+  if (!data?.available) return null
+
+  const yearN = data.year_current
+  const yearN1 = data.year_previous
+
+  return (
+    <div className="rounded-2xl border border-blue-100 bg-white shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="text-white font-bold text-base">Évolution mensuelle {yearN} vs {yearN1}</h3>
+            <p className="text-blue-200 text-xs mt-0.5">Chiffres d'affaires par fournisseur et par mois</p>
+          </div>
+          {data.totals && (
+            <div className="flex items-center gap-4 text-sm">
+              <div className="text-right">
+                <div className="text-blue-200 text-xs">CA {yearN}</div>
+                <div className="text-white font-bold">{fmt(data.totals.current)}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-blue-200 text-xs">CA {yearN1}</div>
+                <div className="text-white/70 font-semibold">{fmt(data.totals.previous)}</div>
+              </div>
+              <div className={`text-right font-bold text-base ${data.totals.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {fmtD(data.totals.delta)}
+                <span className="text-xs ml-1">({fmtP(data.totals.delta_pct)})</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* Tableau mois par mois */}
+        {data.months?.length > 0 && (
+          <div>
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mois par mois — toutes plateformes</h4>
+            <div className="overflow-x-auto rounded-xl border border-gray-100">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">Mois</th>
+                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">CA {yearN}</th>
+                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">CA {yearN1}</th>
+                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">Delta</th>
+                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.months.map((m, i) => (
+                    <tr key={m.month} className={`border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/50'} ${bg(m.delta)}`}>
+                      <td className="px-4 py-2.5 font-semibold text-gray-700">{MONTHS[m.month]}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
+                      <td className={`px-4 py-2.5 text-right font-bold font-mono ${dc(m.delta)}`}>
+                        {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right text-xs ${dc(m.delta_pct)}`}>
+                        {m.current === 0 && m.previous === 0 ? '' : fmtP(m.delta_pct)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200 bg-gray-50">
+                    <td className="px-4 py-2.5 font-black text-gray-700 text-xs uppercase">Total</td>
+                    <td className="px-4 py-2.5 text-right font-black font-mono text-gray-900">{fmt(data.totals?.current)}</td>
+                    <td className="px-4 py-2.5 text-right font-bold font-mono text-gray-400">{fmt(data.totals?.previous)}</td>
+                    <td className={`px-4 py-2.5 text-right font-black font-mono ${dc(data.totals?.delta)}`}>{fmtD(data.totals?.delta)}</td>
+                    <td className={`px-4 py-2.5 text-right text-xs font-bold ${dc(data.totals?.delta_pct)}`}>{fmtP(data.totals?.delta_pct)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Détail par plateforme */}
+        {data.platforms?.length > 0 && (
+          <div>
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+              Détail par fournisseur — cliquez pour voir mois par mois
+            </h4>
+            <div className="space-y-2">
+              {data.platforms.map((p) => {
+                const isOpen = expandedPlatform === p.platform
+                return (
+                  <div key={p.platform} className={`rounded-xl border overflow-hidden ${p.delta > 0 ? 'border-emerald-200' : p.delta < 0 ? 'border-rose-200' : 'border-gray-200'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPlatform(isOpen ? null : p.platform)}
+                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition text-left ${p.delta > 0 ? 'bg-emerald-50/50' : p.delta < 0 ? 'bg-rose-50/50' : 'bg-white'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`w-2 h-2 rounded-full ${p.delta > 0 ? 'bg-emerald-500' : p.delta < 0 ? 'bg-rose-500' : 'bg-gray-300'}`} />
+                        <span className="font-bold text-gray-800 text-sm">{p.platform}</span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${p.delta > 0 ? 'bg-emerald-100 text-emerald-700' : p.delta < 0 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {fmtD(p.delta)} ({fmtP(p.delta_pct)})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span className="font-mono font-semibold text-gray-900">{fmt(p.total_current)}</span>
+                        <span className="font-mono text-gray-400">{fmt(p.total_previous)}</span>
+                        <svg className={`w-4 h-4 transition-transform text-gray-400 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </button>
+                    {isOpen && p.months?.length > 0 && (
+                      <div className="border-t border-gray-100 px-4 py-3 bg-white overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-gray-400">
+                              <td className="pb-1 font-semibold">Mois</td>
+                              {p.months.map((m) => (
+                                <td key={m.month} className="pb-1 text-right px-2 font-semibold">{MONTHS[m.month]}</td>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td className="py-1 text-gray-500">{yearN}</td>
+                              {p.months.map((m) => (
+                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
+                              ))}
+                            </tr>
+                            <tr>
+                              <td className="py-1 text-gray-400">{yearN1}</td>
+                              {p.months.map((m) => (
+                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
+                              ))}
+                            </tr>
+                            <tr className="border-t border-gray-100">
+                              <td className="pt-1.5 font-bold text-gray-600">Δ</td>
+                              {p.months.map((m) => (
+                                <td key={m.month} className={`pt-1.5 text-right px-2 font-bold font-mono ${dc(m.delta)}`}>
+                                  {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
+                                </td>
+                              ))}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

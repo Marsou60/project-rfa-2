@@ -667,6 +667,18 @@ export const getPureDataMonthlyEvolution = async ({ yearCurrent, yearPrevious, f
   return response.data
 }
 
+export const getClientMonthlyEvolution = async ({ codeUnion, groupeClient, yearCurrent = 2026, yearPrevious = 2025 } = {}) => {
+  const response = await api.get('/pure-data/monthly/client-evolution', {
+    params: {
+      code_union: codeUnion || undefined,
+      groupe_client: groupeClient || undefined,
+      year_current: yearCurrent,
+      year_previous: yearPrevious,
+    }
+  })
+  return response.data
+}
+
 /** Comparaison N vs N-1 filtrée par fournisseur (pour vue plateforme unique). */
 export const getPureDataComparison = async ({ pureDataId, yearCurrent, yearPrevious, month, fournisseur }) => {
   const response = await api.get('/pure-data/comparison', {

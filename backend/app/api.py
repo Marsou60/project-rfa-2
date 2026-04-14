@@ -3464,6 +3464,143 @@ async def pure_data_monthly_month_detail(
         raise HTTPException(status_code=500, detail=f"Erreur détail mois: {str(e)}")
 
 
+@router.get("/pure-data/monthly/client-evolution")
+async def pure_data_monthly_client_evolution(
+    code_union: Optional[str] = None,
+    groupe_client: Optional[str] = None,
+    year_current: int = 2026,
+    year_previous: int = 2025,
+    user: User = Depends(get_current_user),
+):
+    """
+    Évolution mensuelle pour un client ou groupe spécifique.
+
+    SÉCURITÉ :
+    - ADHERENT → forcé sur son linked_code_union / linked_groupe (paramètres ignorés)
+    - ADMIN / COMMERCIAL → utilise les paramètres fournis
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+
+    # Forçage sécurisé pour les adhérents
+    if user.role == UserRole.ADHERENT:
+        if user.linked_code_union:
+            code_union = user.linked_code_union.strip().upper()
+            groupe_client = None
+        elif user.linked_groupe:
+            groupe_client = user.linked_groupe.strip().upper()
+            code_union = None
+        else:
+            raise HTTPException(status_code=403, detail="Aucun client lié à ce compte.")
+    else:
+        if not code_union and not groupe_client:
+            raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
+
+    try:
+        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+
+        if count_monthly_rows() == 0:
+            return {"available": False, "code_union": code_union, "groupe_client": groupe_client}
+
+        all_rows, _, _ = read_monthly_rows()
+        if not all_rows:
+            return {"available": False}
+
+        def _pct(delta, base):
+            return (delta / base) * 100 if base else None
+
+        # Filtrage strict : client ou groupe
+        if code_union:
+            target = code_union.strip().upper()
+            rows = [r for r in all_rows if (r.get("code_union") or "").strip().upper() == target]
+            label = next(
+                (f"{r.get('code_union', '')} — {r.get('raison_sociale', '')}".strip(" —")
+                 for r in rows if r.get("raison_sociale")),
+                code_union,
+            )
+        else:
+            target = groupe_client.strip().upper()
+            rows = [r for r in all_rows if (r.get("groupe_client") or "").strip().upper() == target]
+            label = groupe_client
+
+        if not rows:
+            return {"available": False, "label": label}
+
+        months = sorted({int(r["month"]) for r in rows if r.get("month") is not None})
+
+        # Totaux par mois
+        monthly = []
+        for m in months:
+            curr = sum(float(r.get("ca") or 0) for r in rows if r.get("year") == year_current and r.get("month") == m)
+            prev = sum(float(r.get("ca") or 0) for r in rows if r.get("year") == year_previous and r.get("month") == m)
+            delta = curr - prev
+            monthly.append({"month": m, "current": curr, "previous": prev, "delta": delta, "delta_pct": _pct(delta, prev)})
+
+        # Par plateforme × mois
+        plat_map: Dict[str, Dict] = {}
+        for r in rows:
+            y = r.get("year")
+            m = r.get("month")
+            if y not in (year_current, year_previous) or m is None:
+                continue
+            plat = (r.get("fournisseur") or "Non renseigné").strip().upper()
+            ca = float(r.get("ca") or 0)
+            if plat not in plat_map:
+                plat_map[plat] = {"platform": plat, "total_current": 0.0, "total_previous": 0.0,
+                                   "by_month": {mm: {"current": 0.0, "previous": 0.0} for mm in months}}
+            if y == year_current:
+                plat_map[plat]["total_current"] += ca
+                if m in plat_map[plat]["by_month"]:
+                    plat_map[plat]["by_month"][m]["current"] += ca
+            else:
+                plat_map[plat]["total_previous"] += ca
+                if m in plat_map[plat]["by_month"]:
+                    plat_map[plat]["by_month"][m]["previous"] += ca
+
+        platforms = []
+        for plat, d in sorted(plat_map.items(), key=lambda x: -x[1]["total_current"]):
+            delta = d["total_current"] - d["total_previous"]
+            platforms.append({
+                "platform": plat,
+                "total_current": d["total_current"],
+                "total_previous": d["total_previous"],
+                "delta": delta,
+                "delta_pct": _pct(delta, d["total_previous"]),
+                "months": [
+                    {"month": mm,
+                     "current": d["by_month"][mm]["current"],
+                     "previous": d["by_month"][mm]["previous"],
+                     "delta": d["by_month"][mm]["current"] - d["by_month"][mm]["previous"],
+                     "delta_pct": _pct(d["by_month"][mm]["current"] - d["by_month"][mm]["previous"],
+                                       d["by_month"][mm]["previous"])}
+                    for mm in months
+                ],
+            })
+
+        grand_curr = sum(p["total_current"] for p in platforms)
+        grand_prev = sum(p["total_previous"] for p in platforms)
+        grand_delta = grand_curr - grand_prev
+
+        return {
+            "available": True,
+            "label": label,
+            "code_union": code_union,
+            "groupe_client": groupe_client,
+            "year_current": year_current,
+            "year_previous": year_previous,
+            "totals": {"current": grand_curr, "previous": grand_prev,
+                       "delta": grand_delta, "delta_pct": _pct(grand_delta, grand_prev)},
+            "months": monthly,
+            "platforms": platforms,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur évolution client: {str(e)}")
+
+
 def _resolve_pure_data(pure_data_id: str):
     """
     Résout un import Pure Data : depuis la mémoire d'abord, puis Supabase si sheets_live.
