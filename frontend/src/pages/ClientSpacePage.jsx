@@ -998,6 +998,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
 
 /* ── Évolution mensuelle 2025/2026 — composant sécurisé ── */
 function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
+  const { supplierFilter } = useSupplierFilter()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [expandedPlatform, setExpandedPlatform] = useState(null)
@@ -1014,11 +1015,15 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
     setLoading(true)
     setData(null)
     setExpandedPlatform(null)
-    getClientMonthlyEvolution({ codeUnion, groupeClient })
+    getClientMonthlyEvolution({
+      codeUnion,
+      groupeClient,
+      fournisseur: supplierFilter || undefined,
+    })
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [codeUnion, groupeClient])
+  }, [codeUnion, groupeClient, supplierFilter])
 
   if (loading) return (
     <div className="rounded-2xl border border-blue-100 bg-white p-6 shadow-sm">
@@ -1041,7 +1046,10 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h3 className="text-white font-bold text-base">Évolution mensuelle {yearN} vs {yearN1}</h3>
-            <p className="text-blue-200 text-xs mt-0.5">Chiffres d'affaires par fournisseur et par mois</p>
+            <p className="text-blue-200 text-xs mt-0.5">
+              Chiffres d&apos;affaires par fournisseur et par mois
+              {supplierFilter ? ` — vue ${supplierFilter} uniquement` : ''}
+            </p>
           </div>
           {data.totals && (
             <div className="flex items-center gap-4 text-sm">
@@ -1066,7 +1074,9 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
         {/* Tableau mois par mois */}
         {data.months?.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mois par mois — toutes plateformes</h4>
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+              Mois par mois{supplierFilter ? ` — ${supplierFilter}` : ' — toutes plateformes'}
+            </h4>
             <div className="overflow-x-auto rounded-xl border border-gray-100">
               <table className="w-full text-sm">
                 <thead>

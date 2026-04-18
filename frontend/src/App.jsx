@@ -535,7 +535,7 @@ function AppContent() {
               )}
 
               {/* Filtre fournisseur (mode ACR, DCA, etc.) — visible avec un import ou sur Pure Data */}
-              {(currentImportId || currentPage === 'pure-data' || currentPage === 'pure-data-monthly') && (
+              {(currentImportId || currentPage === 'pure-data' || currentPage === 'pure-data-monthly' || currentPage === 'client-space') && (
                 <div className="relative dropdown-container">
                   <button
                     onClick={() => setOpenSupplierFilter(openSupplierFilter ? null : 'open')}

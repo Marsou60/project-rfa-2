@@ -71,6 +71,7 @@ function SparkBars({ months, height = 40 }) {
 
 /* ── Panel détail d'un mois par plateforme ── */
 function MonthDetailPanel({ month, yearCurrent, yearPrevious, onClose }) {
+  const { supplierFilter } = useSupplierFilter()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -83,11 +84,16 @@ function MonthDetailPanel({ month, yearCurrent, yearPrevious, onClose }) {
   const dc = (v) => v == null ? 'text-white/40' : v > 0 ? 'text-emerald-300' : v < 0 ? 'text-rose-300' : 'text-white/40'
 
   useEffect(() => {
-    getPureDataMonthlyMonthDetail({ month, yearCurrent, yearPrevious })
+    getPureDataMonthlyMonthDetail({
+      month,
+      yearCurrent,
+      yearPrevious,
+      fournisseur: supplierFilter || undefined,
+    })
       .then(setData)
       .catch((e) => setError(e.response?.data?.detail || e.message || 'Erreur'))
       .finally(() => setLoading(false))
-  }, [month, yearCurrent, yearPrevious])
+  }, [month, yearCurrent, yearPrevious, supplierFilter])
 
   return (
     <div className="mt-2 glass-card-dark rounded-xl p-4 border border-white/10">
@@ -138,6 +144,7 @@ function MonthDetailPanel({ month, yearCurrent, yearPrevious, onClose }) {
 
 
 function MonthlyEntityDetailModal({ entity, yearCurrent, yearPrevious, onClose, inline = false }) {
+  const { supplierFilter } = useSupplierFilter()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -349,11 +356,12 @@ function MonthlyEntityDetailModal({ entity, yearCurrent, yearPrevious, onClose, 
     if (entity.code_union) params.codeUnion = entity.code_union
     else if (entity.commercial) params.commercial = entity.commercial
     else if (entity.groupe_client) params.groupeClient = entity.groupe_client
+    if (supplierFilter) params.fournisseur = supplierFilter
     getPureDataMonthlyEntityDetail(params)
       .then(setData)
       .catch((e) => setError(e.response?.data?.detail || e.message || 'Erreur'))
       .finally(() => setLoading(false))
-  }, [entity, yearCurrent, yearPrevious])
+  }, [entity, yearCurrent, yearPrevious, supplierFilter])
 
   return inline ? (
     <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">

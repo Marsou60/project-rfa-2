@@ -3218,17 +3218,20 @@ async def pure_data_monthly_entity_detail(
     groupe_client: Optional[str] = None,
     year_current: int = 2026,
     year_previous: int = 2025,
+    fournisseur: Optional[str] = None,
     user: User = Depends(require_staff),
 ):
     """
     Détail mensuel d'un client (code_union), commercial, ou groupe client:
     Pour chaque plateforme, retourne le CA N, N-1, delta par mois.
+    Si fournisseur est fourni, seules les lignes de cette plateforme sont agrégées.
     """
     if not code_union and not commercial and not groupe_client:
         raise HTTPException(status_code=400, detail="Fournir code_union, commercial ou groupe_client.")
 
     try:
         from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_import import filter_rows_by_fournisseur
 
         if count_monthly_rows() == 0:
             raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
@@ -3261,6 +3264,8 @@ async def pure_data_monthly_entity_detail(
             rows = [r for r in rows if _norm(r.get("commercial") or "") == target]
             label = commercial
             display_label = commercial
+
+        rows = filter_rows_by_fournisseur(rows, fournisseur)
 
         months_set = sorted({int(r["month"]) for r in rows if r.get("month") is not None})
         platforms_set = sorted({(r.get("fournisseur") or "Non renseigné").strip().upper() for r in rows if (r.get("fournisseur") or "").strip()})
@@ -3399,18 +3404,22 @@ async def pure_data_monthly_month_detail(
     month: int,
     year_current: int = 2026,
     year_previous: int = 2025,
+    fournisseur: Optional[str] = None,
     user: User = Depends(require_staff),
 ):
     """
     Pour un mois donné, retourne le CA N vs N-1 par plateforme (fournisseur).
+    Si fournisseur est fourni, seules les lignes de cette plateforme sont incluses.
     """
     try:
         from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_import import filter_rows_by_fournisseur
 
         if count_monthly_rows() == 0:
             raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
 
         rows, _, _ = read_monthly_rows(month=month)
+        rows = filter_rows_by_fournisseur(rows, fournisseur)
 
         def _pct(delta, base):
             return (delta / base) * 100 if base else None
@@ -3470,6 +3479,7 @@ async def pure_data_monthly_client_evolution(
     groupe_client: Optional[str] = None,
     year_current: int = 2026,
     year_previous: int = 2025,
+    fournisseur: Optional[str] = None,
     user: User = Depends(get_current_user),
 ):
     """
@@ -3478,6 +3488,7 @@ async def pure_data_monthly_client_evolution(
     SÉCURITÉ :
     - ADHERENT → forcé sur son linked_code_union / linked_groupe (paramètres ignorés)
     - ADMIN / COMMERCIAL → utilise les paramètres fournis
+    Optionnel : fournisseur limite l'agrégation à une plateforme (vue confidentielle).
     """
     if not user:
         raise HTTPException(status_code=401, detail="Non authentifié")
@@ -3498,6 +3509,7 @@ async def pure_data_monthly_client_evolution(
 
     try:
         from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_import import filter_rows_by_fournisseur
 
         if count_monthly_rows() == 0:
             return {"available": False, "code_union": code_union, "groupe_client": groupe_client}
@@ -3522,6 +3534,11 @@ async def pure_data_monthly_client_evolution(
             target = groupe_client.strip().upper()
             rows = [r for r in all_rows if (r.get("groupe_client") or "").strip().upper() == target]
             label = groupe_client
+
+        if not rows:
+            return {"available": False, "label": label}
+
+        rows = filter_rows_by_fournisseur(rows, fournisseur)
 
         if not rows:
             return {"available": False, "label": label}

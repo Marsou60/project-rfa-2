@@ -631,18 +631,19 @@ export const loadPureDataMonthly = async ({ yearCurrent, yearPrevious, month } =
   return response.data
 }
 
-export const getPureDataMonthlyMonthDetail = async ({ month, yearCurrent, yearPrevious } = {}) => {
+export const getPureDataMonthlyMonthDetail = async ({ month, yearCurrent, yearPrevious, fournisseur } = {}) => {
   const response = await api.get('/pure-data/monthly/evolution/month-detail', {
     params: {
       month,
       year_current: yearCurrent ?? undefined,
       year_previous: yearPrevious ?? undefined,
+      fournisseur: fournisseur || undefined,
     }
   })
   return response.data
 }
 
-export const getPureDataMonthlyEntityDetail = async ({ codeUnion, commercial, groupeClient, yearCurrent, yearPrevious } = {}) => {
+export const getPureDataMonthlyEntityDetail = async ({ codeUnion, commercial, groupeClient, yearCurrent, yearPrevious, fournisseur } = {}) => {
   const response = await api.get('/pure-data/monthly/evolution/entity-detail', {
     params: {
       code_union: codeUnion || undefined,
@@ -650,6 +651,7 @@ export const getPureDataMonthlyEntityDetail = async ({ codeUnion, commercial, gr
       groupe_client: groupeClient || undefined,
       year_current: yearCurrent ?? undefined,
       year_previous: yearPrevious ?? undefined,
+      fournisseur: fournisseur || undefined,
     }
   })
   return response.data
@@ -667,13 +669,14 @@ export const getPureDataMonthlyEvolution = async ({ yearCurrent, yearPrevious, f
   return response.data
 }
 
-export const getClientMonthlyEvolution = async ({ codeUnion, groupeClient, yearCurrent = 2026, yearPrevious = 2025 } = {}) => {
+export const getClientMonthlyEvolution = async ({ codeUnion, groupeClient, yearCurrent = 2026, yearPrevious = 2025, fournisseur } = {}) => {
   const response = await api.get('/pure-data/monthly/client-evolution', {
     params: {
       code_union: codeUnion || undefined,
       groupe_client: groupeClient || undefined,
       year_current: yearCurrent,
       year_previous: yearPrevious,
+      fournisseur: fournisseur || undefined,
     }
   })
   return response.data
