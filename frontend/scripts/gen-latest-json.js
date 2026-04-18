@@ -7,8 +7,11 @@
  * Ou depuis frontend/: node scripts/gen-latest-json.js 0.1.0 <url_base>
  * et lire les .sig depuis src-tauri/target/release/bundle/msi/
  */
-const fs = require('fs')
-const path = require('path')
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const version = process.argv[2] || '0.1.0'
 const urlBase = process.argv[3] || 'https://github.com/Marsou60/project-rfa-2/releases/download/v' + version
@@ -17,18 +20,23 @@ const bundleDir = path.join(__dirname, '../src-tauri/target/release/bundle')
 const msiDir = path.join(bundleDir, 'msi')
 const nsisDir = path.join(bundleDir, 'nsis')
 
-function findSig(dir, ext) {
+function findSig(dir, ext, version) {
   if (!fs.existsSync(dir)) return null
   const files = fs.readdirSync(dir)
-  const installer = files.find(f => f.endsWith(ext) && !f.endsWith('.sig'))
-  const sigFile = installer ? installer + '.sig' : files.find(f => f.endsWith('.sig'))
-  if (!sigFile || !fs.existsSync(path.join(dir, sigFile))) return null
+  const installers = files.filter((f) => f.endsWith(ext) && !f.endsWith('.sig'))
+  const needle = `_${version}_`
+  const installer =
+    installers.find((f) => f.includes(needle)) ||
+    installers.sort((a, b) => fs.statSync(path.join(dir, b)).mtimeMs - fs.statSync(path.join(dir, a)).mtimeMs)[0]
+  if (!installer) return null
+  const sigFile = `${installer}.sig`
+  if (!fs.existsSync(path.join(dir, sigFile))) return null
   const sigContent = fs.readFileSync(path.join(dir, sigFile), 'utf8')
-  const installerName = sigFile.replace('.sig', '')
-  return { url: `${urlBase}/${installerName}`, signature: sigContent }
+  const url = `${urlBase}/${encodeURIComponent(installer)}`
+  return { url, signature: sigContent }
 }
 
-const win = findSig(msiDir, '.msi') || findSig(nsisDir, '.exe')
+const win = findSig(msiDir, '.msi', version) || findSig(nsisDir, '.exe', version)
 if (!win) {
   console.error('Aucun .msi ou .exe + .sig trouvé dans', msiDir, 'ou', nsisDir)
   console.error('Lance un build signé (TAURI_SIGNING_PRIVATE_KEY) puis relance ce script.')
@@ -40,7 +48,7 @@ const latest = {
   notes: '',
   pub_date: new Date().toISOString().slice(0, 19) + 'Z',
   platforms: {
-    'windows-x86_64': { signature: win.signature, url: win.url },
+    'windows-x86_64': { signature: win.signature.trim(), url: win.url },
   },
 }
 
