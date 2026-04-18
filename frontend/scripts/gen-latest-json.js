@@ -32,7 +32,9 @@ function findSig(dir, ext, version) {
   const sigFile = `${installer}.sig`
   if (!fs.existsSync(path.join(dir, sigFile))) return null
   const sigContent = fs.readFileSync(path.join(dir, sigFile), 'utf8')
-  const url = `${urlBase}/${encodeURIComponent(installer)}`
+  // GitHub Releases renomme souvent les espaces en « . » dans l’URL d’asset téléchargé
+  const assetNameForUrl = installer.replace(/ /g, '.')
+  const url = `${urlBase}/${encodeURIComponent(assetNameForUrl)}`
   return { url, signature: sigContent }
 }
 
