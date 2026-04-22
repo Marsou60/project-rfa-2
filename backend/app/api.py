@@ -20,7 +20,8 @@ from app.services.compute import (
     get_entity_detail_with_rfa,
     get_entity_rfa_grand_total,
     compute_aggregations,
-    get_global_recap_rfa
+    get_global_recap_rfa,
+    build_client_rfa_export_rows
 )
 from app.services.contract_resolver import resolve_contract
 from app.services.rfa_calculator import calculate_rfa
@@ -1199,6 +1200,127 @@ async def get_global_recap(
         print(f"Erreur lors du calcul du récapitulatif: {e}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur lors du calcul du récapitulatif: {str(e)}")
+
+
+@router.get("/imports/{import_id}/recap/export-excel")
+async def export_global_recap_excel(
+    import_id: str,
+    dissolved_groups: Optional[str] = Query(None, description="Liste des groupes dissous (séparés par des virgules)"),
+    session: Session = Depends(get_session),
+):
+    """
+    Export Excel du récapitulatif clients RFA, avec séparation stricte :
+    - onglet Magasins indépendants
+    - onglet Groupes consolidés
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from io import BytesIO
+
+    import_data = _resolve_import_data(import_id, session)
+    if not import_data:
+        raise HTTPException(status_code=404, detail="Import non trouve")
+
+    dissolved_set = set()
+    if dissolved_groups:
+        dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
+
+    try:
+        export_data = build_client_rfa_export_rows(import_data, dissolved_groups=dissolved_set)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur calcul export recap: {str(e)}")
+
+    wb = openpyxl.Workbook()
+
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    subtotal_fill = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+    money_fmt = '#,##0.00 "EUR"'
+    headers = [
+        "Code Union",
+        "Nom Client",
+        "Montant total realise",
+        "RFA client",
+        "Type de contrat",
+    ]
+
+    def _fill_sheet(ws, title: str, rows: List[Dict[str, Any]]):
+        ws.title = title
+        ws.merge_cells("A1:E1")
+        ws["A1"] = f"EXPORT RFA CLIENTS - {title.upper()}"
+        ws["A1"].font = Font(bold=True, size=14, color="1F4E79")
+        ws["A2"] = f"Import ID: {import_id}"
+        ws["A2"].font = Font(italic=True, color="808080")
+
+        row_idx = 4
+        for col, label in enumerate(headers, 1):
+            cell = ws.cell(row=row_idx, column=col, value=label)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = thin_border
+
+        row_idx += 1
+        total_ca = 0.0
+        total_rfa = 0.0
+        for item in rows:
+            ca_total = float(item.get("montant_total_realise", 0.0) or 0.0)
+            rfa_total = float(item.get("rfa_client", 0.0) or 0.0)
+            total_ca += ca_total
+            total_rfa += rfa_total
+
+            ws.cell(row=row_idx, column=1, value=item.get("code_union", "")).border = thin_border
+            ws.cell(row=row_idx, column=2, value=item.get("nom_client", "")).border = thin_border
+
+            ws.cell(row=row_idx, column=3, value=ca_total).number_format = money_fmt
+            ws.cell(row=row_idx, column=3).border = thin_border
+
+            ws.cell(row=row_idx, column=4, value=rfa_total).number_format = money_fmt
+            ws.cell(row=row_idx, column=4).border = thin_border
+
+            ws.cell(row=row_idx, column=5, value=item.get("type_contrat", "")).border = thin_border
+            row_idx += 1
+
+        ws.cell(row=row_idx, column=1, value="TOTAL").font = Font(bold=True)
+        ws.cell(row=row_idx, column=1).fill = subtotal_fill
+        ws.cell(row=row_idx, column=1).border = thin_border
+
+        for c in range(2, 6):
+            ws.cell(row=row_idx, column=c).fill = subtotal_fill
+            ws.cell(row=row_idx, column=c).border = thin_border
+
+        ws.cell(row=row_idx, column=3, value=total_ca).number_format = money_fmt
+        ws.cell(row=row_idx, column=3).font = Font(bold=True)
+        ws.cell(row=row_idx, column=4, value=total_rfa).number_format = money_fmt
+        ws.cell(row=row_idx, column=4).font = Font(bold=True)
+
+        ws.column_dimensions["A"].width = 22
+        ws.column_dimensions["B"].width = 36
+        ws.column_dimensions["C"].width = 24
+        ws.column_dimensions["D"].width = 20
+        ws.column_dimensions["E"].width = 38
+
+    ws_indep = wb.active
+    _fill_sheet(ws_indep, "Magasins independants", export_data.get("independents", []))
+
+    ws_groups = wb.create_sheet("Groupes")
+    _fill_sheet(ws_groups, "Groupes", export_data.get("groups", []))
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="RFA_Clients_{import_id[:8]}.xlsx"'},
+    )
 
 
 def _parse_query_bool01(raw: Optional[str]) -> Optional[bool]:

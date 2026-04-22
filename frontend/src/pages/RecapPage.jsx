@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { BarChart3, Eye, X, AlertTriangle } from 'lucide-react'
-import { getGlobalRecap, getUnionEntity } from '../api/client'
+import { BarChart3, Eye, X, AlertTriangle, Download } from 'lucide-react'
+import { getGlobalRecap, getUnionEntity, exportGlobalRecapExcel } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import { SUPPLIER_KEYS, getKeysForSupplier } from '../constants/suppliers'
 
@@ -136,6 +136,7 @@ function RecapPage({ importId }) {
     'GLOBAL_EXADIS': ''
   })
   const [ratesAutoLoaded, setRatesAutoLoaded] = useState(false)
+  const [exportingExcel, setExportingExcel] = useState(false)
 
   // Calcule les taux effectifs depuis l'entité Union (même formule que le Récapitulatif par Fournisseur)
   const computeUnionRates = (unionEntity) => {
@@ -282,6 +283,27 @@ function RecapPage({ importId }) {
     return { rfaReceived, margin }
   }
 
+  const handleExportRecapExcel = async () => {
+    if (!importId || exportingExcel) return
+    setExportingExcel(true)
+    try {
+      const blob = await exportGlobalRecapExcel(importId, dissolvedGroups)
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `RFA_Clients_${importId.slice(0, 8)}.xlsx`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || err.response?.statusText || err.message || "Erreur lors de l'export Excel"
+      setError(errorMsg)
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -336,6 +358,16 @@ function RecapPage({ importId }) {
               </div>
             </div>
             <div className="flex items-center gap-4 flex-wrap">
+              <button
+                type="button"
+                onClick={handleExportRecapExcel}
+                disabled={exportingExcel || !importId}
+                className="glass-btn-primary flex items-center gap-2"
+                title="Exporter le tableau clients et groupes en Excel"
+              >
+                <Download className="w-4 h-4" />
+                {exportingExcel ? 'Export...' : 'Export Excel clients'}
+              </button>
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-glass-secondary">Taux RFA perçu (%):</span>

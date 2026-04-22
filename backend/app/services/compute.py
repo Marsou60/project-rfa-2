@@ -488,6 +488,90 @@ def get_global_recap_rfa(import_data: ImportData, dissolved_groups: Optional[set
     )
 
 
+def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Optional[set] = None) -> Dict[str, List[Dict]]:
+    """
+    Construit les lignes d'export RFA en séparant :
+    - les magasins indépendants (ou appartenant à des groupes dissous/exclus),
+    - les groupes consolidés.
+
+    Returns:
+        {
+            "independents": [...],
+            "groups": [...]
+        }
+    """
+    from app.core.fields import EXCLUDED_GROUPS
+
+    if dissolved_groups is None:
+        dissolved_groups = set()
+    dissolved_groups = {g.strip().upper() for g in dissolved_groups if g and str(g).strip()}
+    dissolved_groups = dissolved_groups | EXCLUDED_GROUPS
+
+    if len(import_data.by_client) == 0 or len(import_data.by_group) == 0:
+        compute_aggregations(import_data)
+
+    independents: List[Dict] = []
+    groups: List[Dict] = []
+
+    # 1) Magasins indépendants + clients de groupes dissous/exclus
+    for code_union, client_data in import_data.by_client.items():
+        groupe_client = (client_data.get("groupe_client") or "").strip()
+        groupe_norm = groupe_client.upper() if groupe_client else ""
+
+        if groupe_client and groupe_norm not in dissolved_groups:
+            continue
+
+        code_union_norm = code_union.strip().upper() if code_union else None
+        contract = resolve_contract(code_union=code_union_norm)
+        recap_ca = {"global": client_data["global"], "tri": client_data["tri"]}
+        rfa_result = calculate_rfa(
+            recap_ca,
+            contract=contract,
+            code_union=code_union_norm,
+        )
+
+        independents.append({
+            "code_union": code_union,
+            "nom_client": client_data.get("nom_client") or "",
+            "montant_total_realise": round(client_data.get("grand_total", 0.0), 2),
+            "rfa_client": round((rfa_result.get("totals") or {}).get("grand_total", 0.0), 2),
+            "type_contrat": contract.name if contract else "Aucun contrat",
+            "groupe_client": groupe_client or "",
+        })
+
+    # 2) Groupes consolidés (les magasins du groupe ne doivent pas réapparaître)
+    for groupe, group_data in import_data.by_group.items():
+        groupe_norm = groupe.strip().upper() if groupe else ""
+        if groupe_norm in dissolved_groups:
+            continue
+
+        contract = resolve_contract(groupe_client=groupe_norm)
+        recap_ca = {"global": group_data["global"], "tri": group_data["tri"]}
+        rfa_result = calculate_rfa(
+            recap_ca,
+            contract=contract,
+            groupe_client=groupe_norm,
+        )
+
+        groups.append({
+            "code_union": groupe,
+            "nom_client": groupe,
+            "montant_total_realise": round(group_data.get("grand_total", 0.0), 2),
+            "rfa_client": round((rfa_result.get("totals") or {}).get("grand_total", 0.0), 2),
+            "type_contrat": contract.name if contract else "Aucun contrat",
+            "groupe_client": groupe,
+            "nb_comptes": group_data.get("nb_comptes", 0),
+        })
+
+    independents.sort(key=lambda row: str(row.get("code_union", "")))
+    groups.sort(key=lambda row: str(row.get("nom_client", "")))
+
+    return {
+        "independents": independents,
+        "groups": groups,
+    }
+
+
 def get_union_detail_with_rfa(import_data: ImportData) -> EntityDetailWithRfa:
     """
     Calcule le détail Union (agrégation globale tous clients) avec calcul RFA.

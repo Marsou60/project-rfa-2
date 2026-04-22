@@ -401,6 +401,18 @@ export const getGlobalRecap = async (importId, dissolvedGroups = []) => {
   return response.data
 }
 
+export const exportGlobalRecapExcel = async (importId, dissolvedGroups = []) => {
+  const params = {}
+  if (dissolvedGroups && dissolvedGroups.length > 0) {
+    params.dissolved_groups = dissolvedGroups.join(',')
+  }
+  const response = await api.get(`/imports/${importId}/recap/export-excel`, {
+    params,
+    responseType: 'blob'
+  })
+  return response.data
+}
+
 // ==================== AUTHENTIFICATION ====================
 
 export const login = async (username, password) => {
