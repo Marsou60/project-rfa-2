@@ -176,10 +176,10 @@ function EntityDetailDrawer({
   const cotisationModeFacture =
     cotisationApplies && cotisationAmount > 0 && cotisationFacturee && cotisationDeduite
 
-  const totalCaGlobal = entity?.ca?.totals?.global_total || 0
-  const totalCaTri = entity?.ca?.totals?.tri_total || 0
-  const totalCaFromDetail = entity?.ca?.totals?.grand_total ?? (totalCaGlobal + totalCaTri)
-  const totalCa = listGrandTotal != null ? listGrandTotal : totalCaFromDetail
+  const totalCaGlobal = entity?.ca?.totals?.global_total ?? 0
+  // Le bloc "Analyse marge Groupement Union" raisonne par plateformes globales,
+  // il doit donc rester aligné avec le "Total Global" de la liste adhérents.
+  const totalCa = listGrandTotal != null ? listGrandTotal : totalCaGlobal
   const parsedMarginRate = marginRateReceived === '' ? null : parseFloat(marginRateReceived) / 100
   const rfaReceived = parsedMarginRate !== null ? totalCa * parsedMarginRate : null
   const unionMargin = parsedMarginRate !== null ? (rfaReceived - adjustedGrandTotal) : null

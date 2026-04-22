@@ -266,7 +266,8 @@ function ClientsPage({ importId }) {
 
   const handleEntityClick = async (entity) => {
     const id = entity?.id ?? entity
-    const listGrandTotal = entity && typeof entity === 'object' ? (entity.grand_total ?? entity.global_total) : null
+    // La colonne affichée dans la liste est "Total Global", on transmet donc cette base au drawer.
+    const listGrandTotal = entity && typeof entity === 'object' ? (entity.global_total ?? null) : null
     setSelectedListGrandTotal(listGrandTotal)
     setDetailLoading(true)
     setSelectedEntity(null)
