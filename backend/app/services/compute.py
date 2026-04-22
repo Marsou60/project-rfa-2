@@ -533,7 +533,8 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
         independents.append({
             "code_union": code_union,
             "nom_client": client_data.get("nom_client") or "",
-            "montant_total_realise": round(client_data.get("grand_total", 0.0), 2),
+            # Aligné avec la liste adhérents : base CA = Total Global (hors tri)
+            "montant_total_realise": round(client_data.get("global_total", 0.0), 2),
             "rfa_client": round((rfa_result.get("totals") or {}).get("grand_total", 0.0), 2),
             "type_contrat": contract.name if contract else "Aucun contrat",
             "groupe_client": groupe_client or "",
@@ -556,7 +557,8 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
         groups.append({
             "code_union": groupe,
             "nom_client": groupe,
-            "montant_total_realise": round(group_data.get("grand_total", 0.0), 2),
+            # Aligné avec la vue outil : base CA = Total Global (hors tri)
+            "montant_total_realise": round(group_data.get("global_total", 0.0), 2),
             "rfa_client": round((rfa_result.get("totals") or {}).get("grand_total", 0.0), 2),
             "type_contrat": contract.name if contract else "Aucun contrat",
             "groupe_client": groupe,
