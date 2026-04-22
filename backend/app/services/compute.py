@@ -497,7 +497,9 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
     Returns:
         {
             "independents": [...],
-            "groups": [...]
+            "groups": [...],
+            "independents_details": [...],  # 1 ligne par adhérent x plateforme (GLOBAL + TRI)
+            "groups_details": [...],        # 1 ligne par groupe x plateforme (GLOBAL + TRI)
         }
     """
     from app.core.fields import EXCLUDED_GROUPS
@@ -512,6 +514,57 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
 
     independents: List[Dict] = []
     groups: List[Dict] = []
+    independents_details: List[Dict] = []
+    groups_details: List[Dict] = []
+
+    def _append_platform_details(
+        bucket: List[Dict],
+        *,
+        entity_type: str,
+        code_union: str,
+        nom_client: str,
+        contract_name: str,
+        rfa_result: Dict,
+    ):
+        for platform_key, item in (rfa_result.get("global") or {}).items():
+            ca_value = float(item.get("ca", 0.0) or 0.0)
+            rfa_value = float((item.get("rfa") or {}).get("value", 0.0) or 0.0)
+            bonus_value = float((item.get("bonus") or {}).get("value", 0.0) or 0.0)
+            total_value = float((item.get("total") or {}).get("value", rfa_value + bonus_value) or 0.0)
+            if ca_value == 0.0 and total_value == 0.0:
+                continue
+            bucket.append({
+                "entity_type": entity_type,
+                "code_union": code_union,
+                "nom_client": nom_client,
+                "type_contrat": contract_name,
+                "platform_scope": "GLOBAL",
+                "platform_key": platform_key,
+                "platform_label": item.get("label", platform_key),
+                "ca_realise_plateforme": round(ca_value, 2),
+                "rfa_plateforme": round(rfa_value, 2),
+                "bonus_plateforme": round(bonus_value, 2),
+                "total_plateforme": round(total_value, 2),
+            })
+
+        for platform_key, item in (rfa_result.get("tri") or {}).items():
+            ca_value = float(item.get("ca", 0.0) or 0.0)
+            rfa_value = float(item.get("value", 0.0) or 0.0)
+            if ca_value == 0.0 and rfa_value == 0.0:
+                continue
+            bucket.append({
+                "entity_type": entity_type,
+                "code_union": code_union,
+                "nom_client": nom_client,
+                "type_contrat": contract_name,
+                "platform_scope": "TRI",
+                "platform_key": platform_key,
+                "platform_label": item.get("label", platform_key),
+                "ca_realise_plateforme": round(ca_value, 2),
+                "rfa_plateforme": round(rfa_value, 2),
+                "bonus_plateforme": 0.0,
+                "total_plateforme": round(rfa_value, 2),
+            })
 
     # 1) Magasins indépendants + clients de groupes dissous/exclus
     for code_union, client_data in import_data.by_client.items():
@@ -530,15 +583,25 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
             code_union=code_union_norm,
         )
 
+        contract_name = contract.name if contract else "Aucun contrat"
+
         independents.append({
             "code_union": code_union,
             "nom_client": client_data.get("nom_client") or "",
             # Aligné avec la liste adhérents : base CA = Total Global (hors tri)
             "montant_total_realise": round(client_data.get("global_total", 0.0), 2),
             "rfa_client": round((rfa_result.get("totals") or {}).get("grand_total", 0.0), 2),
-            "type_contrat": contract.name if contract else "Aucun contrat",
+            "type_contrat": contract_name,
             "groupe_client": groupe_client or "",
         })
+        _append_platform_details(
+            independents_details,
+            entity_type="INDEPENDANT",
+            code_union=code_union,
+            nom_client=client_data.get("nom_client") or "",
+            contract_name=contract_name,
+            rfa_result=rfa_result,
+        )
 
     # 2) Groupes consolidés (les magasins du groupe ne doivent pas réapparaître)
     for groupe, group_data in import_data.by_group.items():
@@ -554,16 +617,26 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
             groupe_client=groupe_norm,
         )
 
+        contract_name = contract.name if contract else "Aucun contrat"
+
         groups.append({
             "code_union": groupe,
             "nom_client": groupe,
             # Aligné avec la vue outil : base CA = Total Global (hors tri)
             "montant_total_realise": round(group_data.get("global_total", 0.0), 2),
             "rfa_client": round((rfa_result.get("totals") or {}).get("grand_total", 0.0), 2),
-            "type_contrat": contract.name if contract else "Aucun contrat",
+            "type_contrat": contract_name,
             "groupe_client": groupe,
             "nb_comptes": group_data.get("nb_comptes", 0),
         })
+        _append_platform_details(
+            groups_details,
+            entity_type="GROUPE",
+            code_union=groupe,
+            nom_client=groupe,
+            contract_name=contract_name,
+            rfa_result=rfa_result,
+        )
 
     independents.sort(key=lambda row: str(row.get("code_union", "")))
     groups.sort(key=lambda row: str(row.get("nom_client", "")))
@@ -571,6 +644,8 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
     return {
         "independents": independents,
         "groups": groups,
+        "independents_details": independents_details,
+        "groups_details": groups_details,
     }
 
 

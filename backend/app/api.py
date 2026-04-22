@@ -1249,6 +1249,19 @@ async def export_global_recap_excel(
         "RFA client",
         "Type de contrat",
     ]
+    detail_headers = [
+        "Type entite",
+        "Code Union",
+        "Nom Client",
+        "Type plateforme",
+        "Cle plateforme",
+        "Plateforme",
+        "CA realise plateforme",
+        "RFA plateforme",
+        "Bonus plateforme",
+        "Total plateforme",
+        "Type de contrat",
+    ]
 
     def _fill_sheet(ws, title: str, rows: List[Dict[str, Any]]):
         ws.title = title
@@ -1306,11 +1319,97 @@ async def export_global_recap_excel(
         ws.column_dimensions["D"].width = 20
         ws.column_dimensions["E"].width = 38
 
+    def _fill_detail_sheet(ws, title: str, rows: List[Dict[str, Any]]):
+        ws.title = title
+        ws.merge_cells("A1:K1")
+        ws["A1"] = f"DETAIL RFA PAR PLATEFORME - {title.upper()}"
+        ws["A1"].font = Font(bold=True, size=14, color="1F4E79")
+        ws["A2"] = f"Import ID: {import_id}"
+        ws["A2"].font = Font(italic=True, color="808080")
+
+        row_idx = 4
+        for col, label in enumerate(detail_headers, 1):
+            cell = ws.cell(row=row_idx, column=col, value=label)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = thin_border
+
+        row_idx += 1
+        total_ca = 0.0
+        total_rfa = 0.0
+        total_bonus = 0.0
+        total_line = 0.0
+
+        for item in rows:
+            ca_value = float(item.get("ca_realise_plateforme", 0.0) or 0.0)
+            rfa_value = float(item.get("rfa_plateforme", 0.0) or 0.0)
+            bonus_value = float(item.get("bonus_plateforme", 0.0) or 0.0)
+            line_total = float(item.get("total_plateforme", 0.0) or 0.0)
+
+            total_ca += ca_value
+            total_rfa += rfa_value
+            total_bonus += bonus_value
+            total_line += line_total
+
+            ws.cell(row=row_idx, column=1, value=item.get("entity_type", "")).border = thin_border
+            ws.cell(row=row_idx, column=2, value=item.get("code_union", "")).border = thin_border
+            ws.cell(row=row_idx, column=3, value=item.get("nom_client", "")).border = thin_border
+            ws.cell(row=row_idx, column=4, value=item.get("platform_scope", "")).border = thin_border
+            ws.cell(row=row_idx, column=5, value=item.get("platform_key", "")).border = thin_border
+            ws.cell(row=row_idx, column=6, value=item.get("platform_label", "")).border = thin_border
+
+            ws.cell(row=row_idx, column=7, value=ca_value).number_format = money_fmt
+            ws.cell(row=row_idx, column=7).border = thin_border
+            ws.cell(row=row_idx, column=8, value=rfa_value).number_format = money_fmt
+            ws.cell(row=row_idx, column=8).border = thin_border
+            ws.cell(row=row_idx, column=9, value=bonus_value).number_format = money_fmt
+            ws.cell(row=row_idx, column=9).border = thin_border
+            ws.cell(row=row_idx, column=10, value=line_total).number_format = money_fmt
+            ws.cell(row=row_idx, column=10).border = thin_border
+
+            ws.cell(row=row_idx, column=11, value=item.get("type_contrat", "")).border = thin_border
+            row_idx += 1
+
+        ws.cell(row=row_idx, column=1, value="TOTAL").font = Font(bold=True)
+        ws.cell(row=row_idx, column=1).fill = subtotal_fill
+        ws.cell(row=row_idx, column=1).border = thin_border
+        for c in range(2, 12):
+            ws.cell(row=row_idx, column=c).fill = subtotal_fill
+            ws.cell(row=row_idx, column=c).border = thin_border
+
+        ws.cell(row=row_idx, column=7, value=total_ca).number_format = money_fmt
+        ws.cell(row=row_idx, column=7).font = Font(bold=True)
+        ws.cell(row=row_idx, column=8, value=total_rfa).number_format = money_fmt
+        ws.cell(row=row_idx, column=8).font = Font(bold=True)
+        ws.cell(row=row_idx, column=9, value=total_bonus).number_format = money_fmt
+        ws.cell(row=row_idx, column=9).font = Font(bold=True)
+        ws.cell(row=row_idx, column=10, value=total_line).number_format = money_fmt
+        ws.cell(row=row_idx, column=10).font = Font(bold=True)
+
+        ws.column_dimensions["A"].width = 14
+        ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 30
+        ws.column_dimensions["D"].width = 16
+        ws.column_dimensions["E"].width = 24
+        ws.column_dimensions["F"].width = 28
+        ws.column_dimensions["G"].width = 20
+        ws.column_dimensions["H"].width = 16
+        ws.column_dimensions["I"].width = 16
+        ws.column_dimensions["J"].width = 16
+        ws.column_dimensions["K"].width = 34
+
     ws_indep = wb.active
     _fill_sheet(ws_indep, "Magasins independants", export_data.get("independents", []))
 
     ws_groups = wb.create_sheet("Groupes")
     _fill_sheet(ws_groups, "Groupes", export_data.get("groups", []))
+
+    ws_detail_indep = wb.create_sheet("Detail indep plateformes")
+    _fill_detail_sheet(ws_detail_indep, "Independants", export_data.get("independents_details", []))
+
+    ws_detail_groups = wb.create_sheet("Detail groupes plateformes")
+    _fill_detail_sheet(ws_detail_groups, "Groupes", export_data.get("groups_details", []))
 
     output = BytesIO()
     wb.save(output)
