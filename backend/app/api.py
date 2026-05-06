@@ -3853,6 +3853,7 @@ async def pure_data_monthly_client_evolution(
                 if not code:
                     continue
                 name = (r.get("raison_sociale") or "").strip()
+                platform = (r.get("fournisseur") or "NON RENSEIGNE").strip().upper()
                 ca = float(r.get("ca") or 0)
 
                 if code not in store_map:
@@ -3862,21 +3863,59 @@ async def pure_data_monthly_client_evolution(
                         "total_current": 0.0,
                         "total_previous": 0.0,
                         "by_month": {mm: {"current": 0.0, "previous": 0.0} for mm in months},
+                        "platforms": {},
                     }
                 elif not store_map[code]["nom_client"] and name:
                     store_map[code]["nom_client"] = name
+
+                if platform not in store_map[code]["platforms"]:
+                    store_map[code]["platforms"][platform] = {
+                        "platform": platform,
+                        "total_current": 0.0,
+                        "total_previous": 0.0,
+                        "by_month": {mm: {"current": 0.0, "previous": 0.0} for mm in months},
+                    }
 
                 if y == year_current:
                     store_map[code]["total_current"] += ca
                     if m in store_map[code]["by_month"]:
                         store_map[code]["by_month"][m]["current"] += ca
+                    if m in store_map[code]["platforms"][platform]["by_month"]:
+                        store_map[code]["platforms"][platform]["by_month"][m]["current"] += ca
+                    store_map[code]["platforms"][platform]["total_current"] += ca
                 else:
                     store_map[code]["total_previous"] += ca
                     if m in store_map[code]["by_month"]:
                         store_map[code]["by_month"][m]["previous"] += ca
+                    if m in store_map[code]["platforms"][platform]["by_month"]:
+                        store_map[code]["platforms"][platform]["by_month"][m]["previous"] += ca
+                    store_map[code]["platforms"][platform]["total_previous"] += ca
 
             for code, d in sorted(store_map.items(), key=lambda x: -x[1]["total_current"]):
                 delta = d["total_current"] - d["total_previous"]
+                store_platforms = []
+                for plat, pdata in sorted(d["platforms"].items(), key=lambda x: -x[1]["total_current"]):
+                    p_delta = pdata["total_current"] - pdata["total_previous"]
+                    store_platforms.append({
+                        "platform": plat,
+                        "total_current": pdata["total_current"],
+                        "total_previous": pdata["total_previous"],
+                        "delta": p_delta,
+                        "delta_pct": _pct(p_delta, pdata["total_previous"]),
+                        "months": [
+                            {
+                                "month": mm,
+                                "current": pdata["by_month"][mm]["current"],
+                                "previous": pdata["by_month"][mm]["previous"],
+                                "delta": pdata["by_month"][mm]["current"] - pdata["by_month"][mm]["previous"],
+                                "delta_pct": _pct(
+                                    pdata["by_month"][mm]["current"] - pdata["by_month"][mm]["previous"],
+                                    pdata["by_month"][mm]["previous"],
+                                ),
+                            }
+                            for mm in months
+                        ],
+                    })
                 stores.append({
                     "code_union": code,
                     "nom_client": d["nom_client"],
@@ -3884,6 +3923,7 @@ async def pure_data_monthly_client_evolution(
                     "total_previous": d["total_previous"],
                     "delta": delta,
                     "delta_pct": _pct(delta, d["total_previous"]),
+                    "platforms": store_platforms,
                     "months": [
                         {
                             "month": mm,

@@ -1003,6 +1003,7 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
   const [loading, setLoading] = useState(false)
   const [expandedPlatform, setExpandedPlatform] = useState(null)
   const [expandedStore, setExpandedStore] = useState(null)
+  const [expandedStorePlatform, setExpandedStorePlatform] = useState(null)
 
   const MONTHS = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
   const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
@@ -1017,6 +1018,7 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
     setData(null)
     setExpandedPlatform(null)
     setExpandedStore(null)
+    setExpandedStorePlatform(null)
     getClientMonthlyEvolution({
       codeUnion,
       groupeClient,
@@ -1229,39 +1231,112 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
                       </div>
                     </button>
                     {isOpen && s.months?.length > 0 && (
-                      <div className="border-t border-gray-100 px-4 py-3 bg-white overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="text-gray-400">
-                              <td className="pb-1 font-semibold">Mois</td>
-                              {s.months.map((m) => (
-                                <td key={m.month} className="pb-1 text-right px-2 font-semibold">{MONTHS[m.month]}</td>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td className="py-1 text-gray-500">{yearN}</td>
-                              {s.months.map((m) => (
-                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
-                              ))}
-                            </tr>
-                            <tr>
-                              <td className="py-1 text-gray-400">{yearN1}</td>
-                              {s.months.map((m) => (
-                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
-                              ))}
-                            </tr>
-                            <tr className="border-t border-gray-100">
-                              <td className="pt-1.5 font-bold text-gray-600">Δ</td>
-                              {s.months.map((m) => (
-                                <td key={m.month} className={`pt-1.5 text-right px-2 font-bold font-mono ${dc(m.delta)}`}>
-                                  {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
-                                </td>
-                              ))}
-                            </tr>
-                          </tbody>
-                        </table>
+                      <div className="border-t border-gray-100 px-4 py-3 bg-white space-y-3">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-gray-400">
+                                <td className="pb-1 font-semibold">Mois</td>
+                                {s.months.map((m) => (
+                                  <td key={m.month} className="pb-1 text-right px-2 font-semibold">{MONTHS[m.month]}</td>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td className="py-1 text-gray-500">{yearN}</td>
+                                {s.months.map((m) => (
+                                  <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
+                                ))}
+                              </tr>
+                              <tr>
+                                <td className="py-1 text-gray-400">{yearN1}</td>
+                                {s.months.map((m) => (
+                                  <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
+                                ))}
+                              </tr>
+                              <tr className="border-t border-gray-100">
+                                <td className="pt-1.5 font-bold text-gray-600">Δ</td>
+                                {s.months.map((m) => (
+                                  <td key={m.month} className={`pt-1.5 text-right px-2 font-bold font-mono ${dc(m.delta)}`}>
+                                    {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
+                                  </td>
+                                ))}
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {s.platforms?.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                              Détail par plateforme du magasin
+                            </p>
+                            {s.platforms.map((p) => {
+                              const pKey = `${key}::${p.platform}`
+                              const pOpen = expandedStorePlatform === pKey
+                              return (
+                                <div key={pKey} className={`rounded-lg border ${p.delta > 0 ? 'border-emerald-200' : p.delta < 0 ? 'border-rose-200' : 'border-gray-200'}`}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedStorePlatform(pOpen ? null : pKey)}
+                                    className={`w-full flex items-center justify-between px-3 py-2 text-left ${p.delta > 0 ? 'bg-emerald-50/40' : p.delta < 0 ? 'bg-rose-50/40' : 'bg-white'}`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold text-gray-700">{p.platform}</span>
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${p.delta > 0 ? 'bg-emerald-100 text-emerald-700' : p.delta < 0 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500'}`}>
+                                        {fmtD(p.delta)} ({fmtP(p.delta_pct)})
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                                      <span className="font-mono text-gray-900">{fmt(p.total_current)}</span>
+                                      <span className="font-mono text-gray-400">{fmt(p.total_previous)}</span>
+                                      <svg className={`w-3.5 h-3.5 transition-transform text-gray-400 ${pOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </div>
+                                  </button>
+                                  {pOpen && p.months?.length > 0 && (
+                                    <div className="border-t border-gray-100 px-3 py-2 overflow-x-auto bg-white">
+                                      <table className="w-full text-[10px]">
+                                        <thead>
+                                          <tr className="text-gray-400">
+                                            <td className="pb-1 font-semibold">Mois</td>
+                                            {p.months.map((m) => (
+                                              <td key={m.month} className="pb-1 text-right px-1.5 font-semibold">{MONTHS[m.month]}</td>
+                                            ))}
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          <tr>
+                                            <td className="py-0.5 text-gray-500">{yearN}</td>
+                                            {p.months.map((m) => (
+                                              <td key={m.month} className="py-0.5 text-right px-1.5 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
+                                            ))}
+                                          </tr>
+                                          <tr>
+                                            <td className="py-0.5 text-gray-400">{yearN1}</td>
+                                            {p.months.map((m) => (
+                                              <td key={m.month} className="py-0.5 text-right px-1.5 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
+                                            ))}
+                                          </tr>
+                                          <tr className="border-t border-gray-100">
+                                            <td className="pt-1 font-bold text-gray-600">Δ</td>
+                                            {p.months.map((m) => (
+                                              <td key={m.month} className={`pt-1 text-right px-1.5 font-bold font-mono ${dc(m.delta)}`}>
+                                                {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
+                                              </td>
+                                            ))}
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
