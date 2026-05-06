@@ -3732,6 +3732,30 @@ async def pure_data_monthly_client_evolution(
         from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
         from app.services.pure_data_import import filter_rows_by_fournisseur
 
+        def _norm_text(v: Optional[str]) -> str:
+            return (v or "").strip().upper()
+
+        def _code_union_candidates(raw: Optional[str]) -> set[str]:
+            """
+            Construit des variantes sûres d'un code union saisi/stocké.
+            Exemples gérés:
+            - "MMPA"
+            - "MMPA - MON GARAGE"
+            - "MMPA — MON GARAGE"
+            """
+            s = _norm_text(raw)
+            if not s:
+                return set()
+            candidates = {s}
+
+            # Séparateurs fréquents quand un libellé complet est stocké par erreur
+            for sep in [" — ", " - ", ";", ","]:
+                if sep in s:
+                    head = _norm_text(s.split(sep, 1)[0])
+                    if head:
+                        candidates.add(head)
+            return candidates
+
         if count_monthly_rows() == 0:
             return {"available": False, "code_union": code_union, "groupe_client": groupe_client}
 
@@ -3744,16 +3768,16 @@ async def pure_data_monthly_client_evolution(
 
         # Filtrage strict : client ou groupe
         if code_union:
-            target = code_union.strip().upper()
-            rows = [r for r in all_rows if (r.get("code_union") or "").strip().upper() == target]
+            targets = _code_union_candidates(code_union)
+            rows = [r for r in all_rows if _norm_text(r.get("code_union")) in targets]
             label = next(
                 (f"{r.get('code_union', '')} — {r.get('raison_sociale', '')}".strip(" —")
                  for r in rows if r.get("raison_sociale")),
                 code_union,
             )
         else:
-            target = groupe_client.strip().upper()
-            rows = [r for r in all_rows if (r.get("groupe_client") or "").strip().upper() == target]
+            target = _norm_text(groupe_client)
+            rows = [r for r in all_rows if _norm_text(r.get("groupe_client")) == target]
             label = groupe_client
 
         if not rows:
@@ -3815,6 +3839,66 @@ async def pure_data_monthly_client_evolution(
                 ],
             })
 
+        # Si mode groupe : détail par magasin (code_union) × mois
+        stores = []
+        if groupe_client:
+            store_map: Dict[str, Dict] = {}
+            for r in rows:
+                y = r.get("year")
+                m = r.get("month")
+                if y not in (year_current, year_previous) or m is None:
+                    continue
+
+                code = (r.get("code_union") or "").strip().upper()
+                if not code:
+                    continue
+                name = (r.get("raison_sociale") or "").strip()
+                ca = float(r.get("ca") or 0)
+
+                if code not in store_map:
+                    store_map[code] = {
+                        "code_union": code,
+                        "nom_client": name,
+                        "total_current": 0.0,
+                        "total_previous": 0.0,
+                        "by_month": {mm: {"current": 0.0, "previous": 0.0} for mm in months},
+                    }
+                elif not store_map[code]["nom_client"] and name:
+                    store_map[code]["nom_client"] = name
+
+                if y == year_current:
+                    store_map[code]["total_current"] += ca
+                    if m in store_map[code]["by_month"]:
+                        store_map[code]["by_month"][m]["current"] += ca
+                else:
+                    store_map[code]["total_previous"] += ca
+                    if m in store_map[code]["by_month"]:
+                        store_map[code]["by_month"][m]["previous"] += ca
+
+            for code, d in sorted(store_map.items(), key=lambda x: -x[1]["total_current"]):
+                delta = d["total_current"] - d["total_previous"]
+                stores.append({
+                    "code_union": code,
+                    "nom_client": d["nom_client"],
+                    "total_current": d["total_current"],
+                    "total_previous": d["total_previous"],
+                    "delta": delta,
+                    "delta_pct": _pct(delta, d["total_previous"]),
+                    "months": [
+                        {
+                            "month": mm,
+                            "current": d["by_month"][mm]["current"],
+                            "previous": d["by_month"][mm]["previous"],
+                            "delta": d["by_month"][mm]["current"] - d["by_month"][mm]["previous"],
+                            "delta_pct": _pct(
+                                d["by_month"][mm]["current"] - d["by_month"][mm]["previous"],
+                                d["by_month"][mm]["previous"],
+                            ),
+                        }
+                        for mm in months
+                    ],
+                })
+
         grand_curr = sum(p["total_current"] for p in platforms)
         grand_prev = sum(p["total_previous"] for p in platforms)
         grand_delta = grand_curr - grand_prev
@@ -3830,6 +3914,7 @@ async def pure_data_monthly_client_evolution(
                        "delta": grand_delta, "delta_pct": _pct(grand_delta, grand_prev)},
             "months": monthly,
             "platforms": platforms,
+            "stores": stores,
         }
     except HTTPException:
         raise

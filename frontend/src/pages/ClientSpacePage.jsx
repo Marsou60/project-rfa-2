@@ -1002,6 +1002,7 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [expandedPlatform, setExpandedPlatform] = useState(null)
+  const [expandedStore, setExpandedStore] = useState(null)
 
   const MONTHS = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
   const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
@@ -1015,6 +1016,7 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
     setLoading(true)
     setData(null)
     setExpandedPlatform(null)
+    setExpandedStore(null)
     getClientMonthlyEvolution({
       codeUnion,
       groupeClient,
@@ -1175,6 +1177,84 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
                             <tr className="border-t border-gray-100">
                               <td className="pt-1.5 font-bold text-gray-600">Δ</td>
                               {p.months.map((m) => (
+                                <td key={m.month} className={`pt-1.5 text-right px-2 font-bold font-mono ${dc(m.delta)}`}>
+                                  {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
+                                </td>
+                              ))}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Détail par magasin du groupe */}
+        {groupeClient && data.stores?.length > 0 && (
+          <div>
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+              Détail par magasin du groupe — cliquez pour voir mois par mois
+            </h4>
+            <div className="space-y-2">
+              {data.stores.map((s) => {
+                const key = s.code_union || 'UNKNOWN'
+                const isOpen = expandedStore === key
+                return (
+                  <div key={key} className={`rounded-xl border overflow-hidden ${s.delta > 0 ? 'border-emerald-200' : s.delta < 0 ? 'border-rose-200' : 'border-gray-200'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedStore(isOpen ? null : key)}
+                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition text-left ${s.delta > 0 ? 'bg-emerald-50/40' : s.delta < 0 ? 'bg-rose-50/40' : 'bg-white'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`w-2 h-2 rounded-full ${s.delta > 0 ? 'bg-emerald-500' : s.delta < 0 ? 'bg-rose-500' : 'bg-gray-300'}`} />
+                        <div className="flex flex-col">
+                          <span className="font-bold text-gray-800 text-sm">{s.code_union}</span>
+                          {s.nom_client && <span className="text-xs text-gray-500">{s.nom_client}</span>}
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.delta > 0 ? 'bg-emerald-100 text-emerald-700' : s.delta < 0 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {fmtD(s.delta)} ({fmtP(s.delta_pct)})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span className="font-mono font-semibold text-gray-900">{fmt(s.total_current)}</span>
+                        <span className="font-mono text-gray-400">{fmt(s.total_previous)}</span>
+                        <svg className={`w-4 h-4 transition-transform text-gray-400 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </button>
+                    {isOpen && s.months?.length > 0 && (
+                      <div className="border-t border-gray-100 px-4 py-3 bg-white overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-gray-400">
+                              <td className="pb-1 font-semibold">Mois</td>
+                              {s.months.map((m) => (
+                                <td key={m.month} className="pb-1 text-right px-2 font-semibold">{MONTHS[m.month]}</td>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td className="py-1 text-gray-500">{yearN}</td>
+                              {s.months.map((m) => (
+                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
+                              ))}
+                            </tr>
+                            <tr>
+                              <td className="py-1 text-gray-400">{yearN1}</td>
+                              {s.months.map((m) => (
+                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
+                              ))}
+                            </tr>
+                            <tr className="border-t border-gray-100">
+                              <td className="pt-1.5 font-bold text-gray-600">Δ</td>
+                              {s.months.map((m) => (
                                 <td key={m.month} className={`pt-1.5 text-right px-2 font-bold font-mono ${dc(m.delta)}`}>
                                   {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
                                 </td>
