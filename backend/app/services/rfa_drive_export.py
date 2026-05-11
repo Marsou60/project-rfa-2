@@ -9,6 +9,7 @@ import re
 from datetime import datetime
 from typing import Dict, Any, List
 
+from app.core.fields import EXCLUDED_GROUPS
 from app.services.compute import compute_aggregations, get_entity_detail_with_rfa
 from app.services.pdf_export import generate_pdf_report
 from app.services.nathalie_service import DRIVE_ROOT_ID, _get_drive_client, _get_sheets_client
@@ -228,18 +229,32 @@ def export_all_entity_pdfs_to_drive(
                 "error": str(e),
             })
 
+    skipped_group_members = 0
+
     if include_clients:
         for code_union, data in sorted(import_data.by_client.items(), key=lambda x: x[0]):
+            # Évite les doublons : si on exporte aussi les groupes consolidés,
+            # on n'exporte pas le PDF "client" des magasins déjà rattachés à un groupe.
+            groupe_value = (data.get("groupe_client") or "").strip()
+            groupe_norm = groupe_value.upper()
+            if include_groups and groupe_norm and groupe_norm not in EXCLUDED_GROUPS:
+                skipped_group_members += 1
+                continue
+
             _process_entity(
                 mode="client",
                 entity_id=code_union,
                 code_union=code_union,
                 nom_client=(data.get("nom_client") or code_union),
-                groupe=(data.get("groupe_client") or ""),
+                groupe=groupe_value,
             )
 
     if include_groups:
         for groupe_name, data in sorted(import_data.by_group.items(), key=lambda x: x[0]):
+            # Groupes exclus = traités individuellement côté clients (pas de PDF groupe consolidé)
+            if (groupe_name or "").strip().upper() in EXCLUDED_GROUPS:
+                continue
+
             _process_entity(
                 mode="group",
                 entity_id=groupe_name,
@@ -265,6 +280,7 @@ def export_all_entity_pdfs_to_drive(
         "sheet_url": sheet_info["spreadsheet_url"],
         "generated_count": len(generated),
         "error_count": len(errors),
+        "skipped_group_member_clients": skipped_group_members,
         "generated": generated,
         "errors": errors,
     }
