@@ -32,6 +32,14 @@ class EntityPdfExportBody(BaseModel):
     cotisation_mode: Optional[str] = None
 
 
+class BulkPdfDriveExportBody(BaseModel):
+    """Export massif PDF vers Drive + feuille de pilotage."""
+    export_year: int = 2025
+    tva_rate: float = Field(default=0.20, ge=0, le=1)
+    include_clients: bool = True
+    include_groups: bool = True
+
+
 class CotisationSettingBody(BaseModel):
     """Corps PUT cotisation (upsert)."""
     amount: float

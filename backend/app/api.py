@@ -26,6 +26,7 @@ from app.services.compute import (
 from app.services.contract_resolver import resolve_contract
 from app.services.rfa_calculator import calculate_rfa
 from app.services.pdf_export import generate_pdf_report
+from app.services.rfa_drive_export import export_all_entity_pdfs_to_drive
 from app.storage import (
     create_import,
     get_import,
@@ -51,6 +52,7 @@ from app.schemas import (
     LoginRequest,
     LoginResponse,
     EntityPdfExportBody,
+    BulkPdfDriveExportBody,
     CotisationSettingBody,
     UserCreate,
     UserUpdate,
@@ -1639,6 +1641,48 @@ async def get_entity_pdf(
         print(f"Erreur lors de la generation du PDF: {e}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur lors de la generation du PDF: {str(e)}")
+
+
+@router.post("/imports/{import_id}/exports/pdf-drive")
+async def export_all_pdfs_to_drive(
+    import_id: str,
+    body: BulkPdfDriveExportBody = Body(...),
+    session: Session = Depends(get_session),
+):
+    """
+    Exporte tous les rapports PDF (clients + groupes) dans Drive (`rfa <année>`)
+    et génère une Google Sheet de pilotage avec :
+    code union, nom client, groupe, type contrat, lien PDF, montant HT/TTC, cases Envoyer/Payer.
+    """
+    import_data = _resolve_import_data(import_id, session)
+    if not import_data:
+        available_imports = list_imports()
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Import non trouve (ID: {import_id}). Les imports sont stockes en memoire "
+                f"et peuvent etre perdus apres un redemarrage du serveur. Imports disponibles: {len(available_imports)}"
+            ),
+        )
+
+    if not body.include_clients and not body.include_groups:
+        raise HTTPException(status_code=400, detail="Aucun export demandé (clients/groupes tous désactivés).")
+
+    try:
+        result = export_all_entity_pdfs_to_drive(
+            import_id=import_id,
+            import_data=import_data,
+            export_year=body.export_year,
+            tva_rate=body.tva_rate,
+            include_clients=body.include_clients,
+            include_groups=body.include_groups,
+        )
+        return result
+    except Exception as e:
+        import traceback
+        print(f"Erreur export PDF Drive: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur export PDF Drive: {str(e)}")
 
 
 # ==================== ENDPOINTS COTISATION (DB — partagé browser/Tauri/prod) ====================
