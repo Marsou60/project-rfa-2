@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { BarChart3, Eye, X, AlertTriangle, Download } from 'lucide-react'
-import { getGlobalRecap, getUnionEntity, exportGlobalRecapExcel, exportAllPdfReportsToDrive } from '../api/client'
+import { getGlobalRecap, getUnionEntity, exportGlobalRecapExcel, exportAllPdfReportsToDrive, exportPilotageSheetOnly } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import { SUPPLIER_KEYS, getKeysForSupplier } from '../constants/suppliers'
 
@@ -138,6 +138,7 @@ function RecapPage({ importId }) {
   const [ratesAutoLoaded, setRatesAutoLoaded] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
   const [exportingPdfDrive, setExportingPdfDrive] = useState(false)
+  const [exportingSheetOnly, setExportingSheetOnly] = useState(false)
   const [exportResult, setExportResult] = useState(null)
 
   // Calcule les taux effectifs depuis l'entité Union (même formule que le Récapitulatif par Fournisseur)
@@ -327,6 +328,27 @@ function RecapPage({ importId }) {
     }
   }
 
+  const handleExportSheetOnly = async () => {
+    if (!importId || exportingSheetOnly) return
+    setExportingSheetOnly(true)
+    setExportResult(null)
+    setError(null)
+    try {
+      const result = await exportPilotageSheetOnly(importId, {
+        export_year: 2025,
+        tva_rate: 0.2,
+        include_clients: true,
+        include_groups: true,
+      })
+      setExportResult(result)
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || err.response?.statusText || err.message || "Erreur lors de l'export Sheet"
+      setError(errorMsg)
+    } finally {
+      setExportingSheetOnly(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -401,6 +423,16 @@ function RecapPage({ importId }) {
                 <Download className="w-4 h-4" />
                 {exportingPdfDrive ? 'Export PDF...' : 'Export PDF Drive + Sheet'}
               </button>
+              <button
+                type="button"
+                onClick={handleExportSheetOnly}
+                disabled={exportingSheetOnly || !importId}
+                className="glass-btn-primary flex items-center gap-2"
+                title="Créer uniquement la feuille de pilotage (sans générer les PDF)"
+              >
+                <Download className="w-4 h-4" />
+                {exportingSheetOnly ? 'Export Sheet...' : 'Export Sheet uniquement'}
+              </button>
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-glass-secondary">Taux RFA perçu (%):</span>
@@ -435,11 +467,13 @@ function RecapPage({ importId }) {
           {exportResult?.success && (
             <div className="glass-card p-4 border border-emerald-500/30 bg-emerald-500/10">
               <p className="font-semibold text-emerald-300">
-                Export terminé: {exportResult.generated_count} PDF généré(s)
+                {exportResult.pdf_generation_enabled
+                  ? `Export terminé: ${exportResult.generated_count} PDF généré(s)`
+                  : `Feuille générée: ${exportResult.generated_count} ligne(s) de pilotage`}
                 {exportResult.error_count > 0 ? ` (${exportResult.error_count} erreur(s))` : ''}
               </p>
               <div className="mt-2 text-sm text-emerald-100 flex flex-wrap gap-3">
-                {exportResult.folder_url && (
+                {exportResult.pdf_generation_enabled && exportResult.folder_url && (
                   <a href={exportResult.folder_url} target="_blank" rel="noreferrer" className="underline hover:no-underline">
                     Ouvrir dossier Drive
                   </a>

@@ -158,6 +158,7 @@ def export_all_entity_pdfs_to_drive(
     include_clients: bool = True,
     include_groups: bool = True,
     cotisations: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    generate_pdfs: bool = True,
 ) -> Dict[str, Any]:
     """
     Génère tous les PDF clients/groupes, les pousse dans Drive,
@@ -188,13 +189,6 @@ def export_all_entity_pdfs_to_drive(
                 montant_ht = float(totals.get("grand_total", 0.0) or 0.0)
             else:
                 montant_ht = float(getattr(totals, "grand_total", 0.0) or 0.0)
-            montant_ttc = round(montant_ht * (1.0 + float(tva_rate or 0.0)), 2)
-
-            folder_label = _safe_name(f"{code_union} - {nom_client}" if code_union else nom_client)
-            entity_folder_id = _find_or_create_folder(drive, folder_label, year_folder_id)
-
-            pdf_name = _safe_name(f"RFA_{code_union or entity_id}_{mode}_{export_year}.pdf")
-
             cotisation_payload = None
             if cotisations:
                 mode_map = cotisations.get(mode, {}) if isinstance(cotisations, dict) else {}
@@ -206,18 +200,29 @@ def export_all_entity_pdfs_to_drive(
                 c_amt = float(cotisation_payload.get("amount") or 0.0)
                 c_fact = bool(cotisation_payload.get("facturee", True))
                 c_ded = bool(cotisation_payload.get("deduite", True))
+            if c_amt and c_ded:
+                montant_ht = max(montant_ht - c_amt, 0.0)
+            montant_ttc = round(montant_ht * (1.0 + float(tva_rate or 0.0)), 2)
 
-            pdf_buffer = generate_pdf_report(
-                import_id,
-                mode,
-                entity_id,
-                import_data=import_data,
-                cotisation_amount=c_amt,
-                cotisation_facturee=c_fact,
-                cotisation_deduite=c_ded,
-            )
-            uploaded = _upload_pdf_bytes(drive, entity_folder_id, pdf_name, pdf_buffer.getvalue())
-            pdf_url = uploaded.get("url", "")
+            entity_folder_id = ""
+            pdf_url = ""
+            uploaded_id = ""
+            if generate_pdfs:
+                folder_label = _safe_name(f"{code_union} - {nom_client}" if code_union else nom_client)
+                entity_folder_id = _find_or_create_folder(drive, folder_label, year_folder_id)
+                pdf_name = _safe_name(f"RFA_{code_union or entity_id}_{mode}_{export_year}.pdf")
+                pdf_buffer = generate_pdf_report(
+                    import_id,
+                    mode,
+                    entity_id,
+                    import_data=import_data,
+                    cotisation_amount=c_amt,
+                    cotisation_facturee=c_fact,
+                    cotisation_deduite=c_ded,
+                )
+                uploaded = _upload_pdf_bytes(drive, entity_folder_id, pdf_name, pdf_buffer.getvalue())
+                pdf_url = uploaded.get("url", "")
+                uploaded_id = uploaded.get("id", "")
 
             pilotage_rows.append([
                 code_union,
@@ -238,7 +243,7 @@ def export_all_entity_pdfs_to_drive(
                 "code_union": code_union,
                 "nom_client": nom_client,
                 "folder_id": entity_folder_id,
-                "pdf_id": uploaded.get("id"),
+                "pdf_id": uploaded_id,
                 "pdf_url": pdf_url,
                 "montant_ht": round(montant_ht, 2),
                 "montant_ttc": montant_ttc,
@@ -300,6 +305,7 @@ def export_all_entity_pdfs_to_drive(
         "folder_url": f"https://drive.google.com/drive/folders/{year_folder_id}",
         "sheet_id": sheet_info["spreadsheet_id"],
         "sheet_url": sheet_info["spreadsheet_url"],
+        "pdf_generation_enabled": bool(generate_pdfs),
         "generated_count": len(generated),
         "error_count": len(errors),
         "skipped_group_member_clients": skipped_group_members,

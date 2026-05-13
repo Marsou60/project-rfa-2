@@ -423,6 +423,16 @@ export const exportAllPdfReportsToDrive = async (importId, body = {}) => {
   return response.data
 }
 
+export const exportPilotageSheetOnly = async (importId, body = {}) => {
+  const response = await api.post(`/imports/${importId}/exports/sheet-drive`, {
+    export_year: body.export_year ?? 2025,
+    tva_rate: body.tva_rate ?? 0.2,
+    include_clients: body.include_clients ?? true,
+    include_groups: body.include_groups ?? true,
+  })
+  return response.data
+}
+
 // ==================== AUTHENTIFICATION ====================
 
 export const login = async (username, password) => {

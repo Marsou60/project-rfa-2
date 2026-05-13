@@ -1697,6 +1697,7 @@ async def export_all_pdfs_to_drive(
                     if (c.entity_type or "").strip().lower() == "group"
                 },
             },
+            generate_pdfs=True,
         )
         return result
     except Exception as e:
@@ -1704,6 +1705,68 @@ async def export_all_pdfs_to_drive(
         print(f"Erreur export PDF Drive: {e}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur export PDF Drive: {str(e)}")
+
+
+@router.post("/imports/{import_id}/exports/sheet-drive")
+async def export_pilotage_sheet_only(
+    import_id: str,
+    body: BulkPdfDriveExportBody = Body(...),
+    session: Session = Depends(get_session),
+):
+    """
+    Génère uniquement la feuille Google Sheets de pilotage (sans générer les PDF).
+    """
+    import_data = _resolve_import_data(import_id, session)
+    if not import_data:
+        available_imports = list_imports()
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Import non trouve (ID: {import_id}). Les imports sont stockes en memoire "
+                f"et peuvent etre perdus apres un redemarrage du serveur. Imports disponibles: {len(available_imports)}"
+            ),
+        )
+
+    if not body.include_clients and not body.include_groups:
+        raise HTTPException(status_code=400, detail="Aucun export demandé (clients/groupes tous désactivés).")
+
+    try:
+        cotisation_rows = session.exec(select(CotisationSetting)).all()
+        result = export_all_entity_pdfs_to_drive(
+            import_id=import_id,
+            import_data=import_data,
+            export_year=body.export_year,
+            tva_rate=body.tva_rate,
+            include_clients=body.include_clients,
+            include_groups=body.include_groups,
+            cotisations={
+                "client": {
+                    (c.entity_key or "").strip().upper(): {
+                        "amount": float(c.amount or 0.0),
+                        "facturee": bool(c.facturee),
+                        "deduite": bool(c.deduite),
+                    }
+                    for c in cotisation_rows
+                    if (c.entity_type or "").strip().lower() == "client"
+                },
+                "group": {
+                    (c.entity_key or "").strip().upper(): {
+                        "amount": float(c.amount or 0.0),
+                        "facturee": bool(c.facturee),
+                        "deduite": bool(c.deduite),
+                    }
+                    for c in cotisation_rows
+                    if (c.entity_type or "").strip().lower() == "group"
+                },
+            },
+            generate_pdfs=False,
+        )
+        return result
+    except Exception as e:
+        import traceback
+        print(f"Erreur export Sheet Drive: {e}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur export Sheet Drive: {str(e)}")
 
 
 # ==================== ENDPOINTS COTISATION (DB — partagé browser/Tauri/prod) ====================
