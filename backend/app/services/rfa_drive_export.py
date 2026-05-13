@@ -7,7 +7,7 @@ from __future__ import annotations
 import io
 import re
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from app.core.fields import EXCLUDED_GROUPS
 from app.services.compute import compute_aggregations, get_entity_detail_with_rfa
@@ -157,6 +157,7 @@ def export_all_entity_pdfs_to_drive(
     tva_rate: float = 0.20,
     include_clients: bool = True,
     include_groups: bool = True,
+    cotisations: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
 ) -> Dict[str, Any]:
     """
     Génère tous les PDF clients/groupes, les pousse dans Drive,
@@ -193,7 +194,28 @@ def export_all_entity_pdfs_to_drive(
             entity_folder_id = _find_or_create_folder(drive, folder_label, year_folder_id)
 
             pdf_name = _safe_name(f"RFA_{code_union or entity_id}_{mode}_{export_year}.pdf")
-            pdf_buffer = generate_pdf_report(import_id, mode, entity_id, import_data=import_data)
+
+            cotisation_payload = None
+            if cotisations:
+                mode_map = cotisations.get(mode, {}) if isinstance(cotisations, dict) else {}
+                cotisation_payload = mode_map.get((entity_id or "").strip().upper())
+            c_amt = None
+            c_fact = None
+            c_ded = None
+            if cotisation_payload:
+                c_amt = float(cotisation_payload.get("amount") or 0.0)
+                c_fact = bool(cotisation_payload.get("facturee", True))
+                c_ded = bool(cotisation_payload.get("deduite", True))
+
+            pdf_buffer = generate_pdf_report(
+                import_id,
+                mode,
+                entity_id,
+                import_data=import_data,
+                cotisation_amount=c_amt,
+                cotisation_facturee=c_fact,
+                cotisation_deduite=c_ded,
+            )
             uploaded = _upload_pdf_bytes(drive, entity_folder_id, pdf_name, pdf_buffer.getvalue())
             pdf_url = uploaded.get("url", "")
 
@@ -203,7 +225,7 @@ def export_all_entity_pdfs_to_drive(
                 groupe,
                 "CLIENT" if mode == "client" else "GROUPE",
                 contract_name,
-                f'=HYPERLINK("{pdf_url}","Voir PDF")' if pdf_url else "",
+                pdf_url or "",
                 round(montant_ht, 2),
                 montant_ttc,
                 False,

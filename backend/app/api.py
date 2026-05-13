@@ -1669,6 +1669,7 @@ async def export_all_pdfs_to_drive(
         raise HTTPException(status_code=400, detail="Aucun export demandé (clients/groupes tous désactivés).")
 
     try:
+        cotisation_rows = session.exec(select(CotisationSetting)).all()
         result = export_all_entity_pdfs_to_drive(
             import_id=import_id,
             import_data=import_data,
@@ -1676,6 +1677,26 @@ async def export_all_pdfs_to_drive(
             tva_rate=body.tva_rate,
             include_clients=body.include_clients,
             include_groups=body.include_groups,
+            cotisations={
+                "client": {
+                    (c.entity_key or "").strip().upper(): {
+                        "amount": float(c.amount or 0.0),
+                        "facturee": bool(c.facturee),
+                        "deduite": bool(c.deduite),
+                    }
+                    for c in cotisation_rows
+                    if (c.entity_type or "").strip().lower() == "client"
+                },
+                "group": {
+                    (c.entity_key or "").strip().upper(): {
+                        "amount": float(c.amount or 0.0),
+                        "facturee": bool(c.facturee),
+                        "deduite": bool(c.deduite),
+                    }
+                    for c in cotisation_rows
+                    if (c.entity_type or "").strip().lower() == "group"
+                },
+            },
         )
         return result
     except Exception as e:
