@@ -630,9 +630,8 @@ def generate_espace_client_pdf_html(
     cotisation_monthly = (c_amt / 12.0) if cotisation_active else 0.0
 
     if cotisation_active and c_ded:
-        # La KPI "RFA Acquise" reste toujours en brut (sans afficher la déduction cotisation).
-        rfa_kpi_display = rfa_gross
-        rfa_invoice_ht = max(rfa_gross - c_amt, 0.0)
+        rfa_kpi_display = max(rfa_gross - c_amt, 0.0)
+        rfa_invoice_ht = rfa_kpi_display
     else:
         rfa_kpi_display = rfa_gross
         rfa_invoice_ht = rfa_gross
@@ -877,7 +876,7 @@ def _get_espace_client_template() -> str:
 <tr>
     <td style="padding:10px 12px; vertical-align:middle; border-right:1px solid #a7cdb7; width:60%;">
         <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#2d6a4f; font-weight:bold; margin-bottom:3px;">Cotisation Union — geste commercial</div>
-        <div style="font-size:9px; color:#2f4f3f; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. Non facturée et non déduite de la RFA.</div>
+        <div style="font-size:9px; color:#2f4f3f; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. Cette cotisation s'adapte à votre activité (achats totaux et RFA versée), dans la limite de 3 000 € par an, en ligne avec les standards du marché.</div>
     </td>
     <td style="padding:10px 12px; text-align:center; vertical-align:middle;">
         <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#2d6a4f; font-weight:bold; margin-bottom:4px;">Montant annuel</div>
@@ -1017,7 +1016,7 @@ def _get_espace_client_template() -> str:
 <tr>
     <td style="padding:10px 12px; vertical-align:middle; border-right:1px solid #e7e5e4; width:60%;">
         <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#57534e; font-weight:bold; margin-bottom:3px;">Cotisation Union — information adhésion</div>
-        <div style="font-size:9px; color:#57534e; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. La déduction éventuelle est appliquée au montant de facturation.</div>
+        <div style="font-size:9px; color:#57534e; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. Cette cotisation s'adapte à votre activité (achats totaux et RFA versée), dans la limite de 3 000 € par an, en ligne avec les standards du marché.</div>
     </td>
     <td style="padding:10px 12px; text-align:center; vertical-align:middle;">
         <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#57534e; font-weight:bold; margin-bottom:4px;">Montant annuel</div>
@@ -1268,7 +1267,7 @@ def generate_pdf_html(
             <td class="summary-label" style="font-size:9pt; color:#57534e;">Cotisation Union (adhésion)</td>
             <td class="num" style="font-size:9pt; color:#57534e;">{{ cotisation_amount_formatted }}</td>
         </tr>
-        <tr><td colspan="2" style="font-size:9pt; color:#57534e; padding-top:2px;">Équivalent mensuel : {{ cotisation_monthly_formatted }} × 12 mois = {{ cotisation_amount_formatted }}</td></tr>
+        <tr><td colspan="2" style="font-size:9pt; color:#57534e; padding-top:2px;">Équivalent mensuel : {{ cotisation_monthly_formatted }} × 12 mois = {{ cotisation_amount_formatted }}. Cette cotisation s'adapte à votre activité (achats totaux et RFA versée), dans la limite de 3 000 € par an, en ligne avec les standards du marché.</td></tr>
         {% if cotisation_offerte %}
         <tr>
             <td colspan="2" style="font-size:9pt; padding-top:6px; color:#57534e;">Geste commercial — cotisation Union offerte. RFA intégrale (non déduite).</td>
@@ -1439,8 +1438,12 @@ def generate_pdf_html(
     cotisation_active = mode in ("client", "group") and c_amt > 0
     cotisation_offerte = cotisation_active and not c_fact and not c_ded
     cotisation_monthly = (c_amt / 12.0) if cotisation_active else 0.0
-    rfa_display = rfa_gross
-    rfa_main_label = "RFA Totale HT"
+    if cotisation_active and c_ded:
+        rfa_display = max(rfa_gross - c_amt, 0.0)
+        rfa_main_label = "RFA Totale HT (nette)"
+    else:
+        rfa_display = rfa_gross
+        rfa_main_label = "RFA Totale HT"
 
     all_items.extend(
         build_cotisation_pdf_detail_rows(mode, c_amt, cotisation_active, cotisation_offerte, c_ded)

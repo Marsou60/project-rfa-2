@@ -547,7 +547,8 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
                 </div>
                 <p className="text-sm mt-1">
                   <span className="font-semibold text-emerald-800">Geste commercial</span> — cotisation Union offerte. La RFA
-                  affichée reste intégrale.
+                  affichée reste intégrale. Cette cotisation s&apos;adapte à votre activité (achats totaux et RFA versée), dans la
+                  limite de 3 000 € par an, en ligne avec les standards du marché.
                 </p>
               </div>
               <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-emerald-200 text-emerald-900">
@@ -987,7 +988,9 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
                   {formatMonthlyAmount(cotisationMonthly)} × 12 mois = {formatAmount(cotisationInfo.amount)}
                 </div>
                 <p className="text-sm mt-1">
-                  <span className="font-semibold text-orange-800">Facturée</span> — détail affiché dans l&apos;export PDF.
+                  <span className="font-semibold text-orange-800">Facturée</span> — détail affiché dans l&apos;export PDF. Cette
+                  cotisation s&apos;adapte à votre activité (achats totaux et RFA versée), dans la limite de 3 000 € par an, en ligne
+                  avec les standards du marché.
                 </p>
               </div>
               <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-orange-200 text-orange-900">
