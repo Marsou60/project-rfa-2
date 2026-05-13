@@ -1017,7 +1017,7 @@ def _get_espace_client_template() -> str:
 <tr>
     <td style="padding:10px 12px; vertical-align:middle; border-right:1px solid #e7e5e4; width:60%;">
         <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#57534e; font-weight:bold; margin-bottom:3px;">Cotisation Union — information adhésion</div>
-        <div style="font-size:9px; color:#57534e; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. La déduction éventuelle est appliquée au montant de facturation, sans mise en avant dans la KPI RFA.</div>
+        <div style="font-size:9px; color:#57534e; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. La déduction éventuelle est appliquée au montant de facturation.</div>
     </td>
     <td style="padding:10px 12px; text-align:center; vertical-align:middle;">
         <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#57534e; font-weight:bold; margin-bottom:4px;">Montant annuel</div>

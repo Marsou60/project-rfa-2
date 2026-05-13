@@ -354,6 +354,11 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     () => (cotisationInfo.amount > 0 ? cotisationInfo.amount / 12 : 0),
     [cotisationInfo.amount],
   )
+  const rfaTotalWithCotisation = useMemo(() => {
+    const base = rfaTotalDisplay
+    if (!cotisationInfo.amount || !cotisationInfo.isFacture) return base
+    return Math.max(base - cotisationInfo.amount, 0)
+  }, [rfaTotalDisplay, cotisationInfo])
 
   // Refs pour scroll
   const rowRefs = useRef({})
@@ -521,7 +526,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             </div>
             <div className="card p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
               <div className="text-emerald-100 text-xs">💰 RFA Totale{supplierFilter ? ` (${supplierFilter})` : ''}</div>
-              <div className="text-xl font-black">{formatAmount(rfaTotalDisplay)}</div>
+              <div className="text-xl font-black">{formatAmount(cotisationInfo.isFacture ? rfaTotalWithCotisation : rfaTotalDisplay)}</div>
               <div className="text-emerald-100 text-xs">{formatPercent(rfaRateDisplay)}</div>
             </div>
             <div className={`card p-4 text-white ${nearCount > 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-gray-400 to-gray-500'}`}>
