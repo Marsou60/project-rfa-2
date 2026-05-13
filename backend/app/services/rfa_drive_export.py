@@ -43,6 +43,28 @@ def _find_or_create_folder(drive, name: str, parent_id: str) -> str:
     return created["id"]
 
 
+def _find_folder(drive, name: str, parent_id: str) -> str:
+    escaped_name = name.replace("'", "\\'")
+    q = (
+        "mimeType='application/vnd.google-apps.folder' and trashed=false "
+        f"and name='{escaped_name}' and '{parent_id}' in parents"
+    )
+    existing = drive.files().list(q=q, fields="files(id,name)", pageSize=1).execute().get("files", [])
+    return existing[0]["id"] if existing else ""
+
+
+def _find_file_by_name(drive, parent_id: str, filename: str) -> Dict[str, str]:
+    escaped_name = filename.replace("'", "\\'")
+    q = f"trashed=false and name='{escaped_name}' and '{parent_id}' in parents"
+    existing = drive.files().list(q=q, fields="files(id,webViewLink)", pageSize=1).execute().get("files", [])
+    if not existing:
+        return {"id": "", "url": ""}
+    return {
+        "id": existing[0].get("id", ""),
+        "url": existing[0].get("webViewLink", ""),
+    }
+
+
 def _upload_pdf_bytes(drive, parent_id: str, filename: str, content: bytes) -> Dict[str, str]:
     from googleapiclient.http import MediaIoBaseUpload
 
@@ -204,13 +226,14 @@ def export_all_entity_pdfs_to_drive(
                 montant_ht = max(montant_ht - c_amt, 0.0)
             montant_ttc = round(montant_ht * (1.0 + float(tva_rate or 0.0)), 2)
 
+            folder_label = _safe_name(f"{code_union} - {nom_client}" if code_union else nom_client)
+            pdf_name = _safe_name(f"RFA_{code_union or entity_id}_{mode}_{export_year}.pdf")
+
             entity_folder_id = ""
             pdf_url = ""
             uploaded_id = ""
             if generate_pdfs:
-                folder_label = _safe_name(f"{code_union} - {nom_client}" if code_union else nom_client)
                 entity_folder_id = _find_or_create_folder(drive, folder_label, year_folder_id)
-                pdf_name = _safe_name(f"RFA_{code_union or entity_id}_{mode}_{export_year}.pdf")
                 pdf_buffer = generate_pdf_report(
                     import_id,
                     mode,
@@ -223,6 +246,13 @@ def export_all_entity_pdfs_to_drive(
                 uploaded = _upload_pdf_bytes(drive, entity_folder_id, pdf_name, pdf_buffer.getvalue())
                 pdf_url = uploaded.get("url", "")
                 uploaded_id = uploaded.get("id", "")
+            else:
+                # Mode "Sheet uniquement" : réutilise les PDF déjà présents s'ils existent.
+                entity_folder_id = _find_folder(drive, folder_label, year_folder_id)
+                if entity_folder_id:
+                    existing_pdf = _find_file_by_name(drive, entity_folder_id, pdf_name)
+                    pdf_url = existing_pdf.get("url", "")
+                    uploaded_id = existing_pdf.get("id", "")
 
             pilotage_rows.append([
                 code_union,
