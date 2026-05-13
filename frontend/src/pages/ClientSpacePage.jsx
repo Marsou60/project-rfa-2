@@ -114,6 +114,14 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
       maximumFractionDigits: 0,
     }).format(amount || 0)
   }
+  const formatMonthlyAmount = (amount) => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'EUR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount || 0)
+  }
 
   const formatPercent = (rate) => {
     return new Intl.NumberFormat('fr-FR', {
@@ -342,11 +350,10 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     [cotisationMap, mode, entity],
   )
 
-  const rfaTotalWithCotisation = useMemo(() => {
-    const base = rfaTotalDisplay
-    if (!cotisationInfo.amount || !cotisationInfo.isFacture) return base
-    return Math.max(base - cotisationInfo.amount, 0)
-  }, [rfaTotalDisplay, cotisationInfo])
+  const cotisationMonthly = useMemo(
+    () => (cotisationInfo.amount > 0 ? cotisationInfo.amount / 12 : 0),
+    [cotisationInfo.amount],
+  )
 
   // Refs pour scroll
   const rowRefs = useRef({})
@@ -514,13 +521,8 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             </div>
             <div className="card p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
               <div className="text-emerald-100 text-xs">💰 RFA Totale{supplierFilter ? ` (${supplierFilter})` : ''}</div>
-              <div className="text-xl font-black">{formatAmount(cotisationInfo.isFacture ? rfaTotalWithCotisation : rfaTotalDisplay)}</div>
+              <div className="text-xl font-black">{formatAmount(rfaTotalDisplay)}</div>
               <div className="text-emerald-100 text-xs">{formatPercent(rfaRateDisplay)}</div>
-              {cotisationInfo.isFacture && cotisationInfo.amount > 0 && (
-                <div className="text-emerald-100/90 text-[10px] mt-1 leading-tight">
-                  après cotisation&nbsp;: brut {formatAmount(rfaTotalDisplay)} − {formatAmount(cotisationInfo.amount)}
-                </div>
-              )}
             </div>
             <div className={`card p-4 text-white ${nearCount > 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-gray-400 to-gray-500'}`}>
               <div className="text-white/80 text-xs">🎯 Gain à portée</div>
@@ -535,6 +537,9 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               <div>
                 <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union</div>
                 <div className="text-lg font-black">{formatAmount(cotisationInfo.amount)}</div>
+                <div className="text-xs mt-0.5 opacity-90">
+                  {formatMonthlyAmount(cotisationMonthly)} × 12 mois = {formatAmount(cotisationInfo.amount)}
+                </div>
                 <p className="text-sm mt-1">
                   <span className="font-semibold text-emerald-800">Geste commercial</span> — cotisation Union offerte. La RFA
                   affichée reste intégrale.
@@ -973,9 +978,11 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               <div>
                 <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union</div>
                 <div className="text-lg font-black">{formatAmount(cotisationInfo.amount)}</div>
+                <div className="text-xs mt-0.5 opacity-90">
+                  {formatMonthlyAmount(cotisationMonthly)} × 12 mois = {formatAmount(cotisationInfo.amount)}
+                </div>
                 <p className="text-sm mt-1">
-                  <span className="font-semibold text-orange-800">Facturée</span> — déduite de la RFA reversée (montant net dans
-                  la carte « RFA Totale » ci-dessus). Détail dans l&apos;export PDF en bas de rapport.
+                  <span className="font-semibold text-orange-800">Facturée</span> — détail affiché dans l&apos;export PDF.
                 </p>
               </div>
               <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-orange-200 text-orange-900">

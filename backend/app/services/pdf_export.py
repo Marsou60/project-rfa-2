@@ -621,15 +621,18 @@ def generate_espace_client_pdf_html(
         else:
             cotisation_mode_label_offerte = ""
             cotisation_mode_label_facturee = (
-                "Cotisation Union facturée : déduction sur la RFA reversée (montant net dans « RFA Acquise »)."
+                "Cotisation Union facturée : montant annualisé présenté en équivalent mensuel."
             )
     else:
         cotisation_mode_label_offerte = ""
         cotisation_mode_label_facturee = ""
 
+    cotisation_monthly = (c_amt / 12.0) if cotisation_active else 0.0
+
     if cotisation_active and c_ded:
-        rfa_kpi_display = max(rfa_gross - c_amt, 0.0)
-        rfa_invoice_ht = rfa_kpi_display
+        # La KPI "RFA Acquise" reste toujours en brut (sans afficher la déduction cotisation).
+        rfa_kpi_display = rfa_gross
+        rfa_invoice_ht = max(rfa_gross - c_amt, 0.0)
     else:
         rfa_kpi_display = rfa_gross
         rfa_invoice_ht = rfa_gross
@@ -666,6 +669,7 @@ def generate_espace_client_pdf_html(
         cotisation_deduite=c_ded,
         cotisation_offerte=cotisation_offerte,
         cotisation_amount=c_amt if cotisation_active else 0.0,
+        cotisation_monthly=cotisation_monthly,
         cotisation_mode_label_offerte=cotisation_mode_label_offerte,
         rfa_invoice_ht_formatted=format_amount(rfa_invoice_ht),
         rfa_invoice_ttc_formatted=format_amount(rfa_total_ttc),
@@ -766,7 +770,7 @@ def _get_espace_client_template() -> str:
         .cotisation-detail-table th, .cotisation-detail-table td { border: 1px solid #000000; padding: 6px 8px; }
         .cotisation-detail-table th { background: #e8e8e8; font-size: 9px; text-align: left; }
         .cotisation-detail-table th.num, .cotisation-detail-table td.num { text-align: right; }
-        .cotisation-detail-table td.cotis-blue { color: #1a4a8a; font-weight: 600; }
+        .cotisation-detail-table td.cotis-blue { color: #5f6368; font-weight: 400; font-size: 9px; }
     </style>
 </head>
 <body>
@@ -852,15 +856,6 @@ def _get_espace_client_template() -> str:
     <td style="width:33%; background:#f5f5f3; padding:16px 18px; vertical-align:top; border:1px solid #000000;">
         <div class="kpi-lbl">RFA Acquise</div>
         <div style="font-size:23px; font-weight:bold; color:#1a7a45;">{{ format_amount(rfa_kpi_display) }}</div>
-        {% if cotisation_active and cotisation_deduite %}
-        <div class="kpi-sub" style="margin-top:6px; color:#856404; line-height:1.35;">Déduction cotisation Union&nbsp;: &minus;{{ format_amount(cotisation_amount) }} — RFA brute {{ format_amount(rfa_gross_total) }}</div>
-        {% endif %}
-        {% if cotisation_active and cotisation_facturee %}
-        <div class="kpi-sub" style="margin-top:4px; color:#1a4a8a; line-height:1.35;">Ligne facturation&nbsp;: cotisation Union de {{ format_amount(cotisation_amount) }} (due au titre de l'adhésion)</div>
-        {% endif %}
-        {% if cotisation_active and cotisation_offerte %}
-        <div class="kpi-sub" style="margin-top:6px; color:#1a4a8a; line-height:1.35;">Geste commercial — cotisation Union offerte ({{ format_amount(cotisation_amount) }}) — RFA intégrale</div>
-        {% endif %}
         <div class="kpi-sub">{{ format_percent(rfa_rate_global / 100) }} du CA (sur RFA brute)</div>
     </td>
     <td style="width:33%; background:#f5f5f3; padding:16px 18px; vertical-align:top; border:1px solid #000000;">
@@ -878,16 +873,16 @@ def _get_espace_client_template() -> str:
 {% endif %}
 
 {% if cotisation_active and cotisation_offerte %}
-<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:12px 0 14px 0; border:2px solid #2d6a4f; background:#ecfdf5;">
+<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:10px 0 12px 0; border:1px solid #7aa88e; background:#f6fcf8;">
 <tr>
-    <td style="padding:14px 18px; vertical-align:middle; border-right:1px solid #2d6a4f; width:60%;">
-        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#2d6a4f; font-weight:bold; margin-bottom:4px;">Cotisation Union — Geste commercial</div>
-        <div style="font-size:11px; color:#1a4a3a; line-height:1.45;">Le Groupement Union prend en charge la cotisation d'adhésion pour cette période. <strong>Elle n'est ni facturée ni déduite</strong> de votre RFA — votre reversement reste intégral.</div>
+    <td style="padding:10px 12px; vertical-align:middle; border-right:1px solid #a7cdb7; width:60%;">
+        <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#2d6a4f; font-weight:bold; margin-bottom:3px;">Cotisation Union — geste commercial</div>
+        <div style="font-size:9px; color:#2f4f3f; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. Non facturée et non déduite de la RFA.</div>
     </td>
-    <td style="padding:14px 18px; text-align:center; vertical-align:middle;">
-        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#2d6a4f; font-weight:bold; margin-bottom:6px;">Montant offert</div>
-        <div style="font-size:22px; font-weight:bold; color:#1a7a45;">{{ format_amount(cotisation_amount) }}</div>
-        <div style="font-size:9px; color:#2d6a4f; margin-top:4px;">offert par le Groupement Union</div>
+    <td style="padding:10px 12px; text-align:center; vertical-align:middle;">
+        <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#2d6a4f; font-weight:bold; margin-bottom:4px;">Montant annuel</div>
+        <div style="font-size:14px; font-weight:bold; color:#1a7a45;">{{ format_amount(cotisation_amount) }}</div>
+        <div style="font-size:8px; color:#2d6a4f; margin-top:3px;">offert par le Groupement Union</div>
     </td>
 </tr>
 </table>
@@ -1018,16 +1013,16 @@ def _get_espace_client_template() -> str:
 {% endif %}
 
 {% if cotisation_active and not cotisation_offerte %}
-<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:18px 0 14px 0; border:2px solid #c2410c; background:#fff5eb;">
+<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:14px 0 12px 0; border:1px solid #d6d3d1; background:#fafaf9;">
 <tr>
-    <td style="padding:14px 18px; vertical-align:middle; border-right:1px solid #c2410c; width:60%;">
-        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#c2410c; font-weight:bold; margin-bottom:4px;">Cotisation Union — Facturation &amp; Déduction</div>
-        <div style="font-size:11px; color:#7c2d12; line-height:1.45;">La cotisation d'adhésion est <strong>rappelée sur ce rapport</strong> et <strong>déduite de votre RFA brute</strong>. Le montant « RFA Acquise » ci-dessus s'entend <strong>net</strong> après déduction.</div>
+    <td style="padding:10px 12px; vertical-align:middle; border-right:1px solid #e7e5e4; width:60%;">
+        <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#57534e; font-weight:bold; margin-bottom:3px;">Cotisation Union — information adhésion</div>
+        <div style="font-size:9px; color:#57534e; line-height:1.35;">Équivalent mensuel&nbsp;: <strong>{{ format_amount(cotisation_monthly) }}</strong> × 12 mois = <strong>{{ format_amount(cotisation_amount) }}</strong>. La déduction éventuelle est appliquée au montant de facturation, sans mise en avant dans la KPI RFA.</div>
     </td>
-    <td style="padding:14px 18px; text-align:center; vertical-align:middle;">
-        <div style="font-size:9px; text-transform:uppercase; letter-spacing:0.8px; color:#c2410c; font-weight:bold; margin-bottom:6px;">Montant déduit</div>
-        <div style="font-size:22px; font-weight:bold; color:#c2410c;">&minus;{{ format_amount(cotisation_amount) }}</div>
-        <div style="font-size:9px; color:#c2410c; margin-top:4px;">RFA brute&nbsp;: {{ format_amount(rfa_gross_total) }}</div>
+    <td style="padding:10px 12px; text-align:center; vertical-align:middle;">
+        <div style="font-size:8px; text-transform:uppercase; letter-spacing:0.6px; color:#57534e; font-weight:bold; margin-bottom:4px;">Montant annuel</div>
+        <div style="font-size:14px; font-weight:bold; color:#57534e;">{{ format_amount(cotisation_amount) }}</div>
+        <div style="font-size:8px; color:#57534e; margin-top:3px;">RFA brute de référence&nbsp;: {{ format_amount(rfa_gross_total) }}</div>
     </td>
 </tr>
 </table>
@@ -1231,8 +1226,9 @@ def generate_pdf_html(
             font-weight: 600;
         }
         tr.cotisation-rfa-row td {
-            color: #1a4a8a;
-            font-weight: 600;
+            color: #5f6368;
+            font-weight: 400;
+            font-size: 9pt;
         }
         .footer {
             margin-top: 30px;
@@ -1262,12 +1258,6 @@ def generate_pdf_html(
             <td class="summary-label">{{ rfa_main_label }}</td>
             <td class="num summary-value">{{ rfa_display_formatted }}</td>
         </tr>
-        {% if cotisation_active and cotisation_deduite %}
-        <tr>
-            <td class="summary-label" style="font-size:10pt;">RFA brute (avant cotisation)</td>
-            <td class="num" style="font-size:10pt;">{{ rfa_gross_formatted }}</td>
-        </tr>
-        {% endif %}
         <tr>
             <td class="summary-label">Taux RFA Global :</td>
             <td class="num summary-value">{{ rfa_rate_global_formatted }}</td>
@@ -1275,19 +1265,20 @@ def generate_pdf_html(
         {% if cotisation_active %}
         <tr><td colspan="2" style="padding-top:10px; border-top:1px solid #ccc; font-size:1px;">&nbsp;</td></tr>
         <tr>
-            <td class="summary-label">Cotisation Union (adhésion)</td>
-            <td class="num summary-value">{{ cotisation_amount_formatted }}</td>
+            <td class="summary-label" style="font-size:9pt; color:#57534e;">Cotisation Union (adhésion)</td>
+            <td class="num" style="font-size:9pt; color:#57534e;">{{ cotisation_amount_formatted }}</td>
         </tr>
+        <tr><td colspan="2" style="font-size:9pt; color:#57534e; padding-top:2px;">Équivalent mensuel : {{ cotisation_monthly_formatted }} × 12 mois = {{ cotisation_amount_formatted }}</td></tr>
         {% if cotisation_offerte %}
         <tr>
-            <td colspan="2" style="font-size:10pt; padding-top:6px;">Geste commercial — cotisation Union offerte. RFA intégrale (non déduite).</td>
+            <td colspan="2" style="font-size:9pt; padding-top:6px; color:#57534e;">Geste commercial — cotisation Union offerte. RFA intégrale (non déduite).</td>
         </tr>
         {% else %}
         {% if cotisation_facturee %}
-        <tr><td colspan="2" style="font-size:10pt; padding-top:6px;">Facturation : montant dû au titre de l'adhésion (rappel sur ce rapport).</td></tr>
+        <tr><td colspan="2" style="font-size:9pt; padding-top:6px; color:#57534e;">Facturation : montant dû au titre de l'adhésion (rappel sur ce rapport).</td></tr>
         {% endif %}
         {% if cotisation_deduite %}
-        <tr><td colspan="2" style="font-size:10pt; padding-top:4px;">Déduction : retenue sur la RFA brute (cf. RFA nette ci-dessus).</td></tr>
+        <tr><td colspan="2" style="font-size:9pt; padding-top:4px; color:#57534e;">Déduction : retenue sur la RFA brute.</td></tr>
         {% endif %}
         {% endif %}
         {% endif %}
@@ -1447,12 +1438,9 @@ def generate_pdf_html(
 
     cotisation_active = mode in ("client", "group") and c_amt > 0
     cotisation_offerte = cotisation_active and not c_fact and not c_ded
-    if cotisation_active and c_ded:
-        rfa_display = max(rfa_gross - c_amt, 0.0)
-        rfa_main_label = "RFA Totale HT (nette)"
-    else:
-        rfa_display = rfa_gross
-        rfa_main_label = "RFA Totale HT"
+    cotisation_monthly = (c_amt / 12.0) if cotisation_active else 0.0
+    rfa_display = rfa_gross
+    rfa_main_label = "RFA Totale HT"
 
     all_items.extend(
         build_cotisation_pdf_detail_rows(mode, c_amt, cotisation_active, cotisation_offerte, c_ded)
@@ -1474,6 +1462,7 @@ def generate_pdf_html(
         cotisation_facturee=c_fact,
         cotisation_deduite=c_ded,
         cotisation_amount_formatted=format_amount(c_amt) if cotisation_active else format_amount(0),
+        cotisation_monthly_formatted=format_amount(cotisation_monthly),
         all_items=all_items,
     )
     
