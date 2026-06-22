@@ -3208,6 +3208,197 @@ async def sync_pure_data_from_sheets(admin: User = Depends(require_admin)):
         raise HTTPException(status_code=500, detail=f"Erreur sync Pure Data Sheets: {str(e)}")
 
 
+PURE_DATA_CUMULATIVE_MONTH_KEY = "pure_data_cumulative_reporting_month"
+PURE_DATA_CUMULATIVE_YEAR_KEY = "pure_data_cumulative_reporting_year"
+PURE_DATA_CUMULATIVE_FILENAME_KEY = "pure_data_cumulative_last_filename"
+PURE_DATA_CUMULATIVE_ROWS_KEY = "pure_data_cumulative_last_row_count"
+PURE_DATA_CUMULATIVE_UPDATED_AT_KEY = "pure_data_cumulative_last_updated_at"
+
+
+def _get_setting_value(session: Session, key: str) -> Optional[str]:
+    st = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
+    return st.value if st and st.value is not None else None
+
+
+def _safe_int(value: Optional[str]) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+@router.get("/pure-data/cumulative/status")
+async def pure_data_cumulative_status(
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """Etat du flux Pure Data cumule (separe du mode mensuel)."""
+    try:
+        from app.services.pure_data_cumulative_supabase import count_cumulative_rows
+
+        month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+        year = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_YEAR_KEY))
+        filename = _get_setting_value(session, PURE_DATA_CUMULATIVE_FILENAME_KEY)
+        updated_at = _get_setting_value(session, PURE_DATA_CUMULATIVE_UPDATED_AT_KEY)
+        rows_last_import = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_ROWS_KEY))
+        row_count = count_cumulative_rows()
+        return {
+            "has_data": row_count > 0,
+            "row_count": row_count,
+            "reporting_month": month,
+            "reporting_year": year,
+            "last_filename": filename,
+            "last_rows_imported": rows_last_import,
+            "last_updated_at": updated_at,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur status Pure Data cumule: {str(e)}")
+
+
+@router.post("/pure-data/cumulative/import-excel")
+async def import_pure_data_cumulative_excel(
+    file: UploadFile = File(...),
+    reporting_month: int = Form(...),
+    reporting_year: int = Form(...),
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """
+    Import Pure Data cumule:
+    - remplace integralement le precedent import cumule
+    - enregistre le mois/annee de reference de pilotage
+    """
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Fichier .xlsx ou .xls requis")
+    if reporting_month < 1 or reporting_month > 12:
+        raise HTTPException(status_code=400, detail="Le mois de reference doit etre entre 1 et 12.")
+    if reporting_year < 2000 or reporting_year > 2100:
+        raise HTTPException(status_code=400, detail="L'annee de reference est invalide.")
+
+    tmp_path = None
+    try:
+        from app.services.pure_data_import import load_pure_data
+        from app.services.pure_data_cumulative_supabase import write_cumulative_rows
+        from app.storage import _pure_data_imports
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+
+        rows, columns, _mapping = load_pure_data(tmp_path)
+        if not rows:
+            raise HTTPException(status_code=400, detail="Aucune donnee exploitable dans le fichier.")
+
+        inserted = write_cumulative_rows(rows, reporting_month=reporting_month)
+
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_MONTH_KEY, str(reporting_month))
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_YEAR_KEY, str(reporting_year))
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_FILENAME_KEY, file.filename)
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_ROWS_KEY, str(inserted))
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_UPDATED_AT_KEY, datetime.now().isoformat())
+        session.commit()
+
+        # Invalider cache Pure Data cumule en memoire
+        _pure_data_imports.pop("cumulative_live", None)
+
+        return {
+            "success": True,
+            "filename": file.filename,
+            "rows_inserted": inserted,
+            "reporting_month": reporting_month,
+            "reporting_year": reporting_year,
+            "columns_detected": columns[:12],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur import Pure Data cumule: {str(e)}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+@router.get("/pure-data/cumulative/client-dashboard")
+async def pure_data_cumulative_client_dashboard(
+    code_union: Optional[str] = None,
+    groupe_client: Optional[str] = None,
+    year_current: int = 2026,
+    year_previous: int = 2025,
+    fournisseur: Optional[str] = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """
+    Dashboard YTD Pure Data (cumule), avec detail plateforme > marque > famille > sous-famille.
+    Endpoint dedie espace client et strictement separe du flux mensuel.
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Non authentifie")
+
+    if user.role == UserRole.ADHERENT:
+        if user.linked_code_union:
+            code_union = user.linked_code_union.strip().upper()
+            groupe_client = None
+        elif user.linked_groupe:
+            groupe_client = user.linked_groupe.strip().upper()
+            code_union = None
+        else:
+            raise HTTPException(status_code=403, detail="Aucun client lie a ce compte.")
+    elif not code_union and not groupe_client:
+        raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
+
+    try:
+        from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
+        from app.services.pure_data_cumulative_service import build_cumulative_dashboard
+
+        if count_cumulative_rows() == 0:
+            return {
+                "available": False,
+                "message": "Aucune donnee cumulee disponible. Importez un fichier Pure Data cumule.",
+            }
+
+        rows, _, _ = read_cumulative_rows()
+        if not rows:
+            return {"available": False}
+
+        payload = build_cumulative_dashboard(
+            rows=rows,
+            year_current=year_current,
+            year_previous=year_previous,
+            code_union=code_union,
+            groupe_client=groupe_client,
+            fournisseur=fournisseur,
+        )
+
+        month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+        reporting_year = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_YEAR_KEY))
+        filename = _get_setting_value(session, PURE_DATA_CUMULATIVE_FILENAME_KEY)
+        updated_at = _get_setting_value(session, PURE_DATA_CUMULATIVE_UPDATED_AT_KEY)
+
+        payload["reporting_period"] = {
+            "month": month,
+            "year": reporting_year,
+            "filename": filename,
+            "updated_at": updated_at,
+        }
+        return payload
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur dashboard Pure Data cumule: {str(e)}")
+
+
 @router.get("/pure-data/monthly/periods")
 async def pure_data_monthly_periods(user: User = Depends(require_staff)):
     """

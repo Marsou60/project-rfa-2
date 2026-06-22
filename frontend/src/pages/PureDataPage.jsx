@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Upload, Users, X, ChevronDown, RefreshCw, CheckCircle2, Database, TrendingUp, TrendingDown, Minus } from 'lucide-react'
-import { comparePureData, deletePureDataMonthlyRows, getPureDataComparison, getPureDataClientDetail, getPureDataCommercialDetail, getPureDataMarqueDetail, getPureDataMonthlyEntityDetail, getPureDataMonthlyEvolution, getPureDataMonthlyMonthDetail, getPureDataMonthlyPeriods, getPureDataPlatformDetail, getPureDataSheetsStatus, importPureDataMonthlyExcel, loadPureDataFromSupabase, loadPureDataMonthly, syncPureDataFromSheets } from '../api/client'
+import { comparePureData, deletePureDataMonthlyRows, getPureDataComparison, getPureDataClientDetail, getPureDataCommercialDetail, getPureDataCumulativeStatus, getPureDataMarqueDetail, getPureDataMonthlyEntityDetail, getPureDataMonthlyEvolution, getPureDataMonthlyMonthDetail, getPureDataMonthlyPeriods, getPureDataPlatformDetail, getPureDataSheetsStatus, importPureDataCumulativeExcel, importPureDataMonthlyExcel, loadPureDataFromSupabase, loadPureDataMonthly, syncPureDataFromSheets } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 
 const formatCurrency = (value) =>
@@ -469,6 +469,12 @@ function PureDataPage({ monthlyEntry = false }) {
   const [monthlyDetailEntity, setMonthlyDetailEntity] = useState(null)
   const [monthlyClientSearch, setMonthlyClientSearch] = useState('')
   const [selectedEvolutionMonth, setSelectedEvolutionMonth] = useState(null)
+  const [cumulativeStatus, setCumulativeStatus] = useState(null)
+  const [cumulativeFile, setCumulativeFile] = useState(null)
+  const [cumulativeMonth, setCumulativeMonth] = useState(new Date().getMonth() + 1)
+  const [cumulativeYear, setCumulativeYear] = useState(new Date().getFullYear())
+  const [cumulativeImporting, setCumulativeImporting] = useState(false)
+  const [cumulativeMessage, setCumulativeMessage] = useState(null)
   const cacheKey = monthlyEntry ? 'pure_data_last_monthly' : 'pure_data_last'
 
   // Vérifier si des données Sheets sont disponibles dans Supabase
@@ -484,6 +490,18 @@ function PureDataPage({ monthlyEntry = false }) {
       setPeriods([])
     } finally {
       setPeriodsLoading(false)
+    }
+  }
+
+  const refreshCumulativeStatus = async () => {
+    if (monthlyEntry) return
+    try {
+      const data = await getPureDataCumulativeStatus()
+      setCumulativeStatus(data || null)
+      if (data?.reporting_month) setCumulativeMonth(Number(data.reporting_month))
+      if (data?.reporting_year) setCumulativeYear(Number(data.reporting_year))
+    } catch {
+      setCumulativeStatus(null)
     }
   }
 
@@ -537,6 +555,7 @@ function PureDataPage({ monthlyEntry = false }) {
       })
       .catch(() => {})
     refreshPeriods()
+    refreshCumulativeStatus()
   }, [monthlyEntry])
 
   const handleImportMonthly = async () => {
@@ -561,6 +580,30 @@ function PureDataPage({ monthlyEntry = false }) {
       setError(err.response?.data?.detail || err.message || "Erreur import mensuel")
     } finally {
       setManaging(false)
+    }
+  }
+
+  const handleImportCumulative = async () => {
+    if (!cumulativeFile) {
+      setError("Sélectionne un fichier cumulé à importer.")
+      return
+    }
+    setCumulativeImporting(true)
+    setError(null)
+    setCumulativeMessage(null)
+    try {
+      const res = await importPureDataCumulativeExcel({
+        file: cumulativeFile,
+        reportingMonth: Number(cumulativeMonth),
+        reportingYear: Number(cumulativeYear),
+      })
+      setCumulativeMessage(`${res.rows_inserted} lignes cumulées importées (${res.filename}).`)
+      setCumulativeFile(null)
+      await refreshCumulativeStatus()
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message || "Erreur import cumulé")
+    } finally {
+      setCumulativeImporting(false)
     }
   }
 
@@ -1060,6 +1103,100 @@ function PureDataPage({ monthlyEntry = false }) {
             </table>
           </div>
         </div>
+      </div>
+      )}
+
+      {/* ── Import Pure Data cumulé (dashboard espace client) ── */}
+      {!monthlyEntry && (
+      <div className="glass-card p-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="text-glass-primary font-semibold">Import Pure Data cumulé (espace client)</h2>
+            <p className="text-glass-secondary text-sm">
+              Flux séparé du mensuel : remplace entièrement le précédent import cumulé et enregistre le mois de référence.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={refreshCumulativeStatus}
+            disabled={cumulativeImporting}
+            className="glass-btn-secondary text-xs px-3 py-2"
+          >
+            Rafraîchir le statut
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+          <div className="md:col-span-2">
+            <label className="text-glass-secondary text-xs font-semibold">Fichier Excel cumulé</label>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => setCumulativeFile(e.target.files?.[0] || null)}
+              className="glass-input w-full mt-2"
+            />
+          </div>
+          <div>
+            <label className="text-glass-secondary text-xs font-semibold">Mois de référence</label>
+            <input
+              type="number"
+              min={1}
+              max={12}
+              value={cumulativeMonth}
+              onChange={(e) => setCumulativeMonth(Number(e.target.value || 0))}
+              className="glass-input w-full mt-2"
+            />
+          </div>
+          <div>
+            <label className="text-glass-secondary text-xs font-semibold">Année de référence</label>
+            <input
+              type="number"
+              min={2000}
+              max={2100}
+              value={cumulativeYear}
+              onChange={(e) => setCumulativeYear(Number(e.target.value || 0))}
+              className="glass-input w-full mt-2"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mt-3">
+          <button
+            type="button"
+            onClick={handleImportCumulative}
+            disabled={cumulativeImporting || !cumulativeFile}
+            className="glass-btn-primary px-4 py-2 text-sm"
+          >
+            {cumulativeImporting ? 'Import cumulé...' : 'Importer en mode cumulé'}
+          </button>
+        </div>
+
+        {cumulativeMessage && <p className="mt-3 text-emerald-300 text-sm">{cumulativeMessage}</p>}
+
+        {cumulativeStatus && (
+          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-white/70">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <div>
+                <div className="text-white/40">Lignes en base</div>
+                <div className="font-bold text-white">{Number(cumulativeStatus.row_count || 0).toLocaleString('fr-FR')}</div>
+              </div>
+              <div>
+                <div className="text-white/40">Période</div>
+                <div className="font-bold text-white">
+                  {monthLabel(cumulativeStatus.reporting_month)} {cumulativeStatus.reporting_year || '-'}
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <div className="text-white/40">Dernier fichier</div>
+                <div className="font-bold text-white truncate">{cumulativeStatus.last_filename || '-'}</div>
+              </div>
+              <div>
+                <div className="text-white/40">Dernier import</div>
+                <div className="font-bold text-white">{cumulativeStatus.last_updated_at ? new Date(cumulativeStatus.last_updated_at).toLocaleString('fr-FR') : '-'}</div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getClientMonthlyEvolution } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -542,6 +542,17 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               >
                 💰 Vue RFA (2025)
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveViewTab('puredata')}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeViewTab === 'puredata'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                📊 Dashboard Pure Data
+              </button>
             </div>
           </div>
 
@@ -1042,6 +1053,13 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               isAdherent={isAdherent}
             />
           )}
+
+          {activeViewTab === 'puredata' && (
+            <ClientPureDataDashboardSection
+              codeUnion={mode === 'client' ? entity?.code_union : null}
+              groupeClient={mode === 'group' ? entity?.groupe_client : null}
+            />
+          )}
         </>
       )}
     </div>
@@ -1389,6 +1407,282 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
                             })}
                           </div>
                         )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
+  const { supplierFilter } = useSupplierFilter()
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [expandedPlatform, setExpandedPlatform] = useState(null)
+  const [expandedMarque, setExpandedMarque] = useState(null)
+  const [expandedFamille, setExpandedFamille] = useState(null)
+
+  const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
+  const fmtP = (v) => {
+    if (v == null) return '—'
+    const num = Number(v) * 100
+    const sign = num > 0 ? '+' : ''
+    return `${sign}${num.toFixed(1)}%`
+  }
+  const fmtDelta = (v) => {
+    const n = Number(v || 0)
+    const sign = n > 0 ? '+' : ''
+    return `${sign}${fmt(n)}`
+  }
+  const dc = (v) => {
+    const n = Number(v || 0)
+    if (n > 0) return 'text-emerald-600'
+    if (n < 0) return 'text-rose-600'
+    return 'text-gray-500'
+  }
+  const monthLabel = (m) => {
+    const names = ['', 'Janvier', 'Fevrier', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Aout', 'Septembre', 'Octobre', 'Novembre', 'Decembre']
+    return (m >= 1 && m <= 12) ? names[m] : ''
+  }
+
+  useEffect(() => {
+    if (!codeUnion && !groupeClient) {
+      setData(null)
+      return
+    }
+    setLoading(true)
+    setData(null)
+    setExpandedPlatform(null)
+    setExpandedMarque(null)
+    setExpandedFamille(null)
+    getPureDataCumulativeClientDashboard({
+      codeUnion,
+      groupeClient,
+      yearCurrent: 2026,
+      yearPrevious: 2025,
+      fournisseur: supplierFilter || undefined,
+    })
+      .then(setData)
+      .catch(() => setData({ available: false }))
+      .finally(() => setLoading(false))
+  }, [codeUnion, groupeClient, supplierFilter])
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-violet-100 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3 text-violet-500 text-sm">
+          <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+          Chargement du dashboard Pure Data cumule...
+        </div>
+      </div>
+    )
+  }
+
+  if (!data?.available) {
+    return (
+      <div className="rounded-2xl border border-violet-100 bg-white p-6 shadow-sm">
+        <h3 className="text-violet-900 font-bold">Dashboard Pure Data</h3>
+        <p className="text-sm text-gray-500 mt-2">
+          Aucune donnee cumulee disponible pour le moment.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-violet-100 bg-white shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 px-6 py-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="text-white font-bold text-base">Dashboard Pure Data cumule</h3>
+            <p className="text-violet-100 text-xs mt-0.5">
+              Cumul annuel {data.year_current} vs {data.year_previous}
+              {supplierFilter ? ` — vue ${supplierFilter}` : ''}
+            </p>
+          </div>
+          {data.reporting_period && (
+            <div className="text-right">
+              <div className="text-violet-200 text-[11px] font-semibold uppercase">Periode d'import</div>
+              <div className="text-white text-sm font-bold">
+                {monthLabel(data.reporting_period.month)} {data.reporting_period.year || ''}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-5 space-y-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-violet-100 bg-violet-50 p-4">
+            <div className="text-xs font-semibold text-violet-700">CA cumule {data.year_current}</div>
+            <div className="text-xl font-black text-violet-900">{fmt(data.totals?.current)}</div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-semibold text-gray-500">CA cumule {data.year_previous}</div>
+            <div className="text-xl font-black text-gray-700">{fmt(data.totals?.previous)}</div>
+          </div>
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+            <div className="text-xs font-semibold text-indigo-700">Evolution</div>
+            <div className={`text-xl font-black ${dc(data.totals?.delta)}`}>{fmtDelta(data.totals?.delta)}</div>
+            <div className={`text-xs font-semibold ${dc(data.totals?.delta)}`}>{fmtP(data.totals?.delta_pct)}</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Top marques</div>
+            <div className="max-h-72 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-white border-b border-gray-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-gray-500">Marque</th>
+                    <th className="px-3 py-2 text-right text-gray-500">{data.year_current}</th>
+                    <th className="px-3 py-2 text-right text-gray-500">Delta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.top_marques || []).map((m) => (
+                    <tr key={m.label} className="border-b border-gray-50">
+                      <td className="px-3 py-2 font-semibold text-gray-700">{m.label}</td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(m.ca_current)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${dc(m.delta)}`}>{fmtDelta(m.delta)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Top familles</div>
+            <div className="max-h-72 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-white border-b border-gray-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-gray-500">Famille</th>
+                    <th className="px-3 py-2 text-right text-gray-500">{data.year_current}</th>
+                    <th className="px-3 py-2 text-right text-gray-500">Delta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.top_familles || []).map((f) => (
+                    <tr key={f.label} className="border-b border-gray-50">
+                      <td className="px-3 py-2 font-semibold text-gray-700">{f.label}</td>
+                      <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(f.ca_current)}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${dc(f.delta)}`}>{fmtDelta(f.delta)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {(data.platforms || []).length > 0 && (
+          <div>
+            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+              Drill-down plateforme → marque → famille → sous-famille
+            </h4>
+            <div className="space-y-2">
+              {data.platforms.map((p) => {
+                const pName = p.fournisseur || 'Non renseigne'
+                const isPlatformOpen = expandedPlatform === pName
+                return (
+                  <div key={pName} className="rounded-xl border border-gray-200 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExpandedPlatform(isPlatformOpen ? null : pName)
+                        setExpandedMarque(null)
+                        setExpandedFamille(null)
+                      }}
+                      className="w-full px-4 py-3 flex items-center justify-between text-left bg-white hover:bg-gray-50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-gray-800 text-sm">{pName}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${Number(p.delta || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {fmtDelta(p.delta)} ({fmtP(p.delta_pct)})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <span className="font-mono text-gray-900">{fmt(p.ca_current)}</span>
+                        <svg className={`w-4 h-4 transition-transform ${isPlatformOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </button>
+
+                    {isPlatformOpen && (
+                      <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/60 space-y-1.5">
+                        {(p.children || []).slice(0, 15).map((m) => {
+                          const mName = `${pName}::${m.marque || 'Non renseigne'}`
+                          const isMarqueOpen = expandedMarque === mName
+                          return (
+                            <div key={mName} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedMarque(isMarqueOpen ? null : mName)
+                                  setExpandedFamille(null)
+                                }}
+                                className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50"
+                              >
+                                <span className="text-xs font-semibold text-gray-700">{m.marque || 'Non renseigne'}</span>
+                                <div className="flex items-center gap-3 text-[11px]">
+                                  <span className="font-mono text-gray-900">{fmt(m.ca_current)}</span>
+                                  <span className={dc(m.delta)}>{fmtDelta(m.delta)}</span>
+                                  <svg className={`w-3.5 h-3.5 transition-transform text-gray-400 ${isMarqueOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
+                                </div>
+                              </button>
+
+                              {isMarqueOpen && (
+                                <div className="border-t border-gray-100 px-3 py-2 bg-gray-50 space-y-1">
+                                  {(m.children || []).slice(0, 12).map((f) => {
+                                    const fName = `${mName}::${f.famille || 'Non renseigne'}`
+                                    const isFamilleOpen = expandedFamille === fName
+                                    return (
+                                      <div key={fName} className="rounded-md border border-gray-200 bg-white overflow-hidden">
+                                        <button
+                                          type="button"
+                                          onClick={() => setExpandedFamille(isFamilleOpen ? null : fName)}
+                                          className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50"
+                                        >
+                                          <span className="text-[11px] font-semibold text-gray-700">{f.famille || 'Non renseigne'}</span>
+                                          <div className="flex items-center gap-2 text-[10px]">
+                                            <span className="font-mono text-gray-900">{fmt(f.ca_current)}</span>
+                                            <svg className={`w-3 h-3 transition-transform text-gray-400 ${isFamilleOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                          </div>
+                                        </button>
+                                        {isFamilleOpen && (
+                                          <div className="border-t border-gray-100 px-3 py-2 bg-white">
+                                            <div className="grid gap-1">
+                                              {(f.children || []).slice(0, 12).map((sf) => (
+                                                <div key={`${fName}::${sf.sous_famille || 'Non renseigne'}`} className="flex items-center justify-between text-[10px] border-b border-gray-50 py-1">
+                                                  <span className="text-gray-600">{sf.sous_famille || 'Non renseigne'}</span>
+                                                  <span className="font-mono text-gray-900">{fmt(sf.ca_current)}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                   </div>

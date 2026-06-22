@@ -714,6 +714,41 @@ export const getClientMonthlyEvolution = async ({ codeUnion, groupeClient, yearC
   return response.data
 }
 
+export const getPureDataCumulativeClientDashboard = async ({
+  codeUnion,
+  groupeClient,
+  yearCurrent = 2026,
+  yearPrevious = 2025,
+  fournisseur,
+} = {}) => {
+  const response = await api.get('/pure-data/cumulative/client-dashboard', {
+    params: {
+      code_union: codeUnion || undefined,
+      groupe_client: groupeClient || undefined,
+      year_current: yearCurrent,
+      year_previous: yearPrevious,
+      fournisseur: fournisseur || undefined,
+    },
+  })
+  return response.data
+}
+
+export const getPureDataCumulativeStatus = async () => {
+  const response = await api.get('/pure-data/cumulative/status')
+  return response.data
+}
+
+export const importPureDataCumulativeExcel = async ({ file, reportingMonth, reportingYear }) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('reporting_month', reportingMonth)
+  formData.append('reporting_year', reportingYear)
+  const response = await api.post('/pure-data/cumulative/import-excel', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return response.data
+}
+
 /** Comparaison N vs N-1 filtrée par fournisseur (pour vue plateforme unique). */
 export const getPureDataComparison = async ({ pureDataId, yearCurrent, yearPrevious, month, fournisseur }) => {
   const response = await api.get('/pure-data/comparison', {
