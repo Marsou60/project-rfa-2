@@ -29,6 +29,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [plansRequested, setPlansRequested] = useState(false)
   const loadIdRef = useRef(null)
   const [cotisationMap, setCotisationMap] = useState({})
+  const [activeViewTab, setActiveViewTab] = useState('rfa')
 
   const refreshCotisationMap = useCallback(async () => {
     try {
@@ -179,6 +180,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     if (!entityId) return
     const myId = entityId
     loadIdRef.current = myId
+    setActiveViewTab('rfa')
     setSmartPlans([])
     setLoadingPlans(false)
     setPlansRequested(false)
@@ -514,6 +516,37 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             </button>
             <p className="text-sm text-gray-500">Export identique à cette page pour envoyer les détails RFA au client.</p>
           </div>
+
+          {/* Onglets de vue */}
+          <div className="mb-4">
+            <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setActiveViewTab('rfa')}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeViewTab === 'rfa'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                💰 Vue RFA
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveViewTab('monthly')}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeViewTab === 'monthly'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                📅 Chiffres mensuels
+              </button>
+            </div>
+          </div>
+
+          {activeViewTab === 'rfa' && (
+            <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="card p-4 bg-gradient-to-br from-slate-800 to-slate-900 text-white">
               <div className="text-slate-400 text-xs">{mode === 'client' ? 'Client' : 'Groupe'}</div>
@@ -998,13 +1031,17 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               </span>
             </div>
           )}
+            </>
+          )}
 
           {/* ── Évolution mensuelle 2025/2026 ── */}
-          <ClientMonthlySection
-            codeUnion={mode === 'client' ? entity?.code_union : null}
-            groupeClient={mode === 'group' ? entity?.groupe_client : null}
-            isAdherent={isAdherent}
-          />
+          {activeViewTab === 'monthly' && (
+            <ClientMonthlySection
+              codeUnion={mode === 'client' ? entity?.code_union : null}
+              groupeClient={mode === 'group' ? entity?.groupe_client : null}
+              isAdherent={isAdherent}
+            />
+          )}
         </>
       )}
     </div>
