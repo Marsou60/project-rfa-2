@@ -1430,6 +1430,38 @@ const pdDeltaPct = (v) => {
   const n = Number(v)
   return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`
 }
+// Nom de fichier normalisé pour retrouver le logo d'une marque : /marques/<SLUG>.png
+const pdSlug = (s) => (s || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toUpperCase()
+  .replace(/[^A-Z0-9]+/g, '')
+
+function PdNodeIcon({ node, accent, size = 28 }) {
+  const [err, setErr] = useState(false)
+  const slug = pdSlug(node?.label)
+  const isMarque = node?.level === 'marque'
+  const px = `${size}px`
+  if (isMarque && slug && !err) {
+    return (
+      <img
+        src={`/marques/${slug}.png`}
+        alt={node.label}
+        onError={() => setErr(true)}
+        className="rounded-lg object-contain bg-white border border-gray-100 shrink-0"
+        style={{ width: px, height: px }}
+      />
+    )
+  }
+  return (
+    <span
+      className="rounded-lg shrink-0 flex items-center justify-center text-[10px] font-black text-white"
+      style={{ width: px, height: px, background: accent }}
+    >
+      {pdInitials(node?.label)}
+    </span>
+  )
+}
 
 function PdDonut({ items = [] }) {
   const total = items.reduce((s, it) => s + (it.ca_current || 0), 0)
@@ -1526,8 +1558,8 @@ function PdDrillNode({ node, maxCa, accent, depth = 0 }) {
         ) : (
           <span className="w-3.5 h-3.5 shrink-0" />
         )}
-        {depth === 0 && (
-          <span className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-[10px] font-black text-white" style={{ background: accent }}>{pdInitials(node.label)}</span>
+        {(depth === 0 || node.level === 'marque') && (
+          <PdNodeIcon node={node} accent={accent} size={depth === 0 ? 28 : 22} />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">

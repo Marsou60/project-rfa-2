@@ -133,14 +133,15 @@ def build_cumulative_dashboard(
         ["fournisseur", "marque", "famille", "sous_famille"],
         current_total,
     )
+    # Sous une marque : d'abord OÙ elle est achetée (plateforme), puis famille -> sous-famille
     by_marque = _build_hierarchy(
         current_rows, previous_rows,
-        ["marque", "famille", "sous_famille"],
+        ["marque", "fournisseur", "famille", "sous_famille"],
         current_total,
     )[:top_n]
     by_famille = _build_hierarchy(
         current_rows, previous_rows,
-        ["famille", "marque", "sous_famille"],
+        ["famille", "marque", "fournisseur", "sous_famille"],
         current_total,
     )[:top_n]
 
