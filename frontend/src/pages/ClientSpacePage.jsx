@@ -1431,11 +1431,19 @@ const pdDeltaPct = (v) => {
   return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`
 }
 // Nom de fichier normalisé pour retrouver le logo d'une marque : /marques/<SLUG>.png
-const pdSlug = (s) => (s || '')
+const pdSlugRaw = (s) => (s || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .toUpperCase()
   .replace(/[^A-Z0-9]+/g, '')
+// Alias : libellé marque (dans les données) -> nom de fichier logo existant
+const PD_LOGO_ALIASES = {
+  KYB: 'KAYABA',
+}
+const pdSlug = (s) => {
+  const slug = pdSlugRaw(s)
+  return PD_LOGO_ALIASES[slug] || slug
+}
 
 function PdNodeIcon({ node, accent, size = 28 }) {
   const [err, setErr] = useState(false)
