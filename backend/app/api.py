@@ -3446,13 +3446,16 @@ async def import_pure_data_monthly_excel(
             raise HTTPException(status_code=400, detail="Aucune donnée exploitable trouvée dans le fichier.")
 
         scope = get_monthly_scope(rows)
+        # Evite les imports "silencieux" non exploitables pour Nicolas:
+        # sans annee/mois, les lignes sont stockees mais n'entrent dans aucun delta mensuel.
+        if not scope["years"] or not scope["months"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Impossible de détecter l'année/mois dans le fichier mensuel. "
+                       "Vérifiez les colonnes Mois/Année.",
+            )
         deleted = 0
         if mode == "replace_scope":
-            if not scope["years"] or not scope["months"]:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Impossible de détecter l'année/mois dans le fichier. Vérifiez les colonnes Mois/Année.",
-                )
             deleted = delete_monthly_rows(
                 years=scope["years"],
                 months=scope["months"],

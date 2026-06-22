@@ -509,14 +509,17 @@ function PureDataPage({ monthlyEntry = false }) {
     setLoading(true)
     setError(null)
     try {
+      // En mode "Nicolas" (monthlyEntry), on veut toujours la vue complète Jan->Déc.
+      // Le state `month` peut venir d'un ancien cache et fausser uniquement la comparaison.
+      const monthParam = monthlyEntry ? null : (month === '' ? null : Number(month))
       const data = await loadPureDataMonthly({
         yearCurrent,
         yearPrevious,
-        month: month === '' ? null : Number(month),
+        month: monthParam,
       })
       setResult(data)
       setPureDataExpiredMessage(null)
-      const meta = { yearCurrent, yearPrevious, month: month === '' ? null : Number(month), pureDataId: data.pure_data_id, savedAt: new Date().toISOString(), source: 'monthly' }
+      const meta = { yearCurrent, yearPrevious, month: monthParam, pureDataId: data.pure_data_id, savedAt: new Date().toISOString(), source: 'monthly' }
       setLastRunMeta(meta)
       localStorage.setItem(cacheKey, JSON.stringify({ meta, result: data }))
     } catch (err) {
@@ -713,6 +716,12 @@ function PureDataPage({ monthlyEntry = false }) {
     }
     fetchMonthlyEvolution()
   }, [monthlyEntry, result, supplierFilter, yearCurrent, yearPrevious])
+
+  useEffect(() => {
+    if (!monthlyEntry) return
+    // Neutralise un éventuel mois caché restauré depuis d'anciens écrans.
+    if (month !== '') setMonth('')
+  }, [monthlyEntry])
 
   const handleCompare = async () => {
     if (!file) {

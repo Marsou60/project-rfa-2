@@ -29,7 +29,7 @@ PURE_FIELD_DEFINITIONS = [
         "region commerciale", "région commerciale", "region", "région"
     ]),
     ("fournisseur", [
-        "fournisseur", "frs", "supplier"
+        "fournisseur", "frs", "supplier", "plateforme", "plate-forme", "platform"
     ]),
     ("marque", [
         "marque", "brand"
