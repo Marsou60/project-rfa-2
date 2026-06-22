@@ -1420,18 +1420,149 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
   )
 }
 
+/* ── Dashboard Pure Data — briques visuelles (zéro dépendance) ── */
+const PD_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#8b5cf6', '#ef4444', '#84cc16', '#f97316', '#14b8a6', '#a855f7', '#3b82f6', '#eab308', '#22c55e', '#db2777']
+const pdColor = (i) => PD_COLORS[((i % PD_COLORS.length) + PD_COLORS.length) % PD_COLORS.length]
+const pdAmount = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
+const pdInitials = (label) => (label || '?').trim().slice(0, 2).toUpperCase()
+const pdDeltaPct = (v) => {
+  if (v == null) return '—'
+  const n = Number(v)
+  return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`
+}
+
+function PdDonut({ items = [] }) {
+  const total = items.reduce((s, it) => s + (it.ca_current || 0), 0)
+  const size = 168, stroke = 28, r = (size - stroke) / 2, C = 2 * Math.PI * r
+  if (!items.length || total <= 0) return <p className="text-sm text-gray-400">Aucune donnée.</p>
+  let acc = 0
+  return (
+    <div className="flex items-center gap-4 flex-wrap">
+      <svg width={size} height={size} className="shrink-0">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
+        {items.map((it, i) => {
+          const frac = (it.ca_current || 0) / total
+          const dash = frac * C
+          const el = (
+            <circle
+              key={it.label}
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={pdColor(i)}
+              strokeWidth={stroke}
+              strokeDasharray={`${dash} ${C - dash}`}
+              strokeDashoffset={-acc}
+              transform={`rotate(-90 ${size / 2} ${size / 2})`}
+            />
+          )
+          acc += dash
+          return el
+        })}
+        <text x="50%" y="46%" textAnchor="middle" className="fill-gray-900 font-bold" style={{ fontSize: 17 }}>{pdAmount(total)}</text>
+        <text x="50%" y="58%" textAnchor="middle" className="fill-gray-400" style={{ fontSize: 11 }}>CA cumulé</text>
+      </svg>
+      <div className="flex-1 min-w-[180px] space-y-1.5">
+        {items.map((it, i) => (
+          <div key={it.label} className="flex items-center gap-2 text-xs">
+            <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: pdColor(i) }} />
+            <span className="font-semibold text-gray-700 truncate flex-1">{it.label}</span>
+            <span className="font-mono text-gray-900">{pdAmount(it.ca_current)}</span>
+            <span className="text-gray-400 w-10 text-right">{((it.ca_current / total) * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PdGroupedBars({ items = [], yearN, yearN1 }) {
+  const top = items.slice(0, 8)
+  const max = top.reduce((m, it) => Math.max(m, it.ca_current || 0, it.ca_previous || 0), 0)
+  if (!top.length || max <= 0) return <p className="text-sm text-gray-400">Aucune donnée.</p>
+  const H = 150
+  return (
+    <div>
+      <div className="flex items-end gap-3 overflow-x-auto pb-1" style={{ height: H + 26 }}>
+        {top.map((it, i) => {
+          const hC = Math.max(((it.ca_current || 0) / max) * H, 2)
+          const hP = Math.max(((it.ca_previous || 0) / max) * H, 2)
+          return (
+            <div key={it.label} className="flex flex-col items-center gap-1 shrink-0" style={{ width: 58 }}>
+              <div className="flex items-end gap-1" style={{ height: H }}>
+                <div title={`${yearN}: ${pdAmount(it.ca_current)}`} style={{ height: hC, width: 14, background: pdColor(i) }} className="rounded-t" />
+                <div title={`${yearN1}: ${pdAmount(it.ca_previous)}`} style={{ height: hP, width: 14, background: '#cbd5e1' }} className="rounded-t" />
+              </div>
+              <span className="text-[10px] text-gray-500 text-center leading-tight truncate w-full">{it.label}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-center gap-4 text-[11px] text-gray-500 mt-1">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-indigo-500" />{yearN}</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-slate-300" />{yearN1}</span>
+      </div>
+    </div>
+  )
+}
+
+function PdDrillNode({ node, maxCa, accent, depth = 0 }) {
+  const [open, setOpen] = useState(false)
+  const children = Array.isArray(node.children) ? node.children : []
+  const hasChildren = children.length > 0
+  const width = maxCa > 0 ? Math.max((node.ca_current / maxCa) * 100, 1.5) : 0
+  const childMax = children.reduce((m, c) => Math.max(m, c.ca_current || 0), 0)
+  const deltaUp = Number(node.delta || 0) >= 0
+  return (
+    <div className="rounded-lg" style={{ background: depth === 0 ? '#fff' : 'transparent' }}>
+      <button
+        type="button"
+        onClick={() => hasChildren && setOpen((o) => !o)}
+        className={`w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg ${hasChildren ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'} ${depth === 0 ? 'border border-gray-100' : ''}`}
+      >
+        {hasChildren ? (
+          <svg className={`w-3.5 h-3.5 shrink-0 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+        ) : (
+          <span className="w-3.5 h-3.5 shrink-0" />
+        )}
+        {depth === 0 && (
+          <span className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-[10px] font-black text-white" style={{ background: accent }}>{pdInitials(node.label)}</span>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className={`truncate ${depth === 0 ? 'font-bold text-gray-800 text-sm' : 'font-semibold text-gray-600 text-xs'}`}>{node.label}</span>
+            <span className={`font-mono shrink-0 ${depth === 0 ? 'text-sm text-gray-900' : 'text-xs text-gray-700'}`}>{pdAmount(node.ca_current)}</span>
+          </div>
+          <div className="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${width}%`, background: accent }} />
+          </div>
+        </div>
+        <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${deltaUp ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+          {deltaUp ? '+' : ''}{pdAmount(node.delta)} ({pdDeltaPct(node.delta_pct)})
+        </span>
+      </button>
+      {open && hasChildren && (
+        <div className="ml-6 pl-2 border-l border-gray-100 space-y-1 py-1">
+          {children.map((c) => (
+            <PdDrillNode key={c.label} node={c} maxCa={childMax} accent={accent} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
   const { supplierFilter } = useSupplierFilter()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [expandedPlatform, setExpandedPlatform] = useState(null)
-  const [expandedMarque, setExpandedMarque] = useState(null)
-  const [expandedFamille, setExpandedFamille] = useState(null)
+  const [axis, setAxis] = useState('marque')
 
   const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
   const fmtP = (v) => {
     if (v == null) return '—'
-    const num = Number(v) * 100
+    const num = Number(v)
     const sign = num > 0 ? '+' : ''
     return `${sign}${num.toFixed(1)}%`
   }
@@ -1458,9 +1589,7 @@ function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
     }
     setLoading(true)
     setData(null)
-    setExpandedPlatform(null)
-    setExpandedMarque(null)
-    setExpandedFamille(null)
+    setAxis('marque')
     getPureDataCumulativeClientDashboard({
       codeUnion,
       groupeClient,
@@ -1495,12 +1624,20 @@ function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
     )
   }
 
+  const axisData = axis === 'plateforme'
+    ? (data.platforms || [])
+    : axis === 'famille'
+      ? (data.by_famille || [])
+      : (data.by_marque || [])
+  const axisMax = axisData.reduce((m, n) => Math.max(m, n.ca_current || 0), 0)
+  const platformSummary = data.platform_summary || []
+
   return (
     <div className="rounded-2xl border border-violet-100 bg-white shadow-sm overflow-hidden">
       <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 px-6 py-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h3 className="text-white font-bold text-base">Dashboard Pure Data cumule</h3>
+            <h3 className="text-white font-bold text-base">Dashboard Pure Data cumulé</h3>
             <p className="text-violet-100 text-xs mt-0.5">
               Cumul annuel {data.year_current} vs {data.year_previous}
               {supplierFilter ? ` — vue ${supplierFilter}` : ''}
@@ -1508,7 +1645,7 @@ function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
           </div>
           {data.reporting_period && (
             <div className="text-right">
-              <div className="text-violet-200 text-[11px] font-semibold uppercase">Periode d'import</div>
+              <div className="text-violet-200 text-[11px] font-semibold uppercase">Période d'import</div>
               <div className="text-white text-sm font-bold">
                 {monthLabel(data.reporting_period.month)} {data.reporting_period.year || ''}
               </div>
@@ -1517,180 +1654,68 @@ function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
         </div>
       </div>
 
-      <div className="p-5 space-y-5">
+      <div className="p-5 space-y-6">
+        {/* KPI hero */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-xl border border-violet-100 bg-violet-50 p-4">
-            <div className="text-xs font-semibold text-violet-700">CA cumule {data.year_current}</div>
-            <div className="text-xl font-black text-violet-900">{fmt(data.totals?.current)}</div>
+          <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50 to-fuchsia-50 p-4">
+            <div className="text-xs font-semibold text-violet-700">CA cumulé {data.year_current}</div>
+            <div className="text-2xl font-black text-violet-900">{fmt(data.totals?.current)}</div>
           </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="text-xs font-semibold text-gray-500">CA cumule {data.year_previous}</div>
-            <div className="text-xl font-black text-gray-700">{fmt(data.totals?.previous)}</div>
+            <div className="text-xs font-semibold text-gray-500">CA cumulé {data.year_previous}</div>
+            <div className="text-2xl font-black text-gray-700">{fmt(data.totals?.previous)}</div>
           </div>
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-            <div className="text-xs font-semibold text-indigo-700">Evolution</div>
-            <div className={`text-xl font-black ${dc(data.totals?.delta)}`}>{fmtDelta(data.totals?.delta)}</div>
+          <div className={`rounded-xl border p-4 ${Number(data.totals?.delta || 0) >= 0 ? 'border-emerald-100 bg-emerald-50' : 'border-rose-100 bg-rose-50'}`}>
+            <div className="text-xs font-semibold text-gray-500">Évolution</div>
+            <div className={`text-2xl font-black ${dc(data.totals?.delta)}`}>{fmtDelta(data.totals?.delta)}</div>
             <div className={`text-xs font-semibold ${dc(data.totals?.delta)}`}>{fmtP(data.totals?.delta_pct)}</div>
           </div>
         </div>
 
+        {/* Graphiques : répartition (donut) + comparatif N vs N-1 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Top marques</div>
-            <div className="max-h-72 overflow-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-white border-b border-gray-100">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-gray-500">Marque</th>
-                    <th className="px-3 py-2 text-right text-gray-500">{data.year_current}</th>
-                    <th className="px-3 py-2 text-right text-gray-500">Delta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.top_marques || []).map((m) => (
-                    <tr key={m.label} className="border-b border-gray-50">
-                      <td className="px-3 py-2 font-semibold text-gray-700">{m.label}</td>
-                      <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(m.ca_current)}</td>
-                      <td className={`px-3 py-2 text-right font-semibold ${dc(m.delta)}`}>{fmtDelta(m.delta)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="rounded-xl border border-gray-200 p-4">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Répartition du CA par plateforme</h4>
+            <PdDonut items={platformSummary} />
           </div>
-
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Top familles</div>
-            <div className="max-h-72 overflow-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-white border-b border-gray-100">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-gray-500">Famille</th>
-                    <th className="px-3 py-2 text-right text-gray-500">{data.year_current}</th>
-                    <th className="px-3 py-2 text-right text-gray-500">Delta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.top_familles || []).map((f) => (
-                    <tr key={f.label} className="border-b border-gray-50">
-                      <td className="px-3 py-2 font-semibold text-gray-700">{f.label}</td>
-                      <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(f.ca_current)}</td>
-                      <td className={`px-3 py-2 text-right font-semibold ${dc(f.delta)}`}>{fmtDelta(f.delta)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="rounded-xl border border-gray-200 p-4">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Comparatif {data.year_current} vs {data.year_previous}</h4>
+            <PdGroupedBars items={platformSummary} yearN={data.year_current} yearN1={data.year_previous} />
           </div>
         </div>
 
-        {(data.platforms || []).length > 0 && (
-          <div>
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-              Drill-down plateforme → marque → famille → sous-famille
+        {/* Analyse détaillée avec sélecteur d'axe + drill-down */}
+        <div>
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              Analyse détaillée — cliquez pour explorer
             </h4>
-            <div className="space-y-2">
-              {data.platforms.map((p) => {
-                const pName = p.fournisseur || 'Non renseigne'
-                const isPlatformOpen = expandedPlatform === pName
-                return (
-                  <div key={pName} className="rounded-xl border border-gray-200 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setExpandedPlatform(isPlatformOpen ? null : pName)
-                        setExpandedMarque(null)
-                        setExpandedFamille(null)
-                      }}
-                      className="w-full px-4 py-3 flex items-center justify-between text-left bg-white hover:bg-gray-50"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-gray-800 text-sm">{pName}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${Number(p.delta || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                          {fmtDelta(p.delta)} ({fmtP(p.delta_pct)})
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-gray-500">
-                        <span className="font-mono text-gray-900">{fmt(p.ca_current)}</span>
-                        <svg className={`w-4 h-4 transition-transform ${isPlatformOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </button>
-
-                    {isPlatformOpen && (
-                      <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/60 space-y-1.5">
-                        {(p.children || []).slice(0, 15).map((m) => {
-                          const mName = `${pName}::${m.marque || 'Non renseigne'}`
-                          const isMarqueOpen = expandedMarque === mName
-                          return (
-                            <div key={mName} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setExpandedMarque(isMarqueOpen ? null : mName)
-                                  setExpandedFamille(null)
-                                }}
-                                className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50"
-                              >
-                                <span className="text-xs font-semibold text-gray-700">{m.marque || 'Non renseigne'}</span>
-                                <div className="flex items-center gap-3 text-[11px]">
-                                  <span className="font-mono text-gray-900">{fmt(m.ca_current)}</span>
-                                  <span className={dc(m.delta)}>{fmtDelta(m.delta)}</span>
-                                  <svg className={`w-3.5 h-3.5 transition-transform text-gray-400 ${isMarqueOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                  </svg>
-                                </div>
-                              </button>
-
-                              {isMarqueOpen && (
-                                <div className="border-t border-gray-100 px-3 py-2 bg-gray-50 space-y-1">
-                                  {(m.children || []).slice(0, 12).map((f) => {
-                                    const fName = `${mName}::${f.famille || 'Non renseigne'}`
-                                    const isFamilleOpen = expandedFamille === fName
-                                    return (
-                                      <div key={fName} className="rounded-md border border-gray-200 bg-white overflow-hidden">
-                                        <button
-                                          type="button"
-                                          onClick={() => setExpandedFamille(isFamilleOpen ? null : fName)}
-                                          className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50"
-                                        >
-                                          <span className="text-[11px] font-semibold text-gray-700">{f.famille || 'Non renseigne'}</span>
-                                          <div className="flex items-center gap-2 text-[10px]">
-                                            <span className="font-mono text-gray-900">{fmt(f.ca_current)}</span>
-                                            <svg className={`w-3 h-3 transition-transform text-gray-400 ${isFamilleOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                          </div>
-                                        </button>
-                                        {isFamilleOpen && (
-                                          <div className="border-t border-gray-100 px-3 py-2 bg-white">
-                                            <div className="grid gap-1">
-                                              {(f.children || []).slice(0, 12).map((sf) => (
-                                                <div key={`${fName}::${sf.sous_famille || 'Non renseigne'}`} className="flex items-center justify-between text-[10px] border-b border-gray-50 py-1">
-                                                  <span className="text-gray-600">{sf.sous_famille || 'Non renseigne'}</span>
-                                                  <span className="font-mono text-gray-900">{fmt(sf.ca_current)}</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
+              {[
+                { id: 'marque', label: 'Par marque' },
+                { id: 'famille', label: 'Par famille' },
+                { id: 'plateforme', label: 'Par plateforme' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setAxis(opt.id)}
+                  className={`px-3 py-1.5 rounded-md font-semibold transition-all ${axis === opt.id ? 'bg-violet-600 text-white shadow' : 'text-gray-600 hover:bg-gray-50'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
-        )}
+          <div className="space-y-1.5">
+            {axisData.length === 0 && (
+              <p className="text-sm text-gray-400">Aucune donnée pour cet axe.</p>
+            )}
+            {axisData.map((node, i) => (
+              <PdDrillNode key={node.label} node={node} maxCa={axisMax} accent={pdColor(i)} depth={0} />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   )

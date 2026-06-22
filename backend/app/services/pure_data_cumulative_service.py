@@ -4,7 +4,7 @@ Flux totalement separe du mode pure_data_monthly.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from app.services.pure_data_import import filter_rows_by_fournisseur
 
@@ -34,26 +34,29 @@ def _sum_ca(rows: List[Dict]) -> float:
     return sum(float(r.get("ca") or 0.0) for r in rows)
 
 
-def _build_nested(current_rows: List[Dict], previous_rows: List[Dict]) -> List[Dict]:
+def _build_hierarchy(
+    current_rows: List[Dict],
+    previous_rows: List[Dict],
+    levels: List[str],
+    total_root: float,
+) -> List[Dict]:
     """
-    Retourne une structure hierarchique:
-    plateforme -> marque -> famille -> sous_famille
-    avec current, previous, delta, delta_pct et part_current.
+    Construit une hierarchie generique selon l'ordre `levels`.
+    Chaque noeud expose un champ `label` standard + la cle de niveau,
+    avec ca_current / ca_previous / delta / delta_pct / part_current.
     """
-    levels = ["fournisseur", "marque", "famille", "sous_famille"]
-
     def _group(rows: List[Dict], key: str) -> Dict[str, List[Dict]]:
         out: Dict[str, List[Dict]] = {}
         for r in rows:
-            label = (r.get(key) or "Non renseigne").strip() or "Non renseigne"
+            label = (r.get(key) or "Non renseigné").strip() or "Non renseigné"
             out.setdefault(label, []).append(r)
         return out
 
-    def _walk(curr: List[Dict], prev: List[Dict], idx: int, total_root: float) -> List[Dict]:
+    def _walk(curr: List[Dict], prev: List[Dict], idx: int) -> List[Dict]:
         key = levels[idx]
         curr_map = _group(curr, key)
         prev_map = _group(prev, key)
-        labels = sorted(set(curr_map.keys()) | set(prev_map.keys()), key=lambda x: x.upper())
+        labels = set(curr_map.keys()) | set(prev_map.keys())
         merged: List[Dict] = []
         for label in labels:
             curr_rows = curr_map.get(label, [])
@@ -62,6 +65,8 @@ def _build_nested(current_rows: List[Dict], previous_rows: List[Dict]) -> List[D
             prev_ca = _sum_ca(prev_rows)
             delta = curr_ca - prev_ca
             item = {
+                "level": key,
+                "label": label,
                 key: label,
                 "ca_current": curr_ca,
                 "ca_previous": prev_ca,
@@ -70,14 +75,12 @@ def _build_nested(current_rows: List[Dict], previous_rows: List[Dict]) -> List[D
                 "part_current": (curr_ca / total_root) if total_root > 0 else 0.0,
             }
             if idx + 1 < len(levels):
-                children = _walk(curr_rows, prev_rows, idx + 1, total_root)
-                item["children"] = children
+                item["children"] = _walk(curr_rows, prev_rows, idx + 1)
             merged.append(item)
         merged.sort(key=lambda x: x["ca_current"], reverse=True)
         return merged
 
-    total_root = _sum_ca(current_rows)
-    return _walk(current_rows, previous_rows, 0, total_root)
+    return _walk(current_rows, previous_rows, 0)
 
 
 def build_cumulative_dashboard(
@@ -87,6 +90,7 @@ def build_cumulative_dashboard(
     code_union: Optional[str] = None,
     groupe_client: Optional[str] = None,
     fournisseur: Optional[str] = None,
+    top_n: int = 15,
 ) -> Dict:
     if code_union:
         targets = _code_union_candidates(code_union)
@@ -123,37 +127,40 @@ def build_cumulative_dashboard(
     previous_total = _sum_ca(previous_rows)
     delta = current_total - previous_total
 
-    nested = _build_nested(current_rows, previous_rows)
+    # Axes hierarchiques (drill-down) :
+    platforms = _build_hierarchy(
+        current_rows, previous_rows,
+        ["fournisseur", "marque", "famille", "sous_famille"],
+        current_total,
+    )
+    by_marque = _build_hierarchy(
+        current_rows, previous_rows,
+        ["marque", "famille", "sous_famille"],
+        current_total,
+    )[:top_n]
+    by_famille = _build_hierarchy(
+        current_rows, previous_rows,
+        ["famille", "marque", "sous_famille"],
+        current_total,
+    )[:top_n]
 
-    def _aggregate_by_key(key: str) -> List[Dict]:
-        curr_map: Dict[str, float] = {}
-        prev_map: Dict[str, float] = {}
-        for r in current_rows:
-            label = (r.get(key) or "Non renseigne").strip() or "Non renseigne"
-            curr_map[label] = curr_map.get(label, 0.0) + float(r.get("ca") or 0.0)
-        for r in previous_rows:
-            label = (r.get(key) or "Non renseigne").strip() or "Non renseigne"
-            prev_map[label] = prev_map.get(label, 0.0) + float(r.get("ca") or 0.0)
-        labels = sorted(set(curr_map.keys()) | set(prev_map.keys()), key=lambda x: x.upper())
-        out = []
-        for label in labels:
-            curr = curr_map.get(label, 0.0)
-            prev = prev_map.get(label, 0.0)
-            d = curr - prev
-            out.append({
-                "label": label,
-                "ca_current": curr,
-                "ca_previous": prev,
-                "delta": d,
-                "delta_pct": _pct(d, prev),
-                "part_current": (curr / current_total) if current_total > 0 else 0.0,
-            })
-        out.sort(key=lambda x: x["ca_current"], reverse=True)
-        return out
+    # Listes "plates" utiles pour les graphiques de tete
+    def _flat(nodes: List[Dict]) -> List[Dict]:
+        return [
+            {
+                "label": n["label"],
+                "ca_current": n["ca_current"],
+                "ca_previous": n["ca_previous"],
+                "delta": n["delta"],
+                "delta_pct": n["delta_pct"],
+                "part_current": n["part_current"],
+            }
+            for n in nodes
+        ]
 
-    top_marques = _aggregate_by_key("marque")[:12]
-    top_familles = _aggregate_by_key("famille")[:12]
-    top_sous_familles = _aggregate_by_key("sous_famille")[:12]
+    platform_summary = _flat(platforms)
+    top_marques = _flat(by_marque)[:12]
+    top_familles = _flat(by_famille)[:12]
 
     return {
         "available": True,
@@ -167,10 +174,14 @@ def build_cumulative_dashboard(
             "delta": delta,
             "delta_pct": _pct(delta, previous_total),
         },
-        "platforms": nested,
+        # Hierarchies completes (drill-down)
+        "platforms": platforms,
+        "by_marque": by_marque,
+        "by_famille": by_famille,
+        # Resumes pour graphiques
+        "platform_summary": platform_summary,
         "top_marques": top_marques,
         "top_familles": top_familles,
-        "top_sous_familles": top_sous_familles,
         "scope": {
             "rows_current": len(current_rows),
             "rows_previous": len(previous_rows),
