@@ -29,7 +29,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [plansRequested, setPlansRequested] = useState(false)
   const loadIdRef = useRef(null)
   const [cotisationMap, setCotisationMap] = useState({})
-  const [activeViewTab, setActiveViewTab] = useState('rfa')
+  const [activeViewTab, setActiveViewTab] = useState('monthly')
 
   const refreshCotisationMap = useCallback(async () => {
     try {
@@ -180,7 +180,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     if (!entityId) return
     const myId = entityId
     loadIdRef.current = myId
-    setActiveViewTab('rfa')
+    setActiveViewTab('monthly')
     setSmartPlans([])
     setLoadingPlans(false)
     setPlansRequested(false)
@@ -522,17 +522,6 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
               <button
                 type="button"
-                onClick={() => setActiveViewTab('rfa')}
-                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
-                  activeViewTab === 'rfa'
-                    ? 'bg-indigo-600 text-white shadow'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                💰 Vue RFA
-              </button>
-              <button
-                type="button"
                 onClick={() => setActiveViewTab('monthly')}
                 className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
                   activeViewTab === 'monthly'
@@ -541,6 +530,17 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
                 }`}
               >
                 📅 Chiffres mensuels
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveViewTab('rfa')}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeViewTab === 'rfa'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                💰 Vue RFA (2025)
               </button>
             </div>
           </div>
