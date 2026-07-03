@@ -30,6 +30,8 @@ class EntityPdfExportBody(BaseModel):
     cotisation_facturee: Optional[bool] = None
     cotisation_deduite: Optional[bool] = None
     cotisation_mode: Optional[str] = None
+    bonus_amount: Optional[float] = Field(default=None, ge=0)
+    bonus_label: Optional[str] = None
 
 
 class BulkPdfDriveExportBody(BaseModel):
@@ -45,6 +47,12 @@ class CotisationSettingBody(BaseModel):
     amount: float
     facturee: bool = True
     deduite: bool = True
+
+
+class BonusSettingBody(BaseModel):
+    """Corps PUT bonus exceptionnel (upsert)."""
+    amount: float
+    designation: str = "Bonus exceptionnel — accord direction"
 
 
 class ClientSummary(BaseModel):

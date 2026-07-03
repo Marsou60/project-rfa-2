@@ -557,11 +557,14 @@ def generate_espace_client_pdf_html(
     cotisation_kind: Optional[str] = None,
     cotisation_facturee: Optional[bool] = None,
     cotisation_deduite: Optional[bool] = None,
+    bonus_amount: Optional[float] = None,
+    bonus_label: Optional[str] = None,
 ) -> str:
     """
     Génère le HTML PDF identique à la page Espace Client : en-tête, KPI, badges, tableaux Plateformes et Tri-partites.
     Cotisation : montant + cotisation_facturee / cotisation_deduite (lignes indépendantes sur le rapport).
     Ancien cotisation_kind (facturee | offerte) encore accepté si les booléens absents.
+    Bonus exceptionnel : bonus_amount ajouté au total RFA (après déduction cotisation) + bandeau visible.
     """
     contract_applied = entity_data.get("contract_applied") or {}
     contract_id = contract_applied.get("id")
@@ -575,6 +578,8 @@ def generate_espace_client_pdf_html(
             cotisation_kind=cotisation_kind,
             cotisation_facturee=cotisation_facturee,
             cotisation_deduite=cotisation_deduite,
+            bonus_amount=bonus_amount,
+            bonus_label=bonus_label,
         )
 
     rules_map = _load_rules_map(contract_id, mode, entity_id)
@@ -636,6 +641,16 @@ def generate_espace_client_pdf_html(
         rfa_kpi_display = rfa_gross
         rfa_invoice_ht = rfa_gross
 
+    # Bonus exceptionnel : s'ajoute au total RFA APRÈS déduction cotisation
+    b_amt = float(bonus_amount or 0) if bonus_amount is not None else 0.0
+    if b_amt < 0:
+        b_amt = 0.0
+    bonus_active = mode in ("client", "group") and b_amt > 0
+    bonus_designation = (bonus_label or "").strip() or "Bonus exceptionnel — accord direction"
+    if bonus_active:
+        rfa_kpi_display = rfa_kpi_display + b_amt
+        rfa_invoice_ht = rfa_invoice_ht + b_amt
+
     rfa_total_ttc = rfa_invoice_ht * 1.2
     rfa_rate_global = (rfa_gross / ca_total * 100) if ca_total > 0 else 0
     potential_gain_near = sum(r.get("projected_gain") or 0 for r in global_rows if r.get("near")) + sum(r.get("projected_gain") or 0 for r in tri_rows if r.get("near"))
@@ -670,6 +685,9 @@ def generate_espace_client_pdf_html(
         cotisation_amount=c_amt if cotisation_active else 0.0,
         cotisation_monthly=cotisation_monthly,
         cotisation_mode_label_offerte=cotisation_mode_label_offerte,
+        bonus_active=bonus_active,
+        bonus_amount=b_amt if bonus_active else 0.0,
+        bonus_designation=bonus_designation,
         rfa_invoice_ht_formatted=format_amount(rfa_invoice_ht),
         rfa_invoice_ttc_formatted=format_amount(rfa_total_ttc),
         rfa_rate_global=rfa_rate_global,
@@ -864,6 +882,22 @@ def _get_espace_client_template() -> str:
     </td>
 </tr>
 </table>
+
+{% if bonus_active %}
+<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:6px 0 14px 0; border:2px solid #b45309; background:#fff7ed;">
+<tr>
+    <td style="padding:12px 14px; vertical-align:middle; border-right:2px solid #f59e0b; width:66%;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:#b45309; font-weight:bold; margin-bottom:4px;">&#127881; Bonus exceptionnel</div>
+        <div style="font-size:13px; font-weight:bold; color:#7c2d12; line-height:1.4;">{{ bonus_designation }}</div>
+        <div style="font-size:9px; color:#9a3412; margin-top:3px;">Montant accordé à titre exceptionnel, venant s'ajouter à votre RFA.</div>
+    </td>
+    <td style="padding:12px 14px; text-align:center; vertical-align:middle;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:#b45309; font-weight:bold; margin-bottom:4px;">Bonus accordé</div>
+        <div style="font-size:20px; font-weight:bold; color:#c2410c;">+{{ format_amount(bonus_amount) }}</div>
+    </td>
+</tr>
+</table>
+{% endif %}
 
 {% if cotisation_mode_label_offerte %}
 <div style="font-size:10px; color:#1a4a3a; margin:10px 0 8px 0; padding:9px 12px; border:1px solid #2d6a4f; background:#ecfdf5; line-height:1.5;">
@@ -1098,11 +1132,14 @@ def generate_pdf_html(
     cotisation_kind: Optional[str] = None,
     cotisation_facturee: Optional[bool] = None,
     cotisation_deduite: Optional[bool] = None,
+    bonus_amount: Optional[float] = None,
+    bonus_label: Optional[str] = None,
 ) -> str:
     """
     Génère le HTML pour le PDF à partir des données de l'entité.
     Format simple et lisible (fallback si pas de contrat ou contract_applied.id absent).
     Reprend la cotisation Union si transmise (comme le template Espace Client).
+    Bonus exceptionnel : ajouté au total RFA (après cotisation) + bandeau visible.
     """
     template_str = """
 <!DOCTYPE html>
@@ -1246,6 +1283,22 @@ def generate_pdf_html(
         <div class="header-info">Adhérent : {{ adherent_name }}</div>
         <div class="header-info">Année : {{ year }}</div>
     </div>
+
+    {% if bonus_active %}
+    <table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:0 0 18px 0; border:2px solid #b45309; background:#fff7ed;">
+    <tr>
+        <td style="padding:12px 14px; vertical-align:middle; border-right:2px solid #f59e0b; width:66%;">
+            <div style="font-size:9pt; text-transform:uppercase; letter-spacing:1px; color:#b45309; font-weight:bold; margin-bottom:4px;">Bonus exceptionnel</div>
+            <div style="font-size:12pt; font-weight:bold; color:#7c2d12;">{{ bonus_designation }}</div>
+            <div style="font-size:9pt; color:#9a3412; margin-top:3px;">Montant accordé à titre exceptionnel, venant s'ajouter à votre RFA.</div>
+        </td>
+        <td style="padding:12px 14px; text-align:right; vertical-align:middle;">
+            <div style="font-size:9pt; text-transform:uppercase; letter-spacing:1px; color:#b45309; font-weight:bold; margin-bottom:4px;">Bonus accordé</div>
+            <div style="font-size:16pt; font-weight:bold; color:#c2410c;">+{{ bonus_amount_formatted }}</div>
+        </td>
+    </tr>
+    </table>
+    {% endif %}
 
     <div class="summary">
         <table class="summary-table" cellpadding="0" cellspacing="0">
@@ -1445,6 +1498,15 @@ def generate_pdf_html(
         rfa_display = rfa_gross
         rfa_main_label = "RFA Totale HT"
 
+    # Bonus exceptionnel : ajouté au total RFA après cotisation
+    b_amt = float(bonus_amount or 0) if bonus_amount is not None else 0.0
+    if b_amt < 0:
+        b_amt = 0.0
+    bonus_active = mode in ("client", "group") and b_amt > 0
+    bonus_designation = (bonus_label or "").strip() or "Bonus exceptionnel — accord direction"
+    if bonus_active:
+        rfa_display = rfa_display + b_amt
+
     all_items.extend(
         build_cotisation_pdf_detail_rows(mode, c_amt, cotisation_active, cotisation_offerte, c_ded)
     )
@@ -1466,6 +1528,9 @@ def generate_pdf_html(
         cotisation_deduite=c_ded,
         cotisation_amount_formatted=format_amount(c_amt) if cotisation_active else format_amount(0),
         cotisation_monthly_formatted=format_amount(cotisation_monthly),
+        bonus_active=bonus_active,
+        bonus_amount_formatted=format_amount(b_amt) if bonus_active else format_amount(0),
+        bonus_designation=bonus_designation,
         all_items=all_items,
     )
     
@@ -1482,6 +1547,8 @@ def generate_pdf_report(
     cotisation_kind: Optional[str] = None,
     cotisation_facturee: Optional[bool] = None,
     cotisation_deduite: Optional[bool] = None,
+    bonus_amount: Optional[float] = None,
+    bonus_label: Optional[str] = None,
 ) -> BytesIO:
     """
     Génère un rapport PDF pour une entité (client ou groupe) avec les calculs RFA.
@@ -1509,6 +1576,8 @@ def generate_pdf_report(
         cotisation_kind=cotisation_kind,
         cotisation_facturee=cotisation_facturee,
         cotisation_deduite=cotisation_deduite,
+        bonus_amount=bonus_amount,
+        bonus_label=bonus_label,
     )
 
     if not XHTML2PDF_AVAILABLE:

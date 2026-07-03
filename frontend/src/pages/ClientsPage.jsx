@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { User, Users, Search, Check, Clock, RotateCcw, Lock, Unlock, ChevronUp, ChevronDown } from 'lucide-react'
-import { getEntities, getEntityDetail, getAssignments, getContracts, createAssignment, deleteAssignment, getCotisations, upsertCotisation, deleteCotisation } from '../api/client'
+import { getEntities, getEntityDetail, getAssignments, getContracts, createAssignment, deleteAssignment, getCotisations, upsertCotisation, deleteCotisation, getBonuses, upsertBonus, deleteBonus } from '../api/client'
 import EntityDetailDrawer from '../components/EntityDetailDrawer'
 import ContractAssignmentModal from '../components/ContractAssignmentModal'
 
@@ -22,6 +22,7 @@ function ClientsPage({ importId }) {
   const [showAssignModal, setShowAssignModal] = useState(null)
   const [dissolvedGroups, setDissolvedGroups] = useState(new Set())
   const [cotisationAmounts, setCotisationAmounts] = useState({})
+  const [bonusMap, setBonusMap] = useState({})
   const [selectedListGrandTotal, setSelectedListGrandTotal] = useState(null)
 
   useEffect(() => {
@@ -31,6 +32,7 @@ function ClientsPage({ importId }) {
       loadAssignmentsAndContracts()
       loadDissolvedGroups()
       loadCotisationAmounts()
+      loadBonuses()
     } else {
       setError('ID d\'import manquant')
       setLoading(false)
@@ -156,6 +158,61 @@ function ClientsPage({ importId }) {
           deduite: Boolean(data.deduite),
         })
     apiCall.catch((e) => console.warn('Cotisation DB sync failed (local still updated):', e))
+  }
+
+  const loadBonuses = async () => {
+    try {
+      const list = await getBonuses(mode)
+      const map = {}
+      for (const item of list || []) {
+        map[item.entity_key] = { amount: item.amount, designation: item.designation }
+      }
+      setBonusMap(map)
+    } catch (e) {
+      console.error('Erreur chargement bonus API:', e)
+      setBonusMap({})
+    }
+  }
+
+  const getBonusInfo = (entityKey) => {
+    const raw = (entityKey || '').toString()
+    let row = bonusMap[raw]
+    if (!row) {
+      const target = normalizeValue(raw)
+      for (const [k, v] of Object.entries(bonusMap)) {
+        if (normalizeValue(k) === target) { row = v; break }
+      }
+    }
+    if (!row || !row.amount || row.amount <= 0) {
+      return { amount: 0, designation: '' }
+    }
+    return { amount: Number(row.amount), designation: row.designation || '' }
+  }
+
+  const updateBonus = (entityKey, data) => {
+    if (!entityKey) return
+    const canonical = normalizeValue(entityKey)
+    if (!canonical) return
+    const next = { ...bonusMap }
+    for (const k of Object.keys(next)) {
+      if (normalizeValue(k) === canonical) delete next[k]
+    }
+    const amount = Number(data?.amount || 0)
+    const designation = data?.designation || 'Bonus exceptionnel — accord direction'
+    if (amount > 0) next[canonical] = { amount, designation }
+    setBonusMap(next)
+    const apiCall = amount > 0
+      ? upsertBonus(mode, canonical, { amount, designation })
+      : deleteBonus(mode, canonical)
+    apiCall.catch((e) => console.warn('Bonus DB sync failed:', e))
+  }
+
+  const mergeBonusPatch = (entityKey, patch) => {
+    const cur = getBonusInfo(entityKey)
+    const amount = patch.amount !== undefined ? patch.amount : cur.amount
+    const designation = patch.designation !== undefined ? patch.designation : cur.designation
+    if (!amount || amount <= 0) updateBonus(entityKey, null)
+    else updateBonus(entityKey, { amount, designation })
   }
 
   const saveCalculatedClient = (entityId) => {
@@ -817,6 +874,20 @@ function ClientsPage({ importId }) {
         onCotisationChange={(patch) => {
           if (!selectedEntity || (mode !== 'client' && mode !== 'group')) return
           mergeCotisationPatch(cotisationKeyForEntity(selectedEntity), patch)
+        }}
+        bonusAmount={
+          selectedEntity && (mode === 'client' || mode === 'group')
+            ? getBonusInfo(cotisationKeyForEntity(selectedEntity)).amount
+            : 0
+        }
+        bonusDesignation={
+          selectedEntity && (mode === 'client' || mode === 'group')
+            ? getBonusInfo(cotisationKeyForEntity(selectedEntity)).designation
+            : ''
+        }
+        onBonusChange={(patch) => {
+          if (!selectedEntity || (mode !== 'client' && mode !== 'group')) return
+          mergeBonusPatch(cotisationKeyForEntity(selectedEntity), patch)
         }}
         onRefresh={async () => {
           if (!selectedEntity) return

@@ -24,6 +24,9 @@ function EntityDetailDrawer({
   cotisationFacturee = true,
   cotisationDeduite = true,
   onCotisationChange,
+  bonusAmount = 0,
+  bonusDesignation = '',
+  onBonusChange,
   onRefresh,
   listGrandTotal = null,
 }) {
@@ -176,13 +179,18 @@ function EntityDetailDrawer({
   const cotisationModeFacture =
     cotisationApplies && cotisationAmount > 0 && cotisationFacturee && cotisationDeduite
 
+  // Bonus exceptionnel : s'ajoute au total RFA (après déduction cotisation)
+  const bonusApplies = mode === 'client' || mode === 'group'
+  const bonusAdd = bonusApplies && bonusAmount > 0 ? bonusAmount : 0
+  const finalGrandTotal = adjustedGrandTotal + bonusAdd
+
   const totalCaGlobal = entity?.ca?.totals?.global_total ?? 0
   // Le bloc "Analyse marge Groupement Union" raisonne par plateformes globales,
   // il doit donc rester aligné avec le "Total Global" de la liste adhérents.
   const totalCa = listGrandTotal != null ? listGrandTotal : totalCaGlobal
   const parsedMarginRate = marginRateReceived === '' ? null : parseFloat(marginRateReceived) / 100
   const rfaReceived = parsedMarginRate !== null ? totalCa * parsedMarginRate : null
-  const unionMargin = parsedMarginRate !== null ? (rfaReceived - adjustedGrandTotal) : null
+  const unionMargin = parsedMarginRate !== null ? (rfaReceived - finalGrandTotal) : null
 
   if (!entity && !loading) {
     return null
@@ -254,6 +262,9 @@ function EntityDetailDrawer({
                               facturee: cotisationFacturee,
                               deduite: cotisationDeduite,
                             }
+                          : undefined,
+                        bonusApplies && bonusAmount > 0
+                          ? { amount: bonusAmount, designation: bonusDesignation }
                           : undefined,
                       )
                     } catch (err) {
@@ -386,6 +397,68 @@ function EntityDetailDrawer({
                   </div>
                 )}
 
+                {/* ── Bonus exceptionnel ── */}
+                {bonusApplies && (
+                  <div className="p-4 glass-card-dark border border-amber-500/30 rounded-xl">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-medium text-white">🎁 Bonus exceptionnel</h3>
+                        <p className="text-xs text-glass-muted">
+                          {bonusAmount > 0
+                            ? 'Ce bonus s\'ajoute au total RFA (après déduction cotisation) et apparaît en évidence sur le rapport PDF.'
+                            : 'Bonus ponctuel (accord direction) qui s\'ajoute au total RFA et s\'affiche en évidence sur le PDF.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!onBonusChange) return
+                          if (bonusAmount > 0) onBonusChange({ amount: 0 })
+                          else onBonusChange({ amount: 1000, designation: bonusDesignation || 'Bonus exceptionnel — accord direction' })
+                        }}
+                        className={`text-xs px-3 py-2 rounded-full font-semibold transition-all ${
+                          bonusAmount > 0 ? 'glass-badge-amber' : 'glass-badge-gray'
+                        }`}
+                        title="Activer / désactiver le bonus exceptionnel"
+                      >
+                        {bonusAmount > 0 ? (
+                          <span className="flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            Bonus activé
+                          </span>
+                        ) : (
+                          'Activer bonus'
+                        )}
+                      </button>
+                    </div>
+                    {bonusAmount > 0 && (
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <label className="block text-xs text-glass-muted mb-1">Montant (€)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="50"
+                            value={bonusAmount}
+                            onChange={(e) => onBonusChange?.({ amount: Number(e.target.value || 0) })}
+                            className="glass-input"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-glass-muted mb-1">Désignation (affichée sur le PDF)</label>
+                          <input
+                            type="text"
+                            value={bonusDesignation}
+                            placeholder="Bonus exceptionnel — accord direction"
+                            onChange={(e) => onBonusChange?.({ designation: e.target.value })}
+                            className="glass-input"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ── Analyse Marge Groupement Union ── */}
                 {(() => {
                   // Calcul par plateforme
@@ -404,7 +477,7 @@ function EntityDetailDrawer({
                     })
 
                   const totalRecu    = platforms.reduce((s, p) => s + p.recu, 0)
-                  const totalReverse = adjustedGrandTotal   // RFA nette reversée adhérent (après cotisation)
+                  const totalReverse = finalGrandTotal   // RFA nette reversée adhérent (après cotisation + bonus)
                   const totalDelta   = totalRecu - totalReverse
                   const totalMarge   = totalRecu > 0 ? totalDelta / totalRecu : 0
 
@@ -809,10 +882,16 @@ function EntityDetailDrawer({
                           {formatAmount(entity.rfa.totals.tri_total || 0)}
                         </span>
                       </div>
+                      {bonusApplies && bonusAdd > 0 && (
+                        <div className="flex items-center justify-between text-xs text-amber-400">
+                          <span>🎁 Bonus exceptionnel {bonusDesignation ? `(${bonusDesignation})` : ''}</span>
+                          <span>+ {formatAmount(bonusAdd)}</span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between pt-4 border-t border-white/10">
                         <span className="text-base font-semibold text-white">Total Final RFA</span>
                         <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
-                          {formatAmount(adjustedGrandTotal)}
+                          {formatAmount(finalGrandTotal)}
                         </span>
                       </div>
                       {cotisationApplies && cotisationAmount > 0 && cotisationDeduite && (

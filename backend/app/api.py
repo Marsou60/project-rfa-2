@@ -54,12 +54,13 @@ from app.schemas import (
     EntityPdfExportBody,
     BulkPdfDriveExportBody,
     CotisationSettingBody,
+    BonusSettingBody,
     UserCreate,
     UserUpdate,
     UserResponse,
 )
 from app.database import get_session, hash_password, verify_password, UPLOADS_DIR, AVATARS_DIR, LOGOS_DIR, SUPPLIER_LOGOS_DIR
-from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, RuleScope, TargetType, OverrideTierType, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting
+from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, RuleScope, TargetType, OverrideTierType, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting, BonusSetting
 from app.services import nathalie_service
 
 router = APIRouter()
@@ -1502,6 +1503,8 @@ async def post_entity_pdf(
         c_amt, c_kind, c_fact, c_ded = _normalize_entity_pdf_cotisation(
             mode, c_amt, c_kind, c_fact, c_ded, body.cotisation_mode
         )
+        b_amt = float(body.bonus_amount) if (body.bonus_amount and mode in ("client", "group")) else None
+        b_label = (body.bonus_label or "").strip() or None
         pdf_buffer = generate_pdf_report(
             import_id,
             mode,
@@ -1512,6 +1515,8 @@ async def post_entity_pdf(
             cotisation_kind=c_kind,
             cotisation_facturee=c_fact,
             cotisation_deduite=c_ded,
+            bonus_amount=b_amt,
+            bonus_label=b_label,
         )
         entity_label = entity_id.replace(" ", "_")
         filename = f"RFA_{entity_label}_{mode}.pdf"
@@ -1557,6 +1562,10 @@ async def get_entity_pdf(
         None,
         description="Obsolète si cotisation_facturee / cotisation_deduite fournis : facturee ou offerte",
     ),
+    bonus_amount: Optional[float] = Query(
+        None, ge=0, description="Bonus exceptionnel (client ou groupe) — s'ajoute au total RFA",
+    ),
+    bonus_label: Optional[str] = Query(None, description="Désignation du bonus exceptionnel"),
     session: Session = Depends(get_session),
 ):
     """
@@ -1588,6 +1597,8 @@ async def get_entity_pdf(
         c_amt, c_kind, c_fact, c_ded = _normalize_entity_pdf_cotisation(
             mode, c_amt, c_kind, c_fact, c_ded, c_mode_raw
         )
+        b_amt = float(bonus_amount) if (bonus_amount and mode in ("client", "group")) else None
+        b_label = (bonus_label or "").strip() or None
         pdf_buffer = generate_pdf_report(
             import_id,
             mode,
@@ -1598,6 +1609,8 @@ async def get_entity_pdf(
             cotisation_kind=c_kind,
             cotisation_facturee=c_fact,
             cotisation_deduite=c_ded,
+            bonus_amount=b_amt,
+            bonus_label=b_label,
         )
         
         # Déterminer le nom du fichier
@@ -1837,6 +1850,81 @@ async def delete_cotisation(
         select(CotisationSetting).where(
             CotisationSetting.entity_key == key,
             CotisationSetting.entity_type == entity_type,
+        )
+    ).first()
+    if existing:
+        session.delete(existing)
+        session.commit()
+    return {"ok": True}
+
+
+# ==================== ENDPOINTS BONUS EXCEPTIONNEL (DB) ====================
+
+@router.get("/bonuses")
+async def list_bonuses(
+    entity_type: Optional[str] = Query(None, description="'client' ou 'group' — filtre optionnel"),
+    session: Session = Depends(get_session),
+):
+    """Retourne tous les bonus exceptionnels enregistrés, filtrés par entity_type si précisé."""
+    stmt = select(BonusSetting)
+    if entity_type:
+        stmt = stmt.where(BonusSetting.entity_type == entity_type)
+    return session.exec(stmt).all()
+
+
+@router.put("/bonuses/{entity_type}/{entity_key}")
+async def upsert_bonus(
+    entity_type: str,
+    entity_key: str,
+    body: BonusSettingBody,
+    session: Session = Depends(get_session),
+):
+    """Crée ou met à jour le bonus exceptionnel d'un adhérent/groupe. amount <= 0 = suppression."""
+    key = (entity_key or "").strip().upper()
+    if not key:
+        raise HTTPException(status_code=400, detail="entity_key requis")
+    existing = session.exec(
+        select(BonusSetting).where(
+            BonusSetting.entity_key == key,
+            BonusSetting.entity_type == entity_type,
+        )
+    ).first()
+    if body.amount <= 0:
+        if existing:
+            session.delete(existing)
+            session.commit()
+        return {"ok": True, "deleted": True}
+    now = datetime.now()
+    designation = (body.designation or "").strip() or "Bonus exceptionnel — accord direction"
+    if existing:
+        existing.amount = body.amount
+        existing.designation = designation
+        existing.updated_at = now
+        session.add(existing)
+    else:
+        session.add(BonusSetting(
+            entity_key=key,
+            entity_type=entity_type,
+            amount=body.amount,
+            designation=designation,
+            updated_at=now,
+        ))
+    session.commit()
+    return {"ok": True}
+
+
+@router.delete("/bonuses/{entity_type}/{entity_key}")
+async def delete_bonus(
+    entity_type: str,
+    entity_key: str,
+    session: Session = Depends(get_session),
+):
+    """Supprime le bonus exceptionnel d'un adhérent/groupe."""
+    key = (entity_key or "").strip().upper()
+    existing = session.exec(
+        select(BonusSetting).where(
+            BonusSetting.entity_key == key,
+            BonusSetting.entity_type == entity_type,
         )
     ).first()
     if existing:

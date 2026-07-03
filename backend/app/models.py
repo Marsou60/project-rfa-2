@@ -180,5 +180,15 @@ class CotisationSetting(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class BonusSetting(SQLModel, table=True):
+    """Bonus exceptionnel par adhérent/groupe — s'ajoute au total RFA (accord direction)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entity_key: str = Field(index=True)   # code_union ou groupe_client — MAJUSCULES
+    entity_type: str = Field(index=True)  # 'client' ou 'group'
+    amount: float = Field(default=0.0)
+    designation: Optional[str] = Field(default="Bonus exceptionnel — accord direction")
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
 
 

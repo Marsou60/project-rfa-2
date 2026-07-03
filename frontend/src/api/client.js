@@ -289,7 +289,7 @@ function parseFastApiErrorBodyText(text) {
   }
 }
 
-export const exportEntityPdf = async (importId, mode, entityId, contractId = null, cotisationOpts = undefined) => {
+export const exportEntityPdf = async (importId, mode, entityId, contractId = null, cotisationOpts = undefined, bonusOpts = undefined) => {
   const path = `/imports/${encodeURIComponent(String(importId))}/entity/pdf`
   const body = {
     mode: String(mode),
@@ -306,6 +306,13 @@ export const exportEntityPdf = async (importId, mode, entityId, contractId = nul
       body.cotisation_facturee = Boolean(cotisationOpts.facturee)
       body.cotisation_deduite = Boolean(cotisationOpts.deduite)
       body.cotisation_mode = body.cotisation_facturee && body.cotisation_deduite ? 'facture' : 'offerte'
+    }
+  }
+  if ((mode === 'client' || mode === 'group') && bonusOpts && Number(bonusOpts.amount) > 0) {
+    const bAmt = Number(bonusOpts.amount)
+    if (Number.isFinite(bAmt) && bAmt > 0) {
+      body.bonus_amount = bAmt
+      if (bonusOpts.designation) body.bonus_label = String(bonusOpts.designation)
     }
   }
   let response
@@ -376,6 +383,31 @@ export const deleteCotisation = async (entityType, entityKey) => {
   const key = String(entityKey || '').trim().toUpperCase()
   const response = await api.delete(
     `/cotisations/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`,
+  )
+  return response.data
+}
+
+// ── Bonus exceptionnel (stocké en DB — partagé browser / Tauri / prod) ───────────
+
+export const getBonuses = async (entityType = null) => {
+  const params = entityType ? { entity_type: entityType } : {}
+  const response = await api.get('/bonuses', { params })
+  return response.data // [{entity_key, entity_type, amount, designation}, ...]
+}
+
+export const upsertBonus = async (entityType, entityKey, data) => {
+  const key = String(entityKey || '').trim().toUpperCase()
+  const response = await api.put(
+    `/bonuses/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`,
+    { amount: Number(data.amount) || 0, designation: data.designation || 'Bonus exceptionnel — accord direction' },
+  )
+  return response.data
+}
+
+export const deleteBonus = async (entityType, entityKey) => {
+  const key = String(entityKey || '').trim().toUpperCase()
+  const response = await api.delete(
+    `/bonuses/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`,
   )
   return response.data
 }

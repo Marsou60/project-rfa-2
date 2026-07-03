@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -29,6 +29,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [plansRequested, setPlansRequested] = useState(false)
   const loadIdRef = useRef(null)
   const [cotisationMap, setCotisationMap] = useState({})
+  const [bonusMap, setBonusMap] = useState({})
   const [activeViewTab, setActiveViewTab] = useState('monthly')
 
   const refreshCotisationMap = useCallback(async () => {
@@ -50,9 +51,23 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     }
   }, [importId, mode])
 
+  const refreshBonusMap = useCallback(async () => {
+    try {
+      const list = await getBonuses(mode)
+      const map = {}
+      for (const item of list || []) {
+        map[item.entity_key] = { amount: item.amount, designation: item.designation }
+      }
+      setBonusMap(map)
+    } catch {
+      setBonusMap({})
+    }
+  }, [mode])
+
   useEffect(() => {
     refreshCotisationMap()
-  }, [refreshCotisationMap])
+    refreshBonusMap()
+  }, [refreshCotisationMap, refreshBonusMap])
 
   useEffect(() => {
     const onFocus = () => refreshCotisationMap()
@@ -362,6 +377,27 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     return Math.max(base - cotisationInfo.amount, 0)
   }, [rfaTotalDisplay, cotisationInfo])
 
+  const bonusInfo = useMemo(() => {
+    if (!entity) return { amount: 0, designation: '' }
+    const primary = (mode === 'group'
+      ? (entity.groupe_client || entity.id || '')
+      : (entity.code_union || entity.id || '')
+    ).toString().trim().toUpperCase()
+    let row = bonusMap[primary]
+    if (!row && primary) {
+      for (const [k, v] of Object.entries(bonusMap)) {
+        if ((k || '').toString().trim().toUpperCase() === primary) { row = v; break }
+      }
+    }
+    if (!row || !row.amount || row.amount <= 0) return { amount: 0, designation: '' }
+    return { amount: Number(row.amount), designation: row.designation || '' }
+  }, [bonusMap, mode, entity])
+
+  const rfaCardTotal = useMemo(() => {
+    const base = cotisationInfo.isFacture ? rfaTotalWithCotisation : rfaTotalDisplay
+    return base + (bonusInfo.amount > 0 ? bonusInfo.amount : 0)
+  }, [cotisationInfo, rfaTotalWithCotisation, rfaTotalDisplay, bonusInfo])
+
   // Refs pour scroll
   const rowRefs = useRef({})
   
@@ -502,6 +538,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
                     entityId,
                     entity.contract_applied?.id,
                     amount > 0 ? { amount, facturee, deduite } : undefined,
+                    bonusInfo.amount > 0 ? { amount: bonusInfo.amount, designation: bonusInfo.designation } : undefined,
                   )
                 } catch (err) {
                   alert('Erreur lors de l\'export PDF: ' + (err.response?.data?.detail || err.message))
@@ -570,8 +607,10 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             </div>
             <div className="card p-4 bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
               <div className="text-emerald-100 text-xs">💰 RFA Totale{supplierFilter ? ` (${supplierFilter})` : ''}</div>
-              <div className="text-xl font-black">{formatAmount(cotisationInfo.isFacture ? rfaTotalWithCotisation : rfaTotalDisplay)}</div>
-              <div className="text-emerald-100 text-xs">{formatPercent(rfaRateDisplay)}</div>
+              <div className="text-xl font-black">{formatAmount(rfaCardTotal)}</div>
+              <div className="text-emerald-100 text-xs">
+                {formatPercent(rfaRateDisplay)}{bonusInfo.amount > 0 ? ` • dont bonus +${formatAmount(bonusInfo.amount)}` : ''}
+              </div>
             </div>
             <div className={`card p-4 text-white ${nearCount > 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-gray-400 to-gray-500'}`}>
               <div className="text-white/80 text-xs">🎯 Gain à portée</div>
@@ -579,6 +618,23 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               <div className="text-white/80 text-xs">{nearCount} objectif{nearCount > 1 ? 's' : ''} proche{nearCount > 1 ? 's' : ''}</div>
             </div>
           </div>
+
+          {/* Bonus exceptionnel : bandeau bien visible sous les KPI */}
+          {bonusInfo.amount > 0 && (
+            <div className="rounded-xl border-2 px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-amber-50 border-amber-300 text-amber-900">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide opacity-80">🎁 Bonus exceptionnel</div>
+                <div className="text-lg font-black">+{formatAmount(bonusInfo.amount)}</div>
+                <p className="text-sm mt-1">
+                  <span className="font-semibold text-amber-800">{bonusInfo.designation || 'Bonus exceptionnel — accord direction'}</span> — montant
+                  accordé à titre exceptionnel, venant s&apos;ajouter à votre RFA.
+                </p>
+              </div>
+              <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-amber-200 text-amber-900">
+                Accordé
+              </span>
+            </div>
+          )}
 
           {/* Cotisation offerte : bandeau sous les KPI (même réglage que la liste adhérents) */}
           {cotisationInfo.amount > 0 && cotisationInfo.isOfferte && (
