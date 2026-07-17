@@ -100,15 +100,10 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
         return 0
 
     _ensure_table()
-    col_list = ", ".join(f'"{c}"' for c in COLUMNS)
-    placeholders = ", ".join(f":{c}" for c in COLUMNS)
-    insert_sql = f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES ({placeholders})'
-
-    from sqlalchemy import text
     forced_month = _norm_month(reporting_month)
 
-    def _clean(row: Dict) -> Dict:
-        clean = {}
+    def _clean_tuple(row: Dict) -> tuple:
+        vals = []
         for col in COLUMNS:
             val = row.get(col)
             if col == "ca":
@@ -122,29 +117,55 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
                 val = forced_month
             else:
                 val = str(val).strip() if val is not None else None
-            clean[col] = val
-        return clean
+            vals.append(val)
+        return tuple(vals)
 
-    # Écriture en flux : on ne construit jamais une seconde copie complète des 65k lignes.
-    # 1) purge dans sa propre transaction, 2) insertion par lots avec commits progressifs
-    #    (évite la transaction géante qui saturait la mémoire du conteneur Railway).
-    BATCH = 500
+    col_list = ", ".join(f'"{c}"' for c in COLUMNS)
+
+    # PostgreSQL/Supabase : insertion multi-lignes ultra-rapide via execute_values
+    # (psycopg2 executemany = ligne par ligne = trop lent → dépassement de délai).
+    if engine.dialect.name == "postgresql":
+        from psycopg2.extras import execute_values
+        raw = engine.raw_connection()
+        try:
+            cur = raw.cursor()
+            cur.execute(f'DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"')
+            sql = f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES %s'
+            BATCH = 1000
+            total = 0
+            batch = []
+            for row in rows:
+                batch.append(_clean_tuple(row))
+                if len(batch) >= BATCH:
+                    execute_values(cur, sql, batch, page_size=BATCH)
+                    total += len(batch)
+                    batch = []
+            if batch:
+                execute_values(cur, sql, batch, page_size=len(batch))
+                total += len(batch)
+            raw.commit()
+            return total
+        finally:
+            raw.close()
+
+    # SQLite (dev local) : streaming par lots
+    from sqlalchemy import text
+    placeholders = ", ".join(f":{c}" for c in COLUMNS)
+    insert_sql = f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES ({placeholders})'
     with engine.begin() as conn:
         conn.execute(text(f'DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"'))
-
-    total = 0
-    batch: List[Dict] = []
-    for row in rows:
-        batch.append(_clean(row))
-        if len(batch) >= BATCH:
-            with engine.begin() as conn:
+        BATCH = 500
+        total = 0
+        batch = []
+        for row in rows:
+            batch.append({c: v for c, v in zip(COLUMNS, _clean_tuple(row))})
+            if len(batch) >= BATCH:
                 conn.execute(text(insert_sql), batch)
-            total += len(batch)
-            batch = []
-    if batch:
-        with engine.begin() as conn:
+                total += len(batch)
+                batch = []
+        if batch:
             conn.execute(text(insert_sql), batch)
-        total += len(batch)
+            total += len(batch)
     return total
 
 

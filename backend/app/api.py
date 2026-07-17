@@ -3370,16 +3370,19 @@ async def import_pure_data_cumulative_excel(
         from app.services.pure_data_import import load_pure_data
         from app.services.pure_data_cumulative_supabase import write_cumulative_rows
         from app.storage import _pure_data_imports
+        from starlette.concurrency import run_in_threadpool
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
 
-        rows, columns, _mapping = load_pure_data(tmp_path)
+        # Travail lourd (lecture Excel + insertion DB) exécuté hors de la boucle async
+        # pour ne pas bloquer /health (sinon Railway redémarre le conteneur en plein import).
+        rows, columns, _mapping = await run_in_threadpool(load_pure_data, tmp_path)
         if not rows:
             raise HTTPException(status_code=400, detail="Aucune donnee exploitable dans le fichier.")
 
-        inserted = write_cumulative_rows(rows, reporting_month=reporting_month)
+        inserted = await run_in_threadpool(write_cumulative_rows, rows, reporting_month)
 
         _upsert_setting(session, PURE_DATA_CUMULATIVE_MONTH_KEY, str(reporting_month))
         _upsert_setting(session, PURE_DATA_CUMULATIVE_YEAR_KEY, str(reporting_year))
