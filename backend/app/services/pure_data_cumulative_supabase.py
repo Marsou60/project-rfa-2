@@ -104,9 +104,10 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
     placeholders = ", ".join(f":{c}" for c in COLUMNS)
     insert_sql = f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES ({placeholders})'
 
-    clean_rows = []
+    from sqlalchemy import text
     forced_month = _norm_month(reporting_month)
-    for row in rows:
+
+    def _clean(row: Dict) -> Dict:
         clean = {}
         for col in COLUMNS:
             val = row.get(col)
@@ -122,15 +123,29 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
             else:
                 val = str(val).strip() if val is not None else None
             clean[col] = val
-        clean_rows.append(clean)
+        return clean
 
-    from sqlalchemy import text
+    # Écriture en flux : on ne construit jamais une seconde copie complète des 65k lignes.
+    # 1) purge dans sa propre transaction, 2) insertion par lots avec commits progressifs
+    #    (évite la transaction géante qui saturait la mémoire du conteneur Railway).
     BATCH = 500
     with engine.begin() as conn:
         conn.execute(text(f'DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"'))
-        for i in range(0, len(clean_rows), BATCH):
-            conn.execute(text(insert_sql), clean_rows[i:i + BATCH])
-    return len(clean_rows)
+
+    total = 0
+    batch: List[Dict] = []
+    for row in rows:
+        batch.append(_clean(row))
+        if len(batch) >= BATCH:
+            with engine.begin() as conn:
+                conn.execute(text(insert_sql), batch)
+            total += len(batch)
+            batch = []
+    if batch:
+        with engine.begin() as conn:
+            conn.execute(text(insert_sql), batch)
+        total += len(batch)
+    return total
 
 
 def read_cumulative_rows() -> Tuple[List[Dict], List[str], Dict[str, str]]:
