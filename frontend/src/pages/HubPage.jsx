@@ -18,7 +18,7 @@ import {
   Gift,
 } from 'lucide-react'
 import { getUnionEntity, getPureDataMonthlyEvolution, getSetting } from '../api/client'
-import { CA_OBJECTIF_2026_KEY, CA_OBJECTIF_2026_DEFAULT } from './SettingsPage'
+import { CA_OBJECTIF_2026_KEY, CA_OBJECTIF_2026_DEFAULT, CA_2025_REALISE_KEY, CA_2025_REALISE_DEFAULT } from './SettingsPage'
 
 /* ── Compteur animé ── */
 function useAnimatedCounter(target, duration = 1600) {
@@ -42,9 +42,11 @@ function useAnimatedCounter(target, duration = 1600) {
 const fmtEur = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
 const fmtCompact = (v) => {
   const n = Number(v || 0)
-  if (n >= 1_000_000) return `${(n / 1_000_000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M€`
-  if (n >= 1_000) return `${(n / 1_000).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} k€`
-  return `${n} €`
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M€`
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} k€`
+  return `${sign}${Math.round(abs).toLocaleString('fr-FR')} €`
 }
 const MONTHS = ['', 'J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 
@@ -63,21 +65,25 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
     setLoading(true)
     Promise.all([
       getSetting(CA_OBJECTIF_2026_KEY).catch(() => null),
+      getSetting(CA_2025_REALISE_KEY).catch(() => null),
       getPureDataMonthlyEvolution({ yearCurrent: 2026, yearPrevious: 2025 }).catch(() => null),
       currentImportId ? getUnionEntity(currentImportId).catch(() => null) : Promise.resolve(null),
-    ]).then(([objRes, evo, union]) => {
+    ]).then(([objRes, ca25Res, evo, union]) => {
       if (!alive) return
       const objectif = Number(objRes?.value) || CA_OBJECTIF_2026_DEFAULT
+      const ca2025Realise = Number(ca25Res?.value) || CA_2025_REALISE_DEFAULT
       const months = evo?.months || []
       const ca2026 = months.reduce((s, m) => s + (m.current || 0), 0)
-      const ca2025 = months.reduce((s, m) => s + (m.previous || 0), 0)
-      const delta = ca2026 - ca2025
-      const deltaPct = ca2025 > 0 ? (delta / ca2025) * 100 : null
+      // Comparaison MÊME PÉRIODE (2026 YTD vs 2025 sur les mêmes mois)
+      const ca2025SamePeriod = months.reduce((s, m) => s + (m.previous || 0), 0)
+      const delta = ca2026 - ca2025SamePeriod
+      const deltaPct = ca2025SamePeriod > 0 ? (delta / ca2025SamePeriod) * 100 : null
       const topClients = [...(evo?.clients || [])].sort((a, b) => (b.delta || 0) - (a.delta || 0)).slice(0, 3)
       setData({
         objectif,
         ca2026,
-        ca2025,
+        ca2025Realise,
+        ca2025SamePeriod,
         delta,
         deltaPct,
         months,
@@ -162,18 +168,18 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
                 </div>
               </div>
 
-              {/* Comparatif N-1 */}
+              {/* Comparatif même période N-1 */}
               {data?.hasMonthly && (
                 <div className="mt-5 flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-glass-muted text-sm">vs 2025 :</span>
+                    <span className="text-glass-muted text-sm">vs 2025 (même période) :</span>
                     <span className={`inline-flex items-center gap-1 text-sm font-bold ${data.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                       {data.delta >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                       {data.delta >= 0 ? '+' : ''}{fmtCompact(data.delta)}
-                      {data.deltaPct != null && <span className="opacity-80">({data.delta >= 0 ? '+' : ''}{data.deltaPct.toFixed(1)} %)</span>}
+                      {data.deltaPct != null && <span className="opacity-80">({data.deltaPct >= 0 ? '+' : ''}{data.deltaPct.toFixed(1)} %)</span>}
                     </span>
                   </div>
-                  <span className="text-glass-muted text-sm">CA 2025 : <strong className="text-white/80">{fmtCompact(data.ca2025)}</strong></span>
+                  <span className="text-glass-muted text-sm">CA 2025 réalisé : <strong className="text-white/80">{fmtCompact(data.ca2025Realise)}</strong></span>
                 </div>
               )}
             </div>
@@ -210,8 +216,8 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
         />
         <StatCard
           icon={<Euro className="w-5 h-5" />}
-          label="CA 2025 (réf.)"
-          value={fmtCompact(data?.ca2025 || 0)}
+          label="CA 2025 réalisé"
+          value={fmtCompact(data?.ca2025Realise || 0)}
           accent="from-cyan-500 to-teal-600"
         />
         <StatCard

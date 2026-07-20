@@ -5,6 +5,8 @@ import { useUpdater } from '../components/AppUpdater'
 
 export const CA_OBJECTIF_2026_KEY = 'ca_objectif_2026'
 export const CA_OBJECTIF_2026_DEFAULT = 21000000
+export const CA_2025_REALISE_KEY = 'ca_2025_realise'
+export const CA_2025_REALISE_DEFAULT = 19134505
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined
 
@@ -17,6 +19,7 @@ function SettingsPage() {
   const [formError, setFormError] = useState(null)
   const [success, setSuccess] = useState(null)
   const [caObjectif, setCaObjectif] = useState(String(CA_OBJECTIF_2026_DEFAULT))
+  const [ca2025, setCa2025] = useState(String(CA_2025_REALISE_DEFAULT))
   const [savingObjectif, setSavingObjectif] = useState(false)
   const fileRef = useRef(null)
 
@@ -39,23 +42,32 @@ function SettingsPage() {
     } catch (err) {
       // pas encore défini → défaut
     }
+    try {
+      const ca25Result = await getSetting(CA_2025_REALISE_KEY)
+      if (ca25Result?.value) setCa2025(String(ca25Result.value))
+    } catch (err) {
+      // pas encore défini → défaut
+    }
   }
 
   const handleSaveObjectif = async () => {
-    const clean = Number(String(caObjectif).replace(/[^\d]/g, '')) || 0
-    if (clean <= 0) {
-      setFormError('Objectif invalide (montant en euros).')
+    const cleanObj = Number(String(caObjectif).replace(/[^\d]/g, '')) || 0
+    const cleanCa25 = Number(String(ca2025).replace(/[^\d]/g, '')) || 0
+    if (cleanObj <= 0 || cleanCa25 <= 0) {
+      setFormError('Montants invalides (en euros).')
       return
     }
     setSavingObjectif(true)
     setFormError(null)
     setSuccess(null)
     try {
-      await setSetting(CA_OBJECTIF_2026_KEY, String(clean))
-      setCaObjectif(String(clean))
-      setSuccess('Objectif CA 2026 mis à jour.')
+      await setSetting(CA_OBJECTIF_2026_KEY, String(cleanObj))
+      await setSetting(CA_2025_REALISE_KEY, String(cleanCa25))
+      setCaObjectif(String(cleanObj))
+      setCa2025(String(cleanCa25))
+      setSuccess('Objectifs & références mis à jour.')
     } catch (err) {
-      setFormError(err.response?.data?.detail || "Erreur lors de l'enregistrement de l'objectif")
+      setFormError(err.response?.data?.detail || "Erreur lors de l'enregistrement")
     } finally {
       setSavingObjectif(false)
     }
@@ -208,18 +220,18 @@ function SettingsPage() {
         </div>
       </div>
 
-      {/* Objectif commercial CA 2026 */}
+      {/* Objectifs & références commerciales */}
       <div className="glass-card p-6">
         <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
           <Target className="w-5 h-5 text-emerald-400" />
-          Objectif commercial — CA 2026
+          Objectifs & références commerciales
         </h2>
         <p className="text-sm text-glass-secondary mb-4">
-          Objectif de chiffre d'affaires 2026 fixé par la direction. Affiché en évidence sur la page d'accueil (barre de progression).
+          Valeurs fixées par la direction, affichées sur la page d'accueil (jauge d'objectif et référence N-1).
         </p>
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="block text-xs text-glass-muted mb-1">Objectif (€)</label>
+            <label className="block text-xs text-glass-muted mb-1">Objectif CA 2026 (€)</label>
             <input
               type="number"
               min="0"
@@ -232,6 +244,20 @@ function SettingsPage() {
               {(Number(String(caObjectif).replace(/[^\d]/g, '')) || 0).toLocaleString('fr-FR')} €
             </p>
           </div>
+          <div>
+            <label className="block text-xs text-glass-muted mb-1">CA 2025 réalisé (€)</label>
+            <input
+              type="number"
+              min="0"
+              step="100000"
+              value={ca2025}
+              onChange={(e) => setCa2025(e.target.value)}
+              className="glass-input w-56"
+            />
+            <p className="text-xs text-glass-muted mt-1">
+              {(Number(String(ca2025).replace(/[^\d]/g, '')) || 0).toLocaleString('fr-FR')} €
+            </p>
+          </div>
           <button
             type="button"
             onClick={handleSaveObjectif}
@@ -239,7 +265,7 @@ function SettingsPage() {
             className="glass-btn-primary inline-flex items-center gap-2"
           >
             {savingObjectif ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            Enregistrer l'objectif
+            Enregistrer
           </button>
         </div>
       </div>
