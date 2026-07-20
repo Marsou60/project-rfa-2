@@ -6,15 +6,18 @@ export function useUpdater() {
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState(null)
   const [error, setError] = useState(null)
+  const [noUpdate, setNoUpdate] = useState(false)
 
   const checkForUpdates = async () => {
     if (typeof window === 'undefined' || (!window.__TAURI__ && !window.__TAURI_INTERNALS__)) return null
     setChecking(true)
     setError(null)
+    setNoUpdate(false)
     try {
       const { check } = await import('@tauri-apps/plugin-updater')
       const u = await check()
       setUpdate(u || null)
+      setNoUpdate(!u)
       return u
     } catch (e) {
       console.error('[Updater] checkForUpdates error:', e)
@@ -63,7 +66,7 @@ export function useUpdater() {
     }
   }
 
-  return { update, checking, downloading, progress, error, checkForUpdates, downloadAndInstall, setUpdate }
+  return { update, checking, downloading, progress, error, noUpdate, checkForUpdates, downloadAndInstall, setUpdate }
 }
 
 
@@ -116,15 +119,24 @@ export function UpdateProgressOverlay({ progress, version, error }) {
 }
 
 
-export function AppUpdaterEffect() {
-  const { checkForUpdates, update, downloadAndInstall, downloading, progress, error } = useUpdater()
+export function AppUpdaterEffect({ updater }) {
+  // Utilise l'instance partagée fournie par App (sinon fallback autonome)
+  const own = useUpdater()
+  const shared = updater || own
+  const { checkForUpdates, update, downloadAndInstall, downloading, progress, error } = shared
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined' || (!window.__TAURI__ && !window.__TAURI_INTERNALS__)) return
     const t = setTimeout(() => { checkForUpdates() }, 3000)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Réaffiche la modale si une nouvelle update est détectée après un check manuel
+  useEffect(() => {
+    if (update) setDismissed(false)
+  }, [update])
 
   if (downloading) {
     return <UpdateProgressOverlay progress={progress} version={update?.version} error={error} />

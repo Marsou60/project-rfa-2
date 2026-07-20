@@ -50,7 +50,8 @@ import { getSetting, getImageUrl, getRfaSheetsCurrent } from './api/client'
 function AppContent() {
   const { user, loading, logout, isAdmin, isCommercial, isAdherent, isAuthenticated } = useAuth()
   const { supplierFilter, setSupplierFilter } = useSupplierFilter()
-  const { update, checking, downloading, progress, error: updateError, checkForUpdates, downloadAndInstall } = useUpdater()
+  const updater = useUpdater()
+  const { update, checking, downloading, progress, error: updateError, noUpdate, checkForUpdates, downloadAndInstall } = updater
   const [isTauri, setIsTauri] = useState(false)
   useEffect(() => {
     // Détection après montage — Tauri injecte __TAURI__ de façon async
@@ -196,7 +197,7 @@ function AppContent() {
 
   return (
     <div className="glass-background">
-      <AppUpdaterEffect />
+      <AppUpdaterEffect updater={updater} />
       {/* Overlay progression mise à jour (depuis bouton header) */}
       {downloading && (
         <UpdateProgressOverlay progress={progress} version={update?.version} error={updateError} />
@@ -587,11 +588,19 @@ function AppContent() {
                   <button
                     onClick={checkForUpdates}
                     disabled={checking}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all border border-white/10"
-                    title="Vérifier les mises à jour"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${
+                      updateError
+                        ? 'bg-rose-500/15 border-rose-400/30 text-rose-200'
+                        : noUpdate
+                          ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-200'
+                          : 'bg-white/10 hover:bg-white/20 text-white/70 hover:text-white border-white/10'
+                    }`}
+                    title={updateError ? `Erreur : ${updateError}` : (noUpdate ? 'Application à jour' : 'Vérifier les mises à jour')}
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
-                    <span className="hidden sm:inline">{checking ? 'Vérification…' : 'Mise à jour'}</span>
+                    <span className="hidden sm:inline">
+                      {checking ? 'Vérification…' : updateError ? 'Erreur MàJ' : noUpdate ? 'À jour ✓' : 'Mise à jour'}
+                    </span>
                   </button>
                 )
               )}
