@@ -1794,10 +1794,23 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
             <h3 className="text-white font-black text-lg">RFA 2026 <span className="text-white/70 text-sm font-semibold">(estimée — Pure Data)</span></h3>
             <p className="text-indigo-100 text-xs mt-0.5">Contrat appliqué : {data.contract_applied?.name || 'Défaut'} · année {data.year}</p>
           </div>
+          <span className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/25 border border-amber-200/40 text-amber-50 text-xs font-bold">
+            🚧 En cours de paramétrage
+          </span>
         </div>
       </div>
 
       <div className="p-5 space-y-6">
+        {/* Bandeau d'avertissement */}
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
+          <span className="text-lg leading-none">⚠️</span>
+          <p className="text-sm text-amber-900">
+            <strong>Module en cours de paramétrage.</strong> Les montants RFA 2026 sont <strong>provisoires</strong> :
+            le mapping des tri-partites et les paliers de contrat sont en cours de validation. Ne pas communiquer
+            ces chiffres tels quels aux adhérents pour l'instant.
+          </p>
+        </div>
+
         {/* KPI */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
