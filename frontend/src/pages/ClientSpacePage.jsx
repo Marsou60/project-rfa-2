@@ -1123,20 +1123,87 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
 }
 
 /* ── Évolution mensuelle 2025/2026 — composant sécurisé ── */
+/* ── Chiffres mensuels — helpers visuels (light) ── */
+const cmsFmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
+const cmsCompact = (v) => {
+  const n = Number(v || 0), abs = Math.abs(n), sign = n < 0 ? '-' : ''
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M€`
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} k€`
+  return `${sign}${Math.round(abs).toLocaleString('fr-FR')} €`
+}
+const cmsDeltaPct = (v) => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(1)} %`
+const CMS_MONTHS = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
+
+function cmsResolveLogo(platform, logos) {
+  const p = (platform || '').toString().trim().toUpperCase()
+  if (!p || !logos) return null
+  if (logos[p]) return logos[p]
+  for (const k of Object.keys(logos)) {
+    const ku = k.toUpperCase()
+    if (p.startsWith(ku) || p.includes(ku) || ku.includes(p)) return logos[k]
+  }
+  return null
+}
+
+function CmsPlatformLogo({ platform, logos, size = 28 }) {
+  const url = cmsResolveLogo(platform, logos)
+  const px = `${size}px`
+  if (url) {
+    return <img src={getImageUrl(url)} alt={platform} onError={(e) => { e.target.style.display = 'none' }} className="rounded-lg object-contain bg-white border border-gray-100 shrink-0" style={{ width: px, height: px, padding: 2 }} />
+  }
+  return (
+    <span className="rounded-lg shrink-0 flex items-center justify-center text-[10px] font-black text-white bg-gradient-to-br from-blue-500 to-indigo-600" style={{ width: px, height: px }}>
+      {(platform || '?').slice(0, 3).toUpperCase()}
+    </span>
+  )
+}
+
+/* Histogramme groupé N vs N-1 par mois (light) */
+function CmsGroupedBars({ months, yearN, yearN1, height = 150 }) {
+  const data = (months || []).filter((m) => (m.current || 0) > 0 || (m.previous || 0) > 0)
+  const max = data.reduce((mx, m) => Math.max(mx, m.current || 0, m.previous || 0), 0) || 1
+  if (!data.length) return <p className="text-sm text-gray-400">Aucune donnée.</p>
+  return (
+    <div>
+      <div className="flex items-end gap-3 overflow-x-auto pb-1" style={{ height: height + 26 }}>
+        {data.map((m) => {
+          const hC = Math.max(((m.current || 0) / max) * height, 2)
+          const hP = Math.max(((m.previous || 0) / max) * height, 2)
+          const up = (m.delta || 0) >= 0
+          return (
+            <div key={m.month} className="flex flex-col items-center gap-1 shrink-0" style={{ width: 44 }}>
+              <div className="flex items-end gap-1" style={{ height }}>
+                <div title={`${yearN1} : ${cmsFmt(m.previous)}`} style={{ height: hP, width: 13 }} className="rounded-t bg-slate-200" />
+                <div title={`${yearN} : ${cmsFmt(m.current)}`} style={{ height: hC, width: 13 }} className={`rounded-t ${up ? 'bg-gradient-to-t from-emerald-500 to-teal-400' : 'bg-gradient-to-t from-rose-500 to-rose-400'}`} />
+              </div>
+              <span className="text-[10px] text-gray-500">{CMS_MONTHS[m.month]}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex items-center gap-4 text-[11px] text-gray-500 mt-1">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-500" />{yearN}</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-slate-200" />{yearN1}</span>
+      </div>
+    </div>
+  )
+}
+
 function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
   const { supplierFilter } = useSupplierFilter()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [expandedPlatform, setExpandedPlatform] = useState(null)
   const [expandedStore, setExpandedStore] = useState(null)
-  const [expandedStorePlatform, setExpandedStorePlatform] = useState(null)
+  const [logos, setLogos] = useState({})
 
-  const MONTHS = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc']
-  const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
-  const fmtD = (v) => { if (v == null) return '—'; const s = v > 0 ? '+' : ''; return `${s}${fmt(v)}` }
-  const fmtP = (v) => { if (v == null) return '—'; const s = v > 0 ? '+' : ''; return `${s}${Number(v).toFixed(1)}%` }
-  const dc = (v) => v == null ? 'text-gray-400' : v > 0 ? 'text-emerald-600' : v < 0 ? 'text-rose-600' : 'text-gray-400'
-  const bg = (v) => v == null ? '' : v > 0 ? 'bg-emerald-50' : v < 0 ? 'bg-rose-50' : ''
+  useEffect(() => {
+    getSupplierLogos().then((list) => {
+      const map = {}
+      for (const l of list || []) if (l.supplier_key) map[l.supplier_key.toUpperCase()] = l.image_url
+      setLogos(map)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!codeUnion && !groupeClient) { setData(null); return }
@@ -1144,7 +1211,6 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
     setData(null)
     setExpandedPlatform(null)
     setExpandedStore(null)
-    setExpandedStorePlatform(null)
     getClientMonthlyEvolution({
       codeUnion,
       groupeClient,
@@ -1168,150 +1234,78 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
 
   const yearN = data.year_current
   const yearN1 = data.year_previous
+  const t = data.totals || {}
+  const platMax = (data.platforms || []).reduce((mx, p) => Math.max(mx, p.total_current || 0), 0) || 1
+  const storeMax = (data.stores || []).reduce((mx, s) => Math.max(mx, s.total_current || 0), 0) || 1
 
   return (
     <div className="rounded-2xl border border-blue-100 bg-white shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h3 className="text-white font-bold text-base">Évolution mensuelle {yearN} vs {yearN1}</h3>
-            <p className="text-blue-200 text-xs mt-0.5">
-              Chiffres d&apos;affaires par fournisseur et par mois
-              {supplierFilter ? ` — vue ${supplierFilter} uniquement` : ''}
-            </p>
-          </div>
-          {data.totals && (
-            <div className="flex items-center gap-4 text-sm">
-              <div className="text-right">
-                <div className="text-blue-200 text-xs">CA {yearN}</div>
-                <div className="text-white font-bold">{fmt(data.totals.current)}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-blue-200 text-xs">CA {yearN1}</div>
-                <div className="text-white/70 font-semibold">{fmt(data.totals.previous)}</div>
-              </div>
-              <div className={`text-right font-bold text-base ${data.totals.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                {fmtD(data.totals.delta)}
-                <span className="text-xs ml-1">({fmtP(data.totals.delta_pct)})</span>
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 px-6 py-5">
+        <h3 className="text-white font-black text-lg">Chiffres mensuels {yearN} vs {yearN1}</h3>
+        <p className="text-blue-100 text-xs mt-0.5">
+          Évolution du chiffre d'affaires par mois et par fournisseur{supplierFilter ? ` — vue ${supplierFilter}` : ''}
+        </p>
       </div>
 
-      <div className="p-5 space-y-5">
-        {/* Tableau mois par mois */}
-        {data.months?.length > 0 && (
-          <div>
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-              Mois par mois{supplierFilter ? ` — ${supplierFilter}` : ' — toutes plateformes'}
-            </h4>
-            <div className="overflow-x-auto rounded-xl border border-gray-100">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    <th className="text-left px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">Mois</th>
-                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">CA {yearN}</th>
-                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">CA {yearN1}</th>
-                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">Delta</th>
-                    <th className="text-right px-4 py-2.5 text-gray-500 font-semibold text-xs uppercase">%</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.months.map((m, i) => (
-                    <tr key={m.month} className={`border-b border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/50'} ${bg(m.delta)}`}>
-                      <td className="px-4 py-2.5 font-semibold text-gray-700">{MONTHS[m.month]}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
-                      <td className={`px-4 py-2.5 text-right font-bold font-mono ${dc(m.delta)}`}>
-                        {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
-                      </td>
-                      <td className={`px-4 py-2.5 text-right text-xs ${dc(m.delta_pct)}`}>
-                        {m.current === 0 && m.previous === 0 ? '' : fmtP(m.delta_pct)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-gray-200 bg-gray-50">
-                    <td className="px-4 py-2.5 font-black text-gray-700 text-xs uppercase">Total</td>
-                    <td className="px-4 py-2.5 text-right font-black font-mono text-gray-900">{fmt(data.totals?.current)}</td>
-                    <td className="px-4 py-2.5 text-right font-bold font-mono text-gray-400">{fmt(data.totals?.previous)}</td>
-                    <td className={`px-4 py-2.5 text-right font-black font-mono ${dc(data.totals?.delta)}`}>{fmtD(data.totals?.delta)}</td>
-                    <td className={`px-4 py-2.5 text-right text-xs font-bold ${dc(data.totals?.delta_pct)}`}>{fmtP(data.totals?.delta_pct)}</td>
-                  </tr>
-                </tfoot>
-              </table>
+      <div className="p-5 space-y-6">
+        {/* KPI cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
+            <div className="text-xs font-semibold text-blue-700">CA {yearN} (à date)</div>
+            <div className="text-2xl font-black text-blue-900">{cmsFmt(t.current)}</div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-semibold text-gray-500">CA {yearN1} (même période)</div>
+            <div className="text-2xl font-black text-gray-700">{cmsFmt(t.previous)}</div>
+          </div>
+          <div className={`rounded-xl border p-4 ${(t.delta || 0) >= 0 ? 'border-emerald-100 bg-emerald-50' : 'border-rose-100 bg-rose-50'}`}>
+            <div className="text-xs font-semibold text-gray-500">Évolution</div>
+            <div className={`text-2xl font-black ${(t.delta || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {(t.delta || 0) >= 0 ? '+' : ''}{cmsCompact(t.delta)}
             </div>
+            <div className={`text-xs font-semibold ${(t.delta || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{cmsDeltaPct(t.delta_pct)}</div>
+          </div>
+        </div>
+
+        {/* Histogramme mensuel */}
+        {data.months?.length > 0 && (
+          <div className="rounded-xl border border-gray-200 p-4">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Évolution mois par mois</h4>
+            <CmsGroupedBars months={data.months} yearN={yearN} yearN1={yearN1} />
           </div>
         )}
 
-        {/* Détail par plateforme */}
+        {/* Détail par fournisseur (cartes + logos + barres) */}
         {data.platforms?.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-              Détail par fournisseur — cliquez pour voir mois par mois
-            </h4>
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Par fournisseur — cliquez pour le détail mensuel</h4>
             <div className="space-y-2">
               {data.platforms.map((p) => {
                 const isOpen = expandedPlatform === p.platform
+                const up = (p.delta || 0) >= 0
+                const share = platMax > 0 ? Math.max((p.total_current / platMax) * 100, 2) : 0
                 return (
-                  <div key={p.platform} className={`rounded-xl border overflow-hidden ${p.delta > 0 ? 'border-emerald-200' : p.delta < 0 ? 'border-rose-200' : 'border-gray-200'}`}>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedPlatform(isOpen ? null : p.platform)}
-                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition text-left ${p.delta > 0 ? 'bg-emerald-50/50' : p.delta < 0 ? 'bg-rose-50/50' : 'bg-white'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-2 h-2 rounded-full ${p.delta > 0 ? 'bg-emerald-500' : p.delta < 0 ? 'bg-rose-500' : 'bg-gray-300'}`} />
-                        <span className="font-bold text-gray-800 text-sm">{p.platform}</span>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${p.delta > 0 ? 'bg-emerald-100 text-emerald-700' : p.delta < 0 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {fmtD(p.delta)} ({fmtP(p.delta_pct)})
-                        </span>
+                  <div key={p.platform} className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+                    <button type="button" onClick={() => setExpandedPlatform(isOpen ? null : p.platform)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition text-left">
+                      <CmsPlatformLogo platform={p.platform} logos={logos} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-gray-800 text-sm">{p.platform}</span>
+                          <span className="font-mono text-sm text-gray-900">{cmsFmt(p.total_current)}</span>
+                        </div>
+                        <div className="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div className={`h-full rounded-full ${up ? 'bg-gradient-to-r from-emerald-400 to-teal-400' : 'bg-gradient-to-r from-rose-400 to-rose-500'}`} style={{ width: `${share}%` }} />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span className="font-mono font-semibold text-gray-900">{fmt(p.total_current)}</span>
-                        <span className="font-mono text-gray-400">{fmt(p.total_previous)}</span>
-                        <svg className={`w-4 h-4 transition-transform text-gray-400 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
+                      <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                        {up ? '+' : ''}{cmsCompact(p.delta)} ({cmsDeltaPct(p.delta_pct)})
+                      </span>
+                      <svg className={`w-4 h-4 shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     {isOpen && p.months?.length > 0 && (
-                      <div className="border-t border-gray-100 px-4 py-3 bg-white overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="text-gray-400">
-                              <td className="pb-1 font-semibold">Mois</td>
-                              {p.months.map((m) => (
-                                <td key={m.month} className="pb-1 text-right px-2 font-semibold">{MONTHS[m.month]}</td>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td className="py-1 text-gray-500">{yearN}</td>
-                              {p.months.map((m) => (
-                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
-                              ))}
-                            </tr>
-                            <tr>
-                              <td className="py-1 text-gray-400">{yearN1}</td>
-                              {p.months.map((m) => (
-                                <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
-                              ))}
-                            </tr>
-                            <tr className="border-t border-gray-100">
-                              <td className="pt-1.5 font-bold text-gray-600">Δ</td>
-                              {p.months.map((m) => (
-                                <td key={m.month} className={`pt-1.5 text-right px-2 font-bold font-mono ${dc(m.delta)}`}>
-                                  {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
-                                </td>
-                              ))}
-                            </tr>
-                          </tbody>
-                        </table>
+                      <div className="border-t border-gray-100 px-4 py-3 bg-gray-50/50">
+                        <CmsGroupedBars months={p.months} yearN={yearN} yearN1={yearN1} height={110} />
                       </div>
                     )}
                   </div>
@@ -1324,140 +1318,47 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
         {/* Détail par magasin du groupe */}
         {groupeClient && data.stores?.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
-              Détail par magasin du groupe — cliquez pour voir mois par mois
-            </h4>
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Par magasin du groupe — cliquez pour le détail</h4>
             <div className="space-y-2">
               {data.stores.map((s) => {
                 const key = s.code_union || 'UNKNOWN'
                 const isOpen = expandedStore === key
+                const up = (s.delta || 0) >= 0
+                const share = storeMax > 0 ? Math.max((s.total_current / storeMax) * 100, 2) : 0
                 return (
-                  <div key={key} className={`rounded-xl border overflow-hidden ${s.delta > 0 ? 'border-emerald-200' : s.delta < 0 ? 'border-rose-200' : 'border-gray-200'}`}>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedStore(isOpen ? null : key)}
-                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition text-left ${s.delta > 0 ? 'bg-emerald-50/40' : s.delta < 0 ? 'bg-rose-50/40' : 'bg-white'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-2 h-2 rounded-full ${s.delta > 0 ? 'bg-emerald-500' : s.delta < 0 ? 'bg-rose-500' : 'bg-gray-300'}`} />
-                        <div className="flex flex-col">
-                          <span className="font-bold text-gray-800 text-sm">{s.code_union}</span>
-                          {s.nom_client && <span className="text-xs text-gray-500">{s.nom_client}</span>}
+                  <div key={key} className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+                    <button type="button" onClick={() => setExpandedStore(isOpen ? null : key)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition text-left">
+                      <span className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-[11px] font-black text-white bg-gradient-to-br from-slate-500 to-slate-700">{(s.code_union || '?').slice(0, 2)}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-gray-800 text-sm truncate">{s.code_union}{s.nom_client ? ` · ${s.nom_client}` : ''}</span>
+                          <span className="font-mono text-sm text-gray-900 shrink-0">{cmsFmt(s.total_current)}</span>
                         </div>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.delta > 0 ? 'bg-emerald-100 text-emerald-700' : s.delta < 0 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {fmtD(s.delta)} ({fmtP(s.delta_pct)})
-                        </span>
+                        <div className="mt-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div className={`h-full rounded-full ${up ? 'bg-gradient-to-r from-emerald-400 to-teal-400' : 'bg-gradient-to-r from-rose-400 to-rose-500'}`} style={{ width: `${share}%` }} />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span className="font-mono font-semibold text-gray-900">{fmt(s.total_current)}</span>
-                        <span className="font-mono text-gray-400">{fmt(s.total_previous)}</span>
-                        <svg className={`w-4 h-4 transition-transform text-gray-400 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
+                      <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                        {up ? '+' : ''}{cmsCompact(s.delta)} ({cmsDeltaPct(s.delta_pct)})
+                      </span>
+                      <svg className={`w-4 h-4 shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                     </button>
-                    {isOpen && s.months?.length > 0 && (
-                      <div className="border-t border-gray-100 px-4 py-3 bg-white space-y-3">
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-gray-400">
-                                <td className="pb-1 font-semibold">Mois</td>
-                                {s.months.map((m) => (
-                                  <td key={m.month} className="pb-1 text-right px-2 font-semibold">{MONTHS[m.month]}</td>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr>
-                                <td className="py-1 text-gray-500">{yearN}</td>
-                                {s.months.map((m) => (
-                                  <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
-                                ))}
-                              </tr>
-                              <tr>
-                                <td className="py-1 text-gray-400">{yearN1}</td>
-                                {s.months.map((m) => (
-                                  <td key={m.month} className="py-1 text-right px-2 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
-                                ))}
-                              </tr>
-                              <tr className="border-t border-gray-100">
-                                <td className="pt-1.5 font-bold text-gray-600">Δ</td>
-                                {s.months.map((m) => (
-                                  <td key={m.month} className={`pt-1.5 text-right px-2 font-bold font-mono ${dc(m.delta)}`}>
-                                    {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
-                                  </td>
-                                ))}
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-
+                    {isOpen && (
+                      <div className="border-t border-gray-100 px-4 py-3 bg-gray-50/50 space-y-4">
+                        {s.months?.length > 0 && <CmsGroupedBars months={s.months} yearN={yearN} yearN1={yearN1} height={100} />}
                         {s.platforms?.length > 0 && (
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                              Détail par plateforme du magasin
-                            </p>
+                          <div className="space-y-1.5">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Par plateforme du magasin</p>
                             {s.platforms.map((p) => {
-                              const pKey = `${key}::${p.platform}`
-                              const pOpen = expandedStorePlatform === pKey
+                              const pUp = (p.delta || 0) >= 0
                               return (
-                                <div key={pKey} className={`rounded-lg border ${p.delta > 0 ? 'border-emerald-200' : p.delta < 0 ? 'border-rose-200' : 'border-gray-200'}`}>
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedStorePlatform(pOpen ? null : pKey)}
-                                    className={`w-full flex items-center justify-between px-3 py-2 text-left ${p.delta > 0 ? 'bg-emerald-50/40' : p.delta < 0 ? 'bg-rose-50/40' : 'bg-white'}`}
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs font-bold text-gray-700">{p.platform}</span>
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${p.delta > 0 ? 'bg-emerald-100 text-emerald-700' : p.delta < 0 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500'}`}>
-                                        {fmtD(p.delta)} ({fmtP(p.delta_pct)})
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-3 text-[10px] text-gray-500">
-                                      <span className="font-mono text-gray-900">{fmt(p.total_current)}</span>
-                                      <span className="font-mono text-gray-400">{fmt(p.total_previous)}</span>
-                                      <svg className={`w-3.5 h-3.5 transition-transform text-gray-400 ${pOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                      </svg>
-                                    </div>
-                                  </button>
-                                  {pOpen && p.months?.length > 0 && (
-                                    <div className="border-t border-gray-100 px-3 py-2 overflow-x-auto bg-white">
-                                      <table className="w-full text-[10px]">
-                                        <thead>
-                                          <tr className="text-gray-400">
-                                            <td className="pb-1 font-semibold">Mois</td>
-                                            {p.months.map((m) => (
-                                              <td key={m.month} className="pb-1 text-right px-1.5 font-semibold">{MONTHS[m.month]}</td>
-                                            ))}
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          <tr>
-                                            <td className="py-0.5 text-gray-500">{yearN}</td>
-                                            {p.months.map((m) => (
-                                              <td key={m.month} className="py-0.5 text-right px-1.5 font-mono text-gray-900">{m.current > 0 ? fmt(m.current) : '—'}</td>
-                                            ))}
-                                          </tr>
-                                          <tr>
-                                            <td className="py-0.5 text-gray-400">{yearN1}</td>
-                                            {p.months.map((m) => (
-                                              <td key={m.month} className="py-0.5 text-right px-1.5 font-mono text-gray-400">{m.previous > 0 ? fmt(m.previous) : '—'}</td>
-                                            ))}
-                                          </tr>
-                                          <tr className="border-t border-gray-100">
-                                            <td className="pt-1 font-bold text-gray-600">Δ</td>
-                                            {p.months.map((m) => (
-                                              <td key={m.month} className={`pt-1 text-right px-1.5 font-bold font-mono ${dc(m.delta)}`}>
-                                                {m.current === 0 && m.previous === 0 ? '—' : fmtD(m.delta)}
-                                              </td>
-                                            ))}
-                                          </tr>
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  )}
+                                <div key={`${key}::${p.platform}`} className="flex items-center gap-2 bg-white rounded-lg border border-gray-100 px-3 py-2">
+                                  <CmsPlatformLogo platform={p.platform} logos={logos} size={22} />
+                                  <span className="text-xs font-semibold text-gray-700 flex-1 truncate">{p.platform}</span>
+                                  <span className="font-mono text-xs text-gray-900">{cmsFmt(p.total_current)}</span>
+                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${pUp ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                                    {pUp ? '+' : ''}{cmsCompact(p.delta)}
+                                  </span>
                                 </div>
                               )
                             })}
