@@ -770,6 +770,17 @@ export const getPureDataCumulativeStatus = async () => {
   return response.data
 }
 
+export const getClientRfa2026 = async ({ codeUnion, groupeClient, year = 2026 } = {}) => {
+  const response = await api.get('/pure-data/cumulative/client-rfa', {
+    params: {
+      code_union: codeUnion || undefined,
+      groupe_client: groupeClient || undefined,
+      year,
+    },
+  })
+  return response.data
+}
+
 export const importPureDataCumulativeExcel = async ({ file, reportingMonth, reportingYear }) => {
   const formData = new FormData()
   formData.append('file', file)

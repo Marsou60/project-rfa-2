@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026 } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -581,6 +581,17 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               </button>
               <button
                 type="button"
+                onClick={() => setActiveViewTab('rfa2026')}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeViewTab === 'rfa2026'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                💎 RFA 2026
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveViewTab('puredata')}
                 className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
                   activeViewTab === 'puredata'
@@ -1107,6 +1118,13 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               codeUnion={mode === 'client' ? entity?.code_union : null}
               groupeClient={mode === 'group' ? entity?.groupe_client : null}
               isAdherent={isAdherent}
+            />
+          )}
+
+          {activeViewTab === 'rfa2026' && (
+            <ClientRfa2026Section
+              codeUnion={mode === 'client' ? entity?.code_union : null}
+              groupeClient={mode === 'group' ? entity?.groupe_client : null}
             />
           )}
 
@@ -1713,6 +1731,151 @@ function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Onglet RFA 2026 (depuis Pure Data, moteur RFA réutilisé) ── */
+function ClientRfa2026Section({ codeUnion, groupeClient }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [logos, setLogos] = useState({})
+
+  const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
+  const fmtPct = (r) => new Intl.NumberFormat('fr-FR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(r || 0)
+
+  useEffect(() => {
+    getSupplierLogos().then((list) => {
+      const map = {}
+      for (const l of list || []) if (l.supplier_key) map[l.supplier_key.toUpperCase()] = l.image_url
+      setLogos(map)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!codeUnion && !groupeClient) { setData(null); return }
+    setLoading(true)
+    setData(null)
+    getClientRfa2026({ codeUnion, groupeClient, year: 2026 })
+      .then(setData)
+      .catch(() => setData({ available: false }))
+      .finally(() => setLoading(false))
+  }, [codeUnion, groupeClient])
+
+  if (loading) return (
+    <div className="rounded-2xl border border-indigo-100 bg-white p-6 shadow-sm">
+      <div className="flex items-center gap-3 text-indigo-500 text-sm">
+        <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+        Calcul de la RFA 2026…
+      </div>
+    </div>
+  )
+
+  if (!data?.available) return (
+    <div className="rounded-2xl border border-indigo-100 bg-white p-6 shadow-sm">
+      <h3 className="text-indigo-900 font-bold">RFA 2026</h3>
+      <p className="text-sm text-gray-500 mt-2">{data?.message || 'Aucune donnée Pure Data 2026 disponible pour le moment.'}</p>
+    </div>
+  )
+
+  const rfa = data.rfa || {}
+  const totals = rfa.totals || {}
+  const caGlobal = data.ca?.totals?.global_total || 0
+  const grand = totals.grand_total || 0
+  const globalItems = Object.entries(rfa.global || {})
+  const triItems = Object.entries(rfa.tri || {}).filter(([, v]) => (v.ca || 0) > 0)
+
+  return (
+    <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 px-6 py-5">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="text-white font-black text-lg">RFA 2026 <span className="text-white/70 text-sm font-semibold">(estimée — Pure Data)</span></h3>
+            <p className="text-indigo-100 text-xs mt-0.5">Contrat appliqué : {data.contract_applied?.name || 'Défaut'} · année {data.year}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-6">
+        {/* KPI */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
+            <div className="text-xs font-semibold text-blue-700">CA cumulé 2026</div>
+            <div className="text-2xl font-black text-blue-900">{fmt(caGlobal)}</div>
+          </div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+            <div className="text-xs font-semibold text-emerald-700">RFA 2026 estimée</div>
+            <div className="text-2xl font-black text-emerald-700">{fmt(grand)}</div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-semibold text-gray-500">Taux RFA moyen</div>
+            <div className="text-2xl font-black text-gray-700">{fmtPct(caGlobal > 0 ? grand / caGlobal : 0)}</div>
+          </div>
+        </div>
+
+        {/* Plateformes globales */}
+        {globalItems.length > 0 && (
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Plateformes (global)</div>
+            <table className="w-full text-sm">
+              <thead className="bg-white border-b border-gray-100">
+                <tr>
+                  <th className="px-3 py-2 text-left text-gray-500">Plateforme</th>
+                  <th className="px-3 py-2 text-right text-gray-500">CA</th>
+                  <th className="px-3 py-2 text-right text-gray-500">Taux</th>
+                  <th className="px-3 py-2 text-right text-gray-500">RFA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {globalItems.map(([key, it]) => (
+                  <tr key={key} className="border-b border-gray-50">
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <CmsPlatformLogo platform={key.replace('GLOBAL_', '')} logos={logos} size={22} />
+                        <span className="font-semibold text-gray-700">{it.label}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(it.ca)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{fmtPct(it.total?.rate || 0)}</td>
+                    <td className="px-3 py-2 text-right font-bold text-emerald-600">{fmt(it.total?.value || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Tri-partites */}
+        {triItems.length > 0 && (
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Tri-partites</div>
+            <table className="w-full text-sm">
+              <thead className="bg-white border-b border-gray-100">
+                <tr>
+                  <th className="px-3 py-2 text-left text-gray-500">Tri-partite</th>
+                  <th className="px-3 py-2 text-right text-gray-500">CA</th>
+                  <th className="px-3 py-2 text-right text-gray-500">Taux</th>
+                  <th className="px-3 py-2 text-right text-gray-500">RFA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {triItems.map(([key, it]) => (
+                  <tr key={key} className="border-b border-gray-50">
+                    <td className="px-3 py-2 font-semibold text-gray-700">{it.label}</td>
+                    <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(it.ca)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600">{fmtPct(it.rate || 0)}</td>
+                    <td className="px-3 py-2 text-right font-bold text-emerald-600">{fmt(it.value || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-[11px] text-gray-400">
+          RFA 2026 calculée à partir du Pure Data cumulé et du contrat en vigueur. Chiffres estimatifs, susceptibles d'évoluer avec les imports mensuels.
+        </p>
       </div>
     </div>
   )

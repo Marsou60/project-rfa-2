@@ -3490,6 +3490,104 @@ async def pure_data_cumulative_client_dashboard(
         raise HTTPException(status_code=500, detail=f"Erreur dashboard Pure Data cumule: {str(e)}")
 
 
+@router.get("/pure-data/cumulative/client-rfa")
+async def pure_data_cumulative_client_rfa(
+    code_union: Optional[str] = None,
+    groupe_client: Optional[str] = None,
+    year: int = 2026,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """
+    RFA 2026 calculée depuis le Pure Data cumulé (ADDITIF — ne touche pas la RFA 2025).
+    Parse le Pure Data en recap_ca (global + tri) puis réutilise le moteur RFA existant
+    (contrats, paliers, overrides). Sécurisé pour les adhérents (forçage sur l'entité liée).
+    """
+    if not user:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+
+    if user.role == UserRole.ADHERENT:
+        if user.linked_code_union:
+            code_union = user.linked_code_union.strip().upper()
+            groupe_client = None
+        elif user.linked_groupe:
+            groupe_client = user.linked_groupe.strip().upper()
+            code_union = None
+        else:
+            raise HTTPException(status_code=403, detail="Aucun client lié à ce compte.")
+    elif not code_union and not groupe_client:
+        raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
+
+    try:
+        from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
+        from app.services.pure_data_cumulative_service import _norm_text, _code_union_candidates
+        from app.services.pure_data_rfa_parser import compute_recap_ca_from_rows
+        from app.services.rfa_calculator import calculate_rfa
+        from app.services.contract_resolver import resolve_contract
+
+        if count_cumulative_rows() == 0:
+            return {"available": False, "message": "Aucune donnée Pure Data cumulée. Importez un fichier cumulé."}
+
+        all_rows, _, _ = read_cumulative_rows()
+        rows_year = [r for r in all_rows if r.get("year") == year]
+        if not rows_year:
+            return {"available": False, "message": f"Aucune donnée Pure Data pour {year}."}
+
+        if code_union:
+            targets = _code_union_candidates(code_union)
+            rows = [r for r in rows_year if _norm_text(r.get("code_union")) in targets]
+            label = next(
+                (f"{(r.get('code_union') or '').strip()} — {(r.get('raison_sociale') or '').strip()}".strip(" —")
+                 for r in rows if (r.get("raison_sociale") or "").strip()),
+                code_union,
+            )
+            entity_kind = "client"
+            resolve_key = {"code_union": code_union.strip().upper()}
+        else:
+            target = _norm_text(groupe_client)
+            rows = [r for r in rows_year if _norm_text(r.get("groupe_client")) == target]
+            label = groupe_client
+            entity_kind = "group"
+            resolve_key = {"groupe_client": target}
+
+        if not rows:
+            return {"available": False, "label": label, "entity_kind": entity_kind}
+
+        recap_ca = compute_recap_ca_from_rows(rows)
+
+        # Contrat résolu par le mécanisme existant (Code Union > Groupe > Défaut)
+        contract = resolve_contract(**resolve_key)
+        rfa_result = calculate_rfa(
+            recap_ca,
+            contract=contract,
+            code_union=code_union.strip().upper() if code_union else None,
+            groupe_client=(_norm_text(groupe_client) if groupe_client else None),
+        )
+
+        global_total = round(sum(recap_ca["global"].values()), 2)
+        tri_total = round(sum(recap_ca["tri"].values()), 2)
+
+        return {
+            "available": True,
+            "entity_kind": entity_kind,
+            "label": label,
+            "year": year,
+            "ca": {
+                "global": recap_ca["global"],
+                "tri": recap_ca["tri"],
+                "totals": {"global_total": global_total, "tri_total": tri_total, "grand_total": round(global_total + tri_total, 2)},
+            },
+            "rfa": rfa_result,
+            "contract_applied": {"id": contract.id, "name": contract.name} if contract else {"id": None, "name": "Aucun contrat"},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur RFA 2026 Pure Data: {str(e)}")
+
+
 @router.get("/pure-data/monthly/periods")
 async def pure_data_monthly_periods(user: User = Depends(require_staff)):
     """
