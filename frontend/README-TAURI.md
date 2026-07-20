@@ -146,6 +146,11 @@ Les artefacts de mise à jour sont générés dans `src-tauri/target/release/bun
 
 4. Téléverser **latest.json** comme asset de la **même** release. Pour générer `latest.json` automatiquement après un build signé : depuis `frontend/`, lancer `node scripts/gen-latest-json.js 0.1.0 https://github.com/Marsou60/project-rfa-2/releases/download/v0.1.0` (adapter version et URL).
 
+> ⚠️ **À TOUJOURS respecter (sinon l'auto-update casse) :**
+> - **Générer `latest.json` UNIQUEMENT via `node scripts/gen-latest-json.js`** — jamais à la main en PowerShell (`ConvertTo-Json` + `Set-Content -Encoding UTF8` ajoute un **BOM** qui casse le parsing JSON de l'updater → aucune mise à jour détectée).
+> - **L'app est distribuée en NSIS** (installe dans `AppData\Local\RFA Application`). L'updater doit donc pointer vers l'**installeur NSIS `.exe`** (le script le fait automatiquement). Servir un `.msi` par-dessus une base NSIS crée une **install parallèle / doublon** au lieu d'une mise à jour en place.
+> - Diffuser aux utilisateurs le **setup NSIS `.exe`** (pas le `.msi`).
+
 L’URL configurée dans l’app est :  
 `https://github.com/Marsou60/project-rfa-2/releases/latest/download/latest.json`  
 → il faut que la release marquée comme **Latest release** sur GitHub contienne bien un asset nommé **latest.json**.

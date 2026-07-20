@@ -38,9 +38,12 @@ function findSig(dir, ext, version) {
   return { url, signature: sigContent }
 }
 
-const win = findSig(msiDir, '.msi', version) || findSig(nsisDir, '.exe', version)
+// IMPORTANT : préférer l'installeur NSIS (.exe) — l'app est distribuée en NSIS,
+// donc l'updater doit servir le .exe pour une mise à jour EN PLACE (sinon install
+// parallèle / doublon quand on sert un .msi par-dessus une base NSIS).
+const win = findSig(nsisDir, '.exe', version) || findSig(msiDir, '.msi', version)
 if (!win) {
-  console.error('Aucun .msi ou .exe + .sig trouvé dans', msiDir, 'ou', nsisDir)
+  console.error('Aucun .exe NSIS ou .msi + .sig trouvé dans', nsisDir, 'ou', msiDir)
   console.error('Lance un build signé (TAURI_SIGNING_PRIVATE_KEY) puis relance ce script.')
   process.exit(1)
 }
@@ -55,6 +58,7 @@ const latest = {
 }
 
 const outPath = path.join(bundleDir, 'latest.json')
-fs.writeFileSync(outPath, JSON.stringify(latest, null, 2), 'utf8')
-console.log('Écrit:', outPath)
-console.log('Téléverse ce fichier + le .msi (ou .exe) et son .sig sur la release GitHub.')
+// Écriture UTF-8 SANS BOM (un BOM en tête casse le parsing JSON de l'updater Tauri).
+fs.writeFileSync(outPath, JSON.stringify(latest, null, 2), { encoding: 'utf8' })
+console.log('Écrit (sans BOM):', outPath)
+console.log('Téléverse ce fichier + l\'installeur NSIS (.exe) et son .sig sur la release GitHub.')
