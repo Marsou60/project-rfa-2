@@ -78,6 +78,23 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
       const ca2025SamePeriod = months.reduce((s, m) => s + (m.previous || 0), 0)
       const delta = ca2026 - ca2025SamePeriod
       const deltaPct = ca2025SamePeriod > 0 ? (delta / ca2025SamePeriod) * 100 : null
+      const monthsWithData = months.filter((m) => (m.current || 0) > 0).length
+
+      // Projection fin d'année :
+      // 1) saisonnalité 2025 (recommandé) : on applique le rythme 2026 vs 2025 même période
+      //    au CA 2025 réalisé annuel → tient compte des variations saisonnières.
+      // 2) repli linéaire : (CA à date / nb mois) × 12.
+      let projection2026 = null
+      let projectionMethod = null
+      if (ca2025SamePeriod > 0 && ca2025Realise > 0) {
+        projection2026 = ca2025Realise * (ca2026 / ca2025SamePeriod)
+        projectionMethod = 'saisonnalité 2025'
+      } else if (monthsWithData > 0) {
+        projection2026 = (ca2026 / monthsWithData) * 12
+        projectionMethod = 'rythme linéaire'
+      }
+      const projectionPct = projection2026 && objectif > 0 ? (projection2026 / objectif) * 100 : null
+
       const topClients = [...(evo?.clients || [])].sort((a, b) => (b.delta || 0) - (a.delta || 0)).slice(0, 3)
       setData({
         objectif,
@@ -86,6 +103,10 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
         ca2025SamePeriod,
         delta,
         deltaPct,
+        monthsWithData,
+        projection2026,
+        projectionMethod,
+        projectionPct,
         months,
         nbClients: (evo?.clients || []).length,
         nbGroups: (evo?.groups || []).length,
@@ -168,18 +189,35 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
                 </div>
               </div>
 
-              {/* Comparatif même période N-1 */}
+              {/* N / N-1 (même période) + projection */}
               {data?.hasMonthly && (
-                <div className="mt-5 flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-glass-muted text-sm">vs 2025 (même période) :</span>
-                    <span className={`inline-flex items-center gap-1 text-sm font-bold ${data.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                      {data.delta >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                      {data.delta >= 0 ? '+' : ''}{fmtCompact(data.delta)}
-                      {data.deltaPct != null && <span className="opacity-80">({data.deltaPct >= 0 ? '+' : ''}{data.deltaPct.toFixed(1)} %)</span>}
-                    </span>
+                <div className="mt-5">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="glass-card-dark rounded-xl p-3">
+                      <div className="text-[11px] text-glass-muted">2026 à date</div>
+                      <div className="text-white font-bold text-sm mt-0.5">{fmtCompact(data.ca2026)}</div>
+                    </div>
+                    <div className="glass-card-dark rounded-xl p-3">
+                      <div className="text-[11px] text-glass-muted">2025 (même période)</div>
+                      <div className="text-white/80 font-bold text-sm mt-0.5">{fmtCompact(data.ca2025SamePeriod)}</div>
+                      <div className={`text-[11px] font-semibold mt-0.5 ${data.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        {data.delta >= 0 ? '+' : ''}{fmtCompact(data.delta)}{data.deltaPct != null ? ` (${data.deltaPct >= 0 ? '+' : ''}${data.deltaPct.toFixed(1)} %)` : ''}
+                      </div>
+                    </div>
+                    <div className="glass-card-dark rounded-xl p-3 border border-cyan-400/20">
+                      <div className="text-[11px] text-cyan-300 flex items-center gap-1">📈 Projection 31/12/2026</div>
+                      <div className="text-white font-bold text-sm mt-0.5">{data.projection2026 != null ? fmtCompact(data.projection2026) : '—'}</div>
+                      {data.projectionPct != null && (
+                        <div className={`text-[11px] font-semibold mt-0.5 ${data.projectionPct >= 100 ? 'text-emerald-300' : 'text-amber-300'}`}>
+                          {data.projectionPct.toFixed(0)} % de l'objectif
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-glass-muted text-sm">CA 2025 réalisé : <strong className="text-white/80">{fmtCompact(data.ca2025Realise)}</strong></span>
+                  <p className="text-[11px] text-glass-muted mt-2">
+                    Référence annuelle <strong className="text-white/70">CA 2025 réalisé : {fmtCompact(data.ca2025Realise)}</strong>
+                    {data.projectionMethod ? ` · projection estimée par ${data.projectionMethod}` : ''}
+                  </p>
                 </div>
               )}
             </div>
