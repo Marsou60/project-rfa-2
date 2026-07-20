@@ -1781,7 +1781,43 @@ function rfa26TriProgress(ca, tiers) {
   return { rate: p.rate, nextMin: p.nextMin, nextRate, progress, currentValue, missing, projectedGain, achieved: p.nextMin == null && p.minReached != null }
 }
 
-function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = true, fmt, fmtPct }) {
+function Rfa26TierLadder({ tierGroups, ca, fmt, fmtPct }) {
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+      {tierGroups.filter((g) => g.tiers?.length > 0).map((g) => {
+        const sorted = [...g.tiers].sort((a, b) => a.min - b.min)
+        // indice du palier atteint (dernier min <= ca)
+        let reachedIdx = -1
+        sorted.forEach((t, i) => { if (t.min <= ca) reachedIdx = i })
+        const nextIdx = sorted.findIndex((t) => t.min > ca)
+        return (
+          <div key={g.label}>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">{g.label}</div>
+            <div className="space-y-1">
+              {sorted.map((t, i) => {
+                const isReached = i === reachedIdx
+                const isNext = i === nextIdx
+                return (
+                  <div key={i} className={`flex items-center justify-between text-xs rounded-md px-2 py-1 ${
+                    isReached ? 'bg-emerald-50 text-emerald-800 font-semibold' : isNext ? 'bg-amber-50 text-amber-800' : 'text-gray-500'
+                  }`}>
+                    <span>
+                      {isReached && '✓ '}{isNext && '→ '}≥ {fmt(t.min)}
+                    </span>
+                    <span className="font-mono">{fmtPct(t.rate)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = true, tierGroups = [], fmt, fmtPct }) {
+  const [open, setOpen] = useState(false)
   const achieved = prog.achieved
   // Non éligible : aucun palier configuré pour cette plateforme/tri sur le contrat du client
   if (!hasTiers) {
@@ -1801,12 +1837,20 @@ function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = tr
       </div>
     )
   }
+  const hasLadder = tierGroups.some((g) => g.tiers?.length > 0)
   return (
-    <div className={`rounded-xl border p-4 ${achieved ? 'border-emerald-200 bg-emerald-50/40' : prog.nextMin != null && prog.progress >= 80 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}>
+    <div
+      className={`rounded-xl border p-4 ${hasLadder ? 'cursor-pointer' : ''} ${achieved ? 'border-emerald-200 bg-emerald-50/40' : prog.nextMin != null && prog.progress >= 80 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}
+      onClick={() => hasLadder && setOpen((o) => !o)}
+      title={hasLadder ? 'Cliquez pour voir tous les paliers' : undefined}
+    >
       <div className="flex items-center gap-2 mb-2">
         {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={24} />}
         <span className="font-bold text-gray-800 text-sm flex-1 truncate">{label}</span>
         <span className="font-mono text-sm text-gray-900">{fmt(ca)}</span>
+        {hasLadder && (
+          <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+        )}
       </div>
       <div className="flex items-center justify-between text-xs mb-1">
         <span className="text-gray-500">
@@ -1828,6 +1872,7 @@ function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = tr
         )}
         <span className="text-gray-400">{Math.round(prog.progress)}%</span>
       </div>
+      {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} />}
     </div>
   )
 }
@@ -1935,7 +1980,7 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                   const tBonus = rfa26ParseTiers(it.tiers_bonus)
                   const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus)
                   return (
-                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tRfa.length > 0 || tBonus.length > 0} fmt={fmt} fmtPct={fmtPct} />
+                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tRfa.length > 0 || tBonus.length > 0} tierGroups={[{ label: 'Paliers RFA', tiers: tRfa }, { label: 'Paliers Bonus', tiers: tBonus }]} fmt={fmt} fmtPct={fmtPct} />
                   )
                 })}
             </div>
@@ -1951,7 +1996,7 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                 const tiers = rfa26ParseTiers(it.tiers)
                 const prog = rfa26TriProgress(it.ca || 0, tiers)
                 return (
-                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tiers.length > 0} fmt={fmt} fmtPct={fmtPct} />
+                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tiers.length > 0} tierGroups={[{ label: 'Paliers', tiers }]} fmt={fmt} fmtPct={fmtPct} />
                 )
               })}
             </div>
