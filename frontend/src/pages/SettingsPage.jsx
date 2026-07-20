@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Upload, Trash2, Building2, Info, Loader2, X, Check, Download } from 'lucide-react'
+import { Settings, Upload, Trash2, Building2, Info, Loader2, X, Check, Download, Target } from 'lucide-react'
 import { getSetting, setSetting, uploadLogo, getImageUrl, getApiBaseUrl } from '../api/client'
 import { useUpdater } from '../components/AppUpdater'
+
+export const CA_OBJECTIF_2026_KEY = 'ca_objectif_2026'
+export const CA_OBJECTIF_2026_DEFAULT = 21000000
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI__ !== undefined
 
@@ -13,6 +16,8 @@ function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const [caObjectif, setCaObjectif] = useState(String(CA_OBJECTIF_2026_DEFAULT))
+  const [savingObjectif, setSavingObjectif] = useState(false)
   const fileRef = useRef(null)
 
   useEffect(() => {
@@ -27,6 +32,32 @@ function SettingsPage() {
       }
     } catch (err) {
       console.log('Paramètres non trouvés')
+    }
+    try {
+      const objResult = await getSetting(CA_OBJECTIF_2026_KEY)
+      if (objResult?.value) setCaObjectif(String(objResult.value))
+    } catch (err) {
+      // pas encore défini → défaut
+    }
+  }
+
+  const handleSaveObjectif = async () => {
+    const clean = Number(String(caObjectif).replace(/[^\d]/g, '')) || 0
+    if (clean <= 0) {
+      setFormError('Objectif invalide (montant en euros).')
+      return
+    }
+    setSavingObjectif(true)
+    setFormError(null)
+    setSuccess(null)
+    try {
+      await setSetting(CA_OBJECTIF_2026_KEY, String(clean))
+      setCaObjectif(String(clean))
+      setSuccess('Objectif CA 2026 mis à jour.')
+    } catch (err) {
+      setFormError(err.response?.data?.detail || "Erreur lors de l'enregistrement de l'objectif")
+    } finally {
+      setSavingObjectif(false)
     }
   }
 
@@ -174,6 +205,42 @@ function SettingsPage() {
               </p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Objectif commercial CA 2026 */}
+      <div className="glass-card p-6">
+        <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+          <Target className="w-5 h-5 text-emerald-400" />
+          Objectif commercial — CA 2026
+        </h2>
+        <p className="text-sm text-glass-secondary mb-4">
+          Objectif de chiffre d'affaires 2026 fixé par la direction. Affiché en évidence sur la page d'accueil (barre de progression).
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs text-glass-muted mb-1">Objectif (€)</label>
+            <input
+              type="number"
+              min="0"
+              step="100000"
+              value={caObjectif}
+              onChange={(e) => setCaObjectif(e.target.value)}
+              className="glass-input w-56"
+            />
+            <p className="text-xs text-glass-muted mt-1">
+              {(Number(String(caObjectif).replace(/[^\d]/g, '')) || 0).toLocaleString('fr-FR')} €
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveObjectif}
+            disabled={savingObjectif}
+            className="glass-btn-primary inline-flex items-center gap-2"
+          >
+            {savingObjectif ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            Enregistrer l'objectif
+          </button>
         </div>
       </div>
 
