@@ -1781,8 +1781,26 @@ function rfa26TriProgress(ca, tiers) {
   return { rate: p.rate, nextMin: p.nextMin, nextRate, progress, currentValue, missing, projectedGain, achieved: p.nextMin == null && p.minReached != null }
 }
 
-function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, fmt, fmtPct }) {
+function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = true, fmt, fmtPct }) {
   const achieved = prog.achieved
+  // Non éligible : aucun palier configuré pour cette plateforme/tri sur le contrat du client
+  if (!hasTiers) {
+    return (
+      <div className="rounded-xl border border-rose-300 bg-rose-50 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={24} />}
+          <span className="font-bold text-rose-900 text-sm flex-1 truncate">{label}</span>
+          <span className="font-mono text-sm text-rose-900/80">{fmt(ca)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-rose-200 text-rose-800">
+            ⛔ Client non éligible
+          </span>
+          <span className="text-[11px] text-rose-700">Aucun palier configuré sur ce contrat</span>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={`rounded-xl border p-4 ${achieved ? 'border-emerald-200 bg-emerald-50/40' : prog.nextMin != null && prog.progress >= 80 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}>
       <div className="flex items-center gap-2 mb-2">
@@ -1806,7 +1824,7 @@ function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, fmt, fmtPct }
         ) : prog.nextMin != null ? (
           <span className="text-gray-500">Plus que <strong className="text-gray-800">{fmt(prog.missing)}</strong> pour <strong className="text-emerald-600">+{fmt(prog.projectedGain)}</strong> de RFA</span>
         ) : (
-          <span className="text-gray-400">Aucun palier configuré</span>
+          <span className="text-gray-400">Palier atteint</span>
         )}
         <span className="text-gray-400">{Math.round(prog.progress)}%</span>
       </div>
@@ -1913,9 +1931,11 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
               {globalItems
                 .filter(([, it]) => (it.ca || 0) > 0)
                 .map(([key, it]) => {
-                  const prog = rfa26GlobalProgress(it.ca || 0, rfa26ParseTiers(it.tiers_rfa), rfa26ParseTiers(it.tiers_bonus))
+                  const tRfa = rfa26ParseTiers(it.tiers_rfa)
+                  const tBonus = rfa26ParseTiers(it.tiers_bonus)
+                  const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus)
                   return (
-                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} fmt={fmt} fmtPct={fmtPct} />
+                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tRfa.length > 0 || tBonus.length > 0} fmt={fmt} fmtPct={fmtPct} />
                   )
                 })}
             </div>
@@ -1928,9 +1948,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Tri-partites — progression vers le prochain palier</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {triItems.map(([key, it]) => {
-                const prog = rfa26TriProgress(it.ca || 0, rfa26ParseTiers(it.tiers))
+                const tiers = rfa26ParseTiers(it.tiers)
+                const prog = rfa26TriProgress(it.ca || 0, tiers)
                 return (
-                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} fmt={fmt} fmtPct={fmtPct} />
+                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tiers.length > 0} fmt={fmt} fmtPct={fmtPct} />
                 )
               })}
             </div>
