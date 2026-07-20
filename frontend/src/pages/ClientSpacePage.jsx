@@ -1816,7 +1816,7 @@ function Rfa26TierLadder({ tierGroups, ca, fmt, fmtPct }) {
   )
 }
 
-function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = true, tierGroups = [], fmt, fmtPct }) {
+function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = true, tierGroups = [], proj = null, fmt, fmtPct }) {
   const [open, setOpen] = useState(false)
   const achieved = prog.achieved
   // Non éligible : aucun palier configuré pour cette plateforme/tri sur le contrat du client
@@ -1872,6 +1872,14 @@ function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = tr
         )}
         <span className="text-gray-400">{Math.round(prog.progress)}%</span>
       </div>
+      {proj && (
+        <div className="mt-2 pt-2 border-t border-dashed border-cyan-200 flex items-center justify-between text-[11px]">
+          <span className="text-cyan-700 font-semibold">📈 Projection fin 2026</span>
+          <span className="text-cyan-800">
+            {fmt(proj.ca)} · {fmtPct(proj.rate)} · <strong>{fmt(proj.value)} RFA</strong>
+          </span>
+        </div>
+      )}
       {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} />}
     </div>
   )
@@ -1926,6 +1934,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const grand = totals.grand_total || 0
   const globalItems = Object.entries(rfa.global || {})
   const triItems = Object.entries(rfa.tri || {}).filter(([, v]) => (v.ca || 0) > 0)
+  const projected = data.rfa_projected || null
+  const projGrand = projected?.totals?.grand_total || null
+  const MONTHS_FR = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+  const projLabel = data.reporting_month ? `au rythme de ${MONTHS_FR[data.reporting_month] || `M${data.reporting_month}`}` : null
 
   return (
     <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm overflow-hidden">
@@ -1953,18 +1965,23 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
         </div>
 
         {/* KPI */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
             <div className="text-xs font-semibold text-blue-700">CA cumulé 2026</div>
             <div className="text-2xl font-black text-blue-900">{fmt(caGlobal)}</div>
           </div>
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-            <div className="text-xs font-semibold text-emerald-700">RFA 2026 estimée</div>
+            <div className="text-xs font-semibold text-emerald-700">RFA 2026 (à date)</div>
             <div className="text-2xl font-black text-emerald-700">{fmt(grand)}</div>
           </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="text-xs font-semibold text-gray-500">Taux RFA moyen</div>
             <div className="text-2xl font-black text-gray-700">{fmtPct(caGlobal > 0 ? grand / caGlobal : 0)}</div>
+          </div>
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+            <div className="text-xs font-semibold text-cyan-700">📈 RFA projetée fin 2026</div>
+            <div className="text-2xl font-black text-cyan-800">{projGrand != null ? fmt(projGrand) : '—'}</div>
+            {projLabel && <div className="text-[11px] text-cyan-600 mt-0.5">{projLabel}</div>}
           </div>
         </div>
 
@@ -1979,8 +1996,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                   const tRfa = rfa26ParseTiers(it.tiers_rfa)
                   const tBonus = rfa26ParseTiers(it.tiers_bonus)
                   const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus)
+                  const pj = projected?.global?.[key]
+                  const proj = pj ? { ca: pj.ca || 0, rate: pj.total?.rate || 0, value: pj.total?.value || 0 } : null
                   return (
-                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tRfa.length > 0 || tBonus.length > 0} tierGroups={[{ label: 'Paliers RFA', tiers: tRfa }, { label: 'Paliers Bonus', tiers: tBonus }]} fmt={fmt} fmtPct={fmtPct} />
+                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tRfa.length > 0 || tBonus.length > 0} tierGroups={[{ label: 'Paliers RFA', tiers: tRfa }, { label: 'Paliers Bonus', tiers: tBonus }]} proj={proj} fmt={fmt} fmtPct={fmtPct} />
                   )
                 })}
             </div>
@@ -1995,8 +2014,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
               {triItems.map(([key, it]) => {
                 const tiers = rfa26ParseTiers(it.tiers)
                 const prog = rfa26TriProgress(it.ca || 0, tiers)
+                const pjt = projected?.tri?.[key]
+                const proj = pjt ? { ca: pjt.ca || 0, rate: pjt.rate || 0, value: pjt.value || 0 } : null
                 return (
-                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tiers.length > 0} tierGroups={[{ label: 'Paliers', tiers }]} fmt={fmt} fmtPct={fmtPct} />
+                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tiers.length > 0} tierGroups={[{ label: 'Paliers', tiers }]} proj={proj} fmt={fmt} fmtPct={fmtPct} />
                 )
               })}
             </div>

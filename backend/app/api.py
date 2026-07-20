@@ -3594,6 +3594,23 @@ async def pure_data_cumulative_client_rfa(
         for k, it in rfa_result.get("tri", {}).items():
             it["tiers"] = _tiers_for(k, "tri")
 
+        # ── Projection fin d'année : annualisation linéaire selon le mois de référence ──
+        reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+        rfa_projected = None
+        projection_factor = None
+        if reporting_month and 1 <= reporting_month < 12:
+            projection_factor = 12.0 / reporting_month
+            projected_recap = {
+                "global": {k: round(v * projection_factor, 2) for k, v in recap_ca["global"].items()},
+                "tri": {k: round(v * projection_factor, 2) for k, v in recap_ca["tri"].items()},
+            }
+            rfa_projected = calculate_rfa(
+                projected_recap,
+                contract=contract,
+                code_union=code_union.strip().upper() if code_union else None,
+                groupe_client=(_norm_text(groupe_client) if groupe_client else None),
+            )
+
         global_total = round(sum(recap_ca["global"].values()), 2)
         tri_total = round(sum(recap_ca["tri"].values()), 2)
 
@@ -3608,6 +3625,9 @@ async def pure_data_cumulative_client_rfa(
                 "totals": {"global_total": global_total, "tri_total": tri_total, "grand_total": round(global_total + tri_total, 2)},
             },
             "rfa": rfa_result,
+            "rfa_projected": rfa_projected,
+            "reporting_month": reporting_month,
+            "projection_factor": projection_factor,
             "contract_applied": {"id": contract.id, "name": contract.name} if contract else {"id": None, "name": "Aucun contrat"},
         }
     except HTTPException:
