@@ -3564,6 +3564,36 @@ async def pure_data_cumulative_client_rfa(
             groupe_client=(_norm_text(groupe_client) if groupe_client else None),
         )
 
+        # Attacher les paliers (pour la jauge de progression côté client) — contrat + overrides
+        from app.services.rfa_calculator import load_contract_rules, load_entity_overrides
+        _rules = load_contract_rules(contract) if contract else {}
+        if code_union:
+            _ovr = load_entity_overrides("CODE_UNION", code_union.strip().upper())
+        elif groupe_client:
+            _ovr = load_entity_overrides("GROUPE_CLIENT", _norm_text(groupe_client))
+        else:
+            _ovr = {}
+
+        def _tiers_for(k, tier_type):
+            o = _ovr.get(k, {})
+            if o.get(tier_type):
+                return o[tier_type]
+            rule = _rules.get(k)
+            if not rule:
+                return []
+            attr = {"rfa": "tiers_rfa", "bonus": "tiers_bonus", "tri": "tiers"}[tier_type]
+            raw = getattr(rule, attr, None)
+            try:
+                return json.loads(raw) if raw else []
+            except Exception:
+                return []
+
+        for k, it in rfa_result.get("global", {}).items():
+            it["tiers_rfa"] = _tiers_for(k, "rfa")
+            it["tiers_bonus"] = _tiers_for(k, "bonus")
+        for k, it in rfa_result.get("tri", {}).items():
+            it["tiers"] = _tiers_for(k, "tri")
+
         global_total = round(sum(recap_ca["global"].values()), 2)
         tri_total = round(sum(recap_ca["tri"].values()), 2)
 

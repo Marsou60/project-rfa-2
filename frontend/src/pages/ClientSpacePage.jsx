@@ -1736,6 +1736,84 @@ function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
   )
 }
 
+/* ── RFA 2026 : helpers de progression (additifs, indépendants du 2025) ── */
+const rfa26ParseTiers = (t) => {
+  if (!t) return []
+  let arr = t
+  if (!Array.isArray(t)) { try { arr = JSON.parse(t) } catch { arr = [] } }
+  return (arr || []).map((x) => ({ min: Number(x.min) || 0, rate: Number(x.rate) || 0 })).sort((a, b) => a.min - b.min)
+}
+const rfa26RateForThreshold = (tiers, threshold) => {
+  if (!tiers?.length || threshold == null) return 0
+  let rate = 0
+  for (const t of tiers) { if (t.min <= threshold) rate = t.rate; else break }
+  return rate
+}
+const rfa26Prog = (ca, tiers) => {
+  const sorted = [...(tiers || [])].sort((a, b) => a.min - b.min)
+  let rate = 0, minReached = null
+  for (const t of sorted) { if (t.min <= ca) { rate = t.rate; minReached = t.min } else break }
+  const next = sorted.find((t) => t.min > ca) || null
+  return { rate, nextMin: next ? next.min : null, minReached }
+}
+/** Progression combinée (rfa + bonus) pour une plateforme globale. */
+function rfa26GlobalProgress(ca, tiersRfa, tiersBonus) {
+  const pr = rfa26Prog(ca, tiersRfa)
+  const pb = rfa26Prog(ca, tiersBonus)
+  const nexts = [pr.nextMin, pb.nextMin].filter((v) => v != null)
+  const nextMin = nexts.length ? Math.min(...nexts) : null
+  const rate = (pr.rate || 0) + (pb.rate || 0)
+  const nextRate = nextMin != null ? rfa26RateForThreshold(tiersRfa, nextMin) + rfa26RateForThreshold(tiersBonus, nextMin) : null
+  const progress = nextMin ? Math.min((ca / nextMin) * 100, 100) : 100
+  const currentValue = rate * ca
+  const missing = nextMin != null ? Math.max(nextMin - ca, 0) : 0
+  const projectedGain = nextMin != null && nextRate != null ? Math.max(nextRate * nextMin - currentValue, 0) : 0
+  return { rate, nextMin, nextRate, progress, currentValue, missing, projectedGain, achieved: nextMin == null && (pr.minReached != null || pb.minReached != null) }
+}
+/** Progression simple pour une tri-partite. */
+function rfa26TriProgress(ca, tiers) {
+  const p = rfa26Prog(ca, tiers)
+  const nextRate = p.nextMin != null ? rfa26RateForThreshold(tiers, p.nextMin) : null
+  const progress = p.nextMin ? Math.min((ca / p.nextMin) * 100, 100) : 100
+  const currentValue = (p.rate || 0) * ca
+  const missing = p.nextMin != null ? Math.max(p.nextMin - ca, 0) : 0
+  const projectedGain = p.nextMin != null && nextRate != null ? Math.max(nextRate * p.nextMin - currentValue, 0) : 0
+  return { rate: p.rate, nextMin: p.nextMin, nextRate, progress, currentValue, missing, projectedGain, achieved: p.nextMin == null && p.minReached != null }
+}
+
+function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, fmt, fmtPct }) {
+  const achieved = prog.achieved
+  return (
+    <div className={`rounded-xl border p-4 ${achieved ? 'border-emerald-200 bg-emerald-50/40' : prog.nextMin != null && prog.progress >= 80 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}>
+      <div className="flex items-center gap-2 mb-2">
+        {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={24} />}
+        <span className="font-bold text-gray-800 text-sm flex-1 truncate">{label}</span>
+        <span className="font-mono text-sm text-gray-900">{fmt(ca)}</span>
+      </div>
+      <div className="flex items-center justify-between text-xs mb-1">
+        <span className="text-gray-500">
+          Taux {fmtPct(prog.rate)}
+          {!achieved && prog.nextRate != null && <span className="text-amber-600 font-semibold"> → {fmtPct(prog.nextRate)}</span>}
+        </span>
+        <span className="font-bold text-emerald-600">{fmt(prog.currentValue)} RFA</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+        <div className={`h-full rounded-full ${achieved ? 'bg-emerald-500' : prog.progress >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${prog.progress}%` }} />
+      </div>
+      <div className="flex items-center justify-between text-[11px] mt-1.5">
+        {achieved ? (
+          <span className="text-emerald-600 font-semibold">✓ Palier maximal atteint</span>
+        ) : prog.nextMin != null ? (
+          <span className="text-gray-500">Plus que <strong className="text-gray-800">{fmt(prog.missing)}</strong> pour <strong className="text-emerald-600">+{fmt(prog.projectedGain)}</strong> de RFA</span>
+        ) : (
+          <span className="text-gray-400">Aucun palier configuré</span>
+        )}
+        <span className="text-gray-400">{Math.round(prog.progress)}%</span>
+      </div>
+    </div>
+  )
+}
+
 /* ── Onglet RFA 2026 (depuis Pure Data, moteur RFA réutilisé) ── */
 function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const [data, setData] = useState(null)
@@ -1827,62 +1905,35 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
           </div>
         </div>
 
-        {/* Plateformes globales */}
+        {/* Plateformes globales — jauges de progression */}
         {globalItems.length > 0 && (
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Plateformes (global)</div>
-            <table className="w-full text-sm">
-              <thead className="bg-white border-b border-gray-100">
-                <tr>
-                  <th className="px-3 py-2 text-left text-gray-500">Plateforme</th>
-                  <th className="px-3 py-2 text-right text-gray-500">CA</th>
-                  <th className="px-3 py-2 text-right text-gray-500">Taux</th>
-                  <th className="px-3 py-2 text-right text-gray-500">RFA</th>
-                </tr>
-              </thead>
-              <tbody>
-                {globalItems.map(([key, it]) => (
-                  <tr key={key} className="border-b border-gray-50">
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <CmsPlatformLogo platform={key.replace('GLOBAL_', '')} logos={logos} size={22} />
-                        <span className="font-semibold text-gray-700">{it.label}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(it.ca)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{fmtPct(it.total?.rate || 0)}</td>
-                    <td className="px-3 py-2 text-right font-bold text-emerald-600">{fmt(it.total?.value || 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Plateformes (global) — progression vers le prochain palier</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {globalItems
+                .filter(([, it]) => (it.ca || 0) > 0)
+                .map(([key, it]) => {
+                  const prog = rfa26GlobalProgress(it.ca || 0, rfa26ParseTiers(it.tiers_rfa), rfa26ParseTiers(it.tiers_bonus))
+                  return (
+                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} fmt={fmt} fmtPct={fmtPct} />
+                  )
+                })}
+            </div>
           </div>
         )}
 
-        {/* Tri-partites */}
+        {/* Tri-partites — jauges de progression */}
         {triItems.length > 0 && (
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 text-xs font-bold text-gray-600 uppercase">Tri-partites</div>
-            <table className="w-full text-sm">
-              <thead className="bg-white border-b border-gray-100">
-                <tr>
-                  <th className="px-3 py-2 text-left text-gray-500">Tri-partite</th>
-                  <th className="px-3 py-2 text-right text-gray-500">CA</th>
-                  <th className="px-3 py-2 text-right text-gray-500">Taux</th>
-                  <th className="px-3 py-2 text-right text-gray-500">RFA</th>
-                </tr>
-              </thead>
-              <tbody>
-                {triItems.map(([key, it]) => (
-                  <tr key={key} className="border-b border-gray-50">
-                    <td className="px-3 py-2 font-semibold text-gray-700">{it.label}</td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-900">{fmt(it.ca)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{fmtPct(it.rate || 0)}</td>
-                    <td className="px-3 py-2 text-right font-bold text-emerald-600">{fmt(it.value || 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Tri-partites — progression vers le prochain palier</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {triItems.map(([key, it]) => {
+                const prog = rfa26TriProgress(it.ca || 0, rfa26ParseTiers(it.tiers))
+                return (
+                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} fmt={fmt} fmtPct={fmtPct} />
+                )
+              })}
+            </div>
           </div>
         )}
 
