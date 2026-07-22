@@ -3573,7 +3573,13 @@ async def pure_data_cumulative_client_rfa(
         )
 
         # Attacher les paliers (pour la jauge de progression côté client) — contrat + overrides
-        from app.services.rfa_calculator import load_contract_rules, load_entity_overrides
+        from app.services.rfa_calculator import (
+            load_contract_rules,
+            load_entity_overrides,
+            parse_level_baremes,
+            select_contract_level,
+            compute_total_global_ca,
+        )
         _rules = load_contract_rules(contract) if contract else {}
         if code_union:
             _ovr = load_entity_overrides("CODE_UNION", code_union.strip().upper())
@@ -3582,10 +3588,28 @@ async def pure_data_cumulative_client_rfa(
         else:
             _ovr = {}
 
+        # Mode niveaux (Adhérents 2026) : paliers globaux issus du niveau Classique/Silver/Gold
+        _level_baremes = parse_level_baremes(contract)
+        _selected_level = None
+        if _level_baremes:
+            _selected_level = select_contract_level(
+                compute_total_global_ca(recap_ca),
+                _level_baremes,
+            )
+
         def _tiers_for(k, tier_type):
             o = _ovr.get(k, {})
             if o.get(tier_type):
                 return o[tier_type]
+            # Globaux en mode niveaux : même barème pour toutes les plateformes
+            if _selected_level and tier_type in ("rfa", "bonus") and k.startswith("GLOBAL_"):
+                key = "tiersRfa" if tier_type == "rfa" else "tiersBonus"
+                return list(_selected_level.get(key) or [])
+            # Sous le seuil global : exposer quand même le 1er niveau pour la jauge
+            if _level_baremes and not _selected_level and tier_type in ("rfa", "bonus") and k.startswith("GLOBAL_"):
+                first = min(_level_baremes, key=lambda lvl: float(lvl.get("minGlobal") or 0))
+                key = "tiersRfa" if tier_type == "rfa" else "tiersBonus"
+                return list(first.get(key) or [])
             rule = _rules.get(k)
             if not rule:
                 return []
@@ -3602,6 +3626,7 @@ async def pure_data_cumulative_client_rfa(
         for k, it in rfa_result.get("tri", {}).items():
             it["tiers"] = _tiers_for(k, "tri")
 
+        contract_level = rfa_result.get("contract_level")
         # ── Projection fin d'année : annualisation linéaire selon le mois de référence ──
         reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
         rfa_projected = None
@@ -3636,7 +3661,14 @@ async def pure_data_cumulative_client_rfa(
             "rfa_projected": rfa_projected,
             "reporting_month": reporting_month,
             "projection_factor": projection_factor,
-            "contract_applied": {"id": contract.id, "name": contract.name} if contract else {"id": None, "name": "Aucun contrat"},
+            "contract_applied": {
+                "id": contract.id,
+                "name": contract.name,
+                "level": (contract_level or {}).get("id"),
+                "tripartites_enabled": (contract_level or {}).get("tripartites_enabled"),
+                "total_ca_for_level": (contract_level or {}).get("total_ca"),
+            } if contract else {"id": None, "name": "Aucun contrat"},
+            "contract_level": contract_level,
         }
     except HTTPException:
         raise

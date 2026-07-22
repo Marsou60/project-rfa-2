@@ -1933,7 +1933,17 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const caGlobal = data.ca?.totals?.global_total || 0
   const grand = totals.grand_total || 0
   const globalItems = Object.entries(rfa.global || {})
-  const triItems = Object.entries(rfa.tri || {}).filter(([, v]) => (v.ca || 0) > 0)
+  const contractLevel = data.contract_level || data.contract_applied || {}
+  const levelId = contractLevel.id || contractLevel.level || null
+  const triEnabled = contractLevel.tripartites_enabled === true
+  // Ne montrer que les tri-partites qui ont des paliers sur CE contrat
+  // (évite les anciennes clés famille ACR/EXADIS marquées « non éligible » à tort)
+  const triItems = Object.entries(rfa.tri || {})
+    .filter(([, v]) => (v.ca || 0) > 0)
+    .filter(([, v]) => {
+      const tiers = rfa26ParseTiers(v.tiers)
+      return tiers.length > 0
+    })
   const projected = data.rfa_projected || null
   const projGrand = projected?.totals?.grand_total || null
   const MONTHS_FR = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -1945,7 +1955,14 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h3 className="text-white font-black text-lg">RFA 2026 <span className="text-white/70 text-sm font-semibold">(estimée — Pure Data)</span></h3>
-            <p className="text-indigo-100 text-xs mt-0.5">Contrat appliqué : {data.contract_applied?.name || 'Défaut'} · année {data.year}</p>
+            <p className="text-indigo-100 text-xs mt-0.5">
+              Contrat appliqué : {data.contract_applied?.name || 'Défaut'} · année {data.year}
+              {levelId && (
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-white/20 text-white font-bold">
+                  Niveau {levelId}
+                </span>
+              )}
+            </p>
           </div>
           <span className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/25 border border-amber-200/40 text-amber-50 text-xs font-bold">
             🚧 En cours de paramétrage
@@ -2007,9 +2024,13 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
         )}
 
         {/* Tri-partites — jauges de progression */}
-        {triItems.length > 0 && (
-          <div>
-            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Tri-partites — progression vers le prochain palier</h4>
+        <div>
+          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Tri-partites — progression vers le prochain palier</h4>
+          {levelId && !triEnabled ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Niveau <strong>{levelId}</strong> : les tripartites sont réservées aux contrats <strong>Silver</strong> et <strong>Gold</strong> (CA global ≥ 100 001 €).
+            </div>
+          ) : triItems.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {triItems.map(([key, it]) => {
                 const tiers = rfa26ParseTiers(it.tiers)
@@ -2021,8 +2042,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                 )
               })}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-sm text-gray-500">Aucune tri-partite avec CA et paliers sur ce contrat pour le moment.</p>
+          )}
+        </div>
 
         <p className="text-[11px] text-gray-400">
           RFA 2026 calculée à partir du Pure Data cumulé et du contrat en vigueur. Chiffres estimatifs, susceptibles d'évoluer avec les imports mensuels.
