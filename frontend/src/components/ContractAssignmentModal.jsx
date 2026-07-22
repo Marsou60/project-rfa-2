@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Trash2 } from 'lucide-react'
 
 function ContractAssignmentModal({ entity, mode, contracts, currentContract, existingAssignment, onClose, onSave }) {
+  const adherentContracts = contracts.filter(c => c.is_active && (c.scope === 'ADHERENT' || !c.scope))
   const [selectedContractId, setSelectedContractId] = useState(
     currentContract?.id?.toString() || ''
   )
@@ -10,7 +11,7 @@ function ContractAssignmentModal({ entity, mode, contracts, currentContract, exi
     e.preventDefault()
     const contractId = selectedContractId ? parseInt(selectedContractId) : null
 
-    const defaultContract = contracts.find(c => c.is_default)
+    const defaultContract = adherentContracts.find(c => c.is_default)
     if (contractId === defaultContract?.id) {
       onSave(null)
     } else {
@@ -72,7 +73,7 @@ function ContractAssignmentModal({ entity, mode, contracts, currentContract, exi
                 className="glass-select w-full"
               >
                 <option value="">Contrat par défaut (supprimer l'affectation)</option>
-                {contracts.map((contract) => (
+                {adherentContracts.map((contract) => (
                   <option key={contract.id} value={contract.id}>
                     {contract.name} {contract.is_default && '(Défaut)'}
                   </option>

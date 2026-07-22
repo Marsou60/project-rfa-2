@@ -1781,22 +1781,67 @@ function rfa26TriProgress(ca, tiers) {
   return { rate: p.rate, nextMin: p.nextMin, nextRate, progress, currentValue, missing, projectedGain, achieved: p.nextMin == null && p.minReached != null }
 }
 
-function Rfa26TierLadder({ tierGroups, ca, fmt, fmtPct }) {
+function Rfa26TierLadder({ tierGroups, ca, fmt, fmtPct, levelLabel = null }) {
+  // Fusion RFA + Bonus par seuil pour afficher le total (ex: 4,5% + 3% = 7,5%)
+  const rfaTiers = (tierGroups.find((g) => /rfa/i.test(g.label)) || {}).tiers || []
+  const bonusTiers = (tierGroups.find((g) => /bonus/i.test(g.label)) || {}).tiers || []
+  const mins = sortedUnique([
+    ...rfaTiers.map((t) => t.min),
+    ...bonusTiers.map((t) => t.min),
+  ])
+  const combined = mins.map((min) => ({
+    min,
+    rfa: rfa26RateForThreshold(rfaTiers, min),
+    bonus: rfa26RateForThreshold(bonusTiers, min),
+  })).map((row) => ({ ...row, total: (row.rfa || 0) + (row.bonus || 0) }))
+
+  let reachedIdx = -1
+  combined.forEach((t, i) => { if (t.min <= ca) reachedIdx = i })
+  const nextIdx = combined.findIndex((t) => t.min > ca)
+
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+      {levelLabel && (
+        <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">{levelLabel}</div>
+      )}
+      {combined.length > 0 && (
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+            Paliers RFA + Bonus Union (total)
+          </div>
+          <div className="space-y-1">
+            {combined.map((t, i) => {
+              const isReached = i === reachedIdx
+              const isNext = i === nextIdx
+              return (
+                <div key={i} className={`flex items-center justify-between text-xs rounded-md px-2 py-1 ${
+                  isReached ? 'bg-emerald-50 text-emerald-800 font-semibold' : isNext ? 'bg-amber-50 text-amber-800' : 'text-gray-500'
+                }`}>
+                  <span>
+                    {isReached && '✓ '}{isNext && '→ '}≥ {fmt(t.min)}
+                  </span>
+                  <span className="font-mono text-right">
+                    <span className="text-gray-500">{fmtPct(t.rfa)}+{fmtPct(t.bonus)}</span>
+                    <span className="ml-2 font-bold">{fmtPct(t.total)}</span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
       {tierGroups.filter((g) => g.tiers?.length > 0).map((g) => {
         const sorted = [...g.tiers].sort((a, b) => a.min - b.min)
-        // indice du palier atteint (dernier min <= ca)
-        let reachedIdx = -1
-        sorted.forEach((t, i) => { if (t.min <= ca) reachedIdx = i })
-        const nextIdx = sorted.findIndex((t) => t.min > ca)
+        let gReached = -1
+        sorted.forEach((t, i) => { if (t.min <= ca) gReached = i })
+        const gNext = sorted.findIndex((t) => t.min > ca)
         return (
           <div key={g.label}>
             <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">{g.label}</div>
             <div className="space-y-1">
               {sorted.map((t, i) => {
-                const isReached = i === reachedIdx
-                const isNext = i === nextIdx
+                const isReached = i === gReached
+                const isNext = i === gNext
                 return (
                   <div key={i} className={`flex items-center justify-between text-xs rounded-md px-2 py-1 ${
                     isReached ? 'bg-emerald-50 text-emerald-800 font-semibold' : isNext ? 'bg-amber-50 text-amber-800' : 'text-gray-500'
@@ -1816,6 +1861,10 @@ function Rfa26TierLadder({ tierGroups, ca, fmt, fmtPct }) {
   )
 }
 
+function sortedUnique(arr) {
+  return [...new Set(arr.filter((v) => v != null))].sort((a, b) => a - b)
+}
+
 function Rfa26ProgressCard({
   logoPlatform,
   logos,
@@ -1829,6 +1878,9 @@ function Rfa26ProgressCard({
   fmtPct,
   locked = false,
   lockHint = null,
+  levelLabel = null,
+  projTierGroups = null,
+  projLevelLabel = null,
 }) {
   const [open, setOpen] = useState(false)
   const achieved = prog.achieved
@@ -1853,7 +1905,6 @@ function Rfa26ProgressCard({
 
   // Verrouillé Silver/Gold : on montre le potentiel pour motiver
   if (locked) {
-    // Taux du palier atteint sur la marque, sinon 1er palier du barème
     const firstTierRate = (() => {
       const tiers = tierGroups.flatMap((g) => g.tiers || [])
       if (!tiers.length) return 0
@@ -1914,12 +1965,13 @@ function Rfa26ProgressCard({
             </span>
           </div>
         )}
-        {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} />}
+        {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel} />}
       </div>
     )
   }
 
   const hasLadder = tierGroups.some((g) => g.tiers?.length > 0)
+  const hasProjLadder = projTierGroups && projTierGroups.some((g) => g.tiers?.length > 0)
   return (
     <div
       className={`rounded-xl border p-4 ${hasLadder ? 'cursor-pointer' : ''} ${achieved ? 'border-emerald-200 bg-emerald-50/40' : prog.nextMin != null && prog.progress >= 80 ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'}`}
@@ -1956,13 +2008,26 @@ function Rfa26ProgressCard({
       </div>
       {proj && (
         <div className="mt-2 pt-2 border-t border-dashed border-cyan-200 flex items-center justify-between text-[11px]">
-          <span className="text-cyan-700 font-semibold">📈 Projection fin 2026</span>
+          <span className="text-cyan-700 font-semibold">📈 Projection fin 2026{projLevelLabel ? ` (${projLevelLabel})` : ''}</span>
           <span className="text-cyan-800">
             {fmt(proj.ca)} · {fmtPct(proj.rate)} · <strong>{fmt(proj.value)} RFA</strong>
           </span>
         </div>
       )}
-      {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} />}
+      {open && hasLadder && (
+        <>
+          <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel || 'Barème à date'} />
+          {hasProjLadder && proj && (
+            <Rfa26TierLadder
+              tierGroups={projTierGroups}
+              ca={proj.ca || 0}
+              fmt={fmt}
+              fmtPct={fmtPct}
+              levelLabel={projLevelLabel || 'Barème projection fin 2026'}
+            />
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -2026,8 +2091,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
     .filter(([, v]) => rfa26ParseTiers(v.tiers).length > 0)
   const projected = data.rfa_projected || null
   const projGrand = projected?.totals?.grand_total || null
-  const projLevelId = projected?.contract_level?.id || null
-  const projTriEnabled = projected?.contract_level?.tripartites_enabled === true
+  const projectedLevel = data.projected_level || projected?.contract_level || null
+  const projLevelId = projectedLevel?.id || null
+  const projTriEnabled = projectedLevel?.tripartites_enabled === true
+  const levelWillUpgrade = Boolean(levelId && projLevelId && levelId !== projLevelId)
   const projCaGlobal = (() => {
     if (!projected?.global) return null
     return Object.values(projected.global).reduce((s, it) => s + (it.ca || 0), 0)
@@ -2049,6 +2116,11 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
               {levelId && (
                 <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-white/20 text-white font-bold">
                   Niveau {levelId}
+                </span>
+              )}
+              {levelWillUpgrade && (
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-cyan-300/30 text-cyan-50 font-bold">
+                  → projeté {projLevelId}
                 </span>
               )}
             </p>
@@ -2088,6 +2160,11 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
             <div className="text-xs font-semibold text-cyan-700">📈 RFA projetée fin 2026</div>
             <div className="text-2xl font-black text-cyan-800">{projGrand != null ? fmt(projGrand) : '—'}</div>
             {projLabel && <div className="text-[11px] text-cyan-600 mt-0.5">{projLabel}</div>}
+            {levelWillUpgrade && (
+              <div className="text-[11px] text-cyan-800 mt-1 font-semibold">
+                Inclut passage {levelId} → {projLevelId}
+              </div>
+            )}
           </div>
         </div>
 
@@ -2104,8 +2181,28 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                   const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus)
                   const pj = projected?.global?.[key]
                   const proj = pj ? { ca: pj.ca || 0, rate: pj.total?.rate || 0, value: pj.total?.value || 0 } : null
+                  const pjRfa = pj ? rfa26ParseTiers(pj.tiers_rfa) : []
+                  const pjBonus = pj ? rfa26ParseTiers(pj.tiers_bonus) : []
+                  const projTierGroups = levelWillUpgrade && (pjRfa.length > 0 || pjBonus.length > 0)
+                    ? [{ label: 'Paliers RFA', tiers: pjRfa }, { label: 'Paliers Bonus', tiers: pjBonus }]
+                    : null
                   return (
-                    <Rfa26ProgressCard key={key} logoPlatform={key.replace('GLOBAL_', '')} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tRfa.length > 0 || tBonus.length > 0} tierGroups={[{ label: 'Paliers RFA', tiers: tRfa }, { label: 'Paliers Bonus', tiers: tBonus }]} proj={proj} fmt={fmt} fmtPct={fmtPct} />
+                    <Rfa26ProgressCard
+                      key={key}
+                      logoPlatform={key.replace('GLOBAL_', '')}
+                      logos={logos}
+                      label={it.label}
+                      ca={it.ca || 0}
+                      prog={prog}
+                      hasTiers={tRfa.length > 0 || tBonus.length > 0}
+                      tierGroups={[{ label: 'Paliers RFA', tiers: tRfa }, { label: 'Paliers Bonus', tiers: tBonus }]}
+                      proj={proj}
+                      fmt={fmt}
+                      fmtPct={fmtPct}
+                      levelLabel={levelId ? `Barème ${levelId} (à date)` : null}
+                      projTierGroups={projTierGroups}
+                      projLevelLabel={projLevelId ? `Barème ${projLevelId} (projection)` : null}
+                    />
                   )
                 })}
             </div>

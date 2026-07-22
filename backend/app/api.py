@@ -3637,12 +3637,27 @@ async def pure_data_cumulative_client_rfa(
                 "global": {k: round(v * projection_factor, 2) for k, v in recap_ca["global"].items()},
                 "tri": {k: round(v * projection_factor, 2) for k, v in recap_ca["tri"].items()},
             }
+            # calculate_rfa recalcule le niveau (Silver→Gold si CA projeté franchit le seuil)
             rfa_projected = calculate_rfa(
                 projected_recap,
                 contract=contract,
                 code_union=code_union.strip().upper() if code_union else None,
                 groupe_client=(_norm_text(groupe_client) if groupe_client else None),
             )
+            # Attacher les paliers du NIVEAU PROJETÉ (ex: GOLD) pour la jauge UI
+            _proj_level = None
+            if _level_baremes and rfa_projected:
+                _proj_level = select_contract_level(
+                    compute_total_global_ca(projected_recap),
+                    _level_baremes,
+                )
+            if rfa_projected and _proj_level:
+                for k, it in rfa_projected.get("global", {}).items():
+                    it["tiers_rfa"] = list(_proj_level.get("tiersRfa") or [])
+                    it["tiers_bonus"] = list(_proj_level.get("tiersBonus") or [])
+                    it["level_id"] = _proj_level.get("id")
+                for k, it in rfa_projected.get("tri", {}).items():
+                    it["tiers"] = _tiers_for(k, "tri")
 
         global_total = round(sum(recap_ca["global"].values()), 2)
         tri_total = round(sum(recap_ca["tri"].values()), 2)
@@ -3669,6 +3684,7 @@ async def pure_data_cumulative_client_rfa(
                 "total_ca_for_level": (contract_level or {}).get("total_ca"),
             } if contract else {"id": None, "name": "Aucun contrat"},
             "contract_level": contract_level,
+            "projected_level": (rfa_projected or {}).get("contract_level") if rfa_projected else None,
         }
     except HTTPException:
         raise

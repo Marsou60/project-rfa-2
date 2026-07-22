@@ -463,7 +463,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           className="glass-select"
         >
           <option value="">Sélectionner un contrat</option>
-          {contracts.map((contract) => (
+          {contracts.filter(c => c.is_active && (c.scope === 'ADHERENT' || !c.scope)).map((contract) => (
             <option key={contract.id} value={contract.id}>
               {contract.name} {contract.is_default && '(Défaut)'}
             </option>

@@ -298,7 +298,8 @@ function ClientsPage({ importId }) {
       }
     }
 
-    return contracts.find(c => c.is_default && c.is_active)
+    // Défaut ADHERENT uniquement — ne jamais prendre un contrat Union/DAF (is_default)
+    return contracts.find(c => c.is_default && c.is_active && c.scope === 'ADHERENT')
   }
 
   const loadEntities = async () => {
