@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  # gardé pour compatibilité
 from app.api import router
 from app.database import init_db
-from app.services.seed import seed_base_standard
+from app.services.seed import seed_base_standard, ensure_adherent_2026_contract
 
 # Charger le profil d'environnement depuis backend/
 # - dev: .env.dev (isole les tests locaux de la prod)
@@ -50,6 +50,10 @@ def on_startup():
         seed_base_standard()
     except Exception as e:
         print(f"[STARTUP] seed warning: {e}")
+    try:
+        ensure_adherent_2026_contract()
+    except Exception as e:
+        print(f"[STARTUP] adherent 2026 seed warning: {e}")
 
 # CORS pour le frontend
 _extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]

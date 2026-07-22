@@ -138,6 +138,15 @@ def run_migrations():
             cursor.execute("ALTER TABLE contract ADD COLUMN marketing_rules TEXT")
             conn.commit()
             print("[MIGRATION] Colonne marketing_rules ajoutee avec succes!")
+
+        # Migration: ajouter level_baremes a la table contract
+        try:
+            cursor.execute("SELECT level_baremes FROM contract LIMIT 1")
+        except sqlite3.OperationalError:
+            print("[MIGRATION] Ajout de la colonne level_baremes a la table contract...")
+            cursor.execute("ALTER TABLE contract ADD COLUMN level_baremes TEXT")
+            conn.commit()
+            print("[MIGRATION] Colonne level_baremes ajoutee avec succes!")
         
         # Migration: normaliser les valeurs scope en UPPERCASE
         try:
@@ -249,8 +258,23 @@ def init_db():
         print(f"[INIT_DB] create_all warning (tables existent peut-être déjà): {e}")
 
     run_migrations()
+    _ensure_pg_level_baremes_column()
     seed_admin_user()
     seed_dev_test_user()
+
+
+def _ensure_pg_level_baremes_column():
+    """Ajoute level_baremes sur PostgreSQL si la colonne manque (create_all ne l'ajoute pas)."""
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE contract ADD COLUMN IF NOT EXISTS level_baremes TEXT"
+            ))
+    except Exception as e:
+        print(f"[INIT_DB] level_baremes PG migration warning: {e}")
 
 
 def get_session():

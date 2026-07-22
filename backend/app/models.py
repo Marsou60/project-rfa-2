@@ -36,6 +36,11 @@ class Contract(SQLModel, table=True):
     # Option: utiliser le CA total combine (ACR+DCA+ALLIANCE+EXADIS) pour calculer le taux
     # puis appliquer ce taux a chaque fournisseur individuellement
     use_combined_global_rate: bool = Field(default=False)
+
+    # Barèmes par niveau de contrat (Classique / Silver / Gold).
+    # JSON: [{"id":"CLASSIQUE","minGlobal":25000,"maxGlobal":100000,"tiersRfa":[...],"tiersBonus":[...],"tripartitesEnabled":false}, ...]
+    # Si renseigné, le CA global choisit le niveau puis chaque plateforme applique les paliers de ce niveau.
+    level_baremes: Optional[str] = None
     
     # Règles marketing (format JSON: {"GLOBAL_ACR": {"type": "rate", "rate": 0.007}, ...})
     marketing_rules: Optional[str] = None

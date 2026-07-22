@@ -2,11 +2,53 @@
 Calculateur RFA (RFA + Bonus) pour clients et groupes.
 """
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from app.core.fields import get_field_by_key, get_global_fields, get_tri_fields
 from app.core.global_tiers import GLOBAL_PLATFORMS
 from app.services.tier_engine import compute_tier
 from app.models import Contract, ContractRule, ContractOverride, RuleScope, TargetType
+
+
+def parse_level_baremes(contract: Optional[Contract]) -> List[Dict[str, Any]]:
+    """Parse le JSON level_baremes d'un contrat (liste vide si absent / invalide)."""
+    if not contract:
+        return []
+    raw = getattr(contract, "level_baremes", None)
+    if not raw:
+        return []
+    try:
+        levels = json.loads(raw) if isinstance(raw, str) else raw
+        return levels if isinstance(levels, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def select_contract_level(total_ca: float, levels: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Choisit le niveau de contrat selon le CA global cumulé.
+    maxGlobal=None signifie pas de plafond (ex: Gold au-delà de 700k).
+    """
+    if not levels or total_ca is None:
+        return None
+    sorted_levels = sorted(levels, key=lambda lvl: float(lvl.get("minGlobal") or 0))
+    for level in sorted_levels:
+        min_g = float(level.get("minGlobal") or 0)
+        max_g = level.get("maxGlobal")
+        if total_ca < min_g:
+            continue
+        if max_g is not None and total_ca > float(max_g):
+            continue
+        return level
+    return None
+
+
+def compute_total_global_ca(recap_ca: Dict[str, Dict[str, float]]) -> float:
+    """Somme des CA des plateformes globales présentes dans le récap."""
+    total = 0.0
+    for key in GLOBAL_PLATFORMS:
+        if key in recap_ca.get("global", {}):
+            total += float(recap_ca["global"][key] or 0)
+    return total
 
 
 def load_contract_rules(contract: Contract) -> Dict[str, ContractRule]:
@@ -142,10 +184,11 @@ def calculate_rfa(
     }
     
     # Charger les regles du contrat si fourni
-    if contract and not contract_rules:
-        contract_rules = load_contract_rules(contract)
-    elif not contract_rules:
-        contract_rules = {}
+    if contract_rules is None:
+        if contract:
+            contract_rules = load_contract_rules(contract)
+        else:
+            contract_rules = {}
     
     # Charger les overrides de l'entite (client ou groupe)
     client_overrides = entity_overrides or {}
@@ -158,9 +201,36 @@ def calculate_rfa(
     # Calculer RFA pour les plateformes globales
     global_rfa_sum = 0.0
     global_bonus_sum = 0.0
+
+    # MODE NIVEAUX (Classique / Silver / Gold) : CA global → niveau → paliers plateforme
+    level_baremes = parse_level_baremes(contract)
+    use_level_based = bool(level_baremes)
+    selected_level = None
+    total_global_ca = 0.0
+    tripartites_enabled = True
+
+    if use_level_based:
+        total_global_ca = compute_total_global_ca(recap_ca)
+        selected_level = select_contract_level(total_global_ca, level_baremes)
+        tripartites_enabled = bool(selected_level and selected_level.get("tripartitesEnabled", False))
+        level_name = selected_level.get("id") if selected_level else None
+        print(
+            f"[LEVEL MODE] CA Total: {total_global_ca:.2f}, "
+            f"Niveau: {level_name or 'AUCUN'}, Tripartites: {tripartites_enabled}"
+        )
+        result["contract_level"] = {
+            "id": level_name,
+            "total_ca": total_global_ca,
+            "tripartites_enabled": tripartites_enabled,
+            "min_global": selected_level.get("minGlobal") if selected_level else None,
+            "max_global": selected_level.get("maxGlobal") if selected_level else None,
+        }
     
-    # MODE COMBINE: Si le contrat utilise le taux global combine
-    use_combined_rate = getattr(contract, 'use_combined_global_rate', False) if contract else False
+    # MODE COMBINE: Si le contrat utilise le taux global combine (ignoré si level-based)
+    use_combined_rate = (
+        (not use_level_based)
+        and getattr(contract, 'use_combined_global_rate', False)
+    ) if contract else False
     combined_rate_rfa = None
     combined_rate_bonus = None
     combined_min_reached_rfa = None
@@ -215,6 +285,15 @@ def calculate_rfa(
             # Pas de regle -> RFA = 0
             tiers_rfa = []
             tiers_bonus = []
+
+        # MODE NIVEAUX: paliers issus du niveau sélectionné (identiques pour toutes plateformes)
+        if use_level_based:
+            if selected_level:
+                tiers_rfa = list(selected_level.get("tiersRfa") or [])
+                tiers_bonus = list(selected_level.get("tiersBonus") or [])
+            else:
+                tiers_rfa = []
+                tiers_bonus = []
         
         # Verifier si des overrides existent pour ce client
         has_rfa_override = False
@@ -254,7 +333,7 @@ def calculate_rfa(
             }
             bonus_result["has_override"] = has_bonus_override
         else:
-            # MODE NORMAL: calculer RFA par fournisseur individuellement
+            # MODE NORMAL ou NIVEAUX: calculer RFA par fournisseur individuellement
             rfa_result = compute_tier(ca, tiers_rfa)
             # Ajouter le seuil minimal (premier palier)
             rfa_min_threshold = tiers_rfa[0]["min"] if tiers_rfa and len(tiers_rfa) > 0 else None
@@ -310,6 +389,10 @@ def calculate_rfa(
             # Pas de regle definie -> RFA = 0
             tiers = []
             label = default_label
+
+        # MODE NIVEAUX: tripartites réservées Silver / Gold
+        if use_level_based and not tripartites_enabled:
+            tiers = []
         
         # Verifier si des overrides existent pour ce client (tri-partite)
         has_tri_override = False

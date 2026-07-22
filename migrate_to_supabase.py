@@ -55,7 +55,7 @@ def pg_connect(url):
 
 # Colonnes booléennes par table (SQLite les stocke en 0/1, PG veut True/False)
 BOOL_COLS = {
-    "contract":         {"is_default", "is_active", "use_combined_global_rate"},
+    "contract":         {"is_default", "is_active", "use_combined_global_rate", "level_baremes"},
     "contractoverride": {"is_active"},
     "ad":               {"is_active"},
     "user":             {"is_active"},

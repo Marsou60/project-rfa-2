@@ -79,6 +79,10 @@ def import_contracts_from_json(
                 
                 # Récupérer le flag pour le mode taux combiné
                 use_combined_global_rate = contract_data.get("useCombinedGlobalRate", False)
+
+                # Barèmes par niveau (Classique / Silver / Gold)
+                level_baremes = contract_data.get("levelBaremes")
+                level_baremes_json = json.dumps(level_baremes) if level_baremes else None
                 
                 # Récupérer le scope (ADHERENT ou UNION)
                 from app.models import ContractScope
@@ -95,6 +99,7 @@ def import_contracts_from_json(
                     contract.is_default = contract_data.get("isDefault", False)
                     contract.is_active = True
                     contract.use_combined_global_rate = use_combined_global_rate
+                    contract.level_baremes = level_baremes_json
                     contract.scope = scope
                     result["updated"] += 1
                 else:
@@ -105,6 +110,7 @@ def import_contracts_from_json(
                         is_default=contract_data.get("isDefault", False),
                         is_active=True,
                         use_combined_global_rate=use_combined_global_rate,
+                        level_baremes=level_baremes_json,
                         scope=scope
                     )
                     session.add(contract)

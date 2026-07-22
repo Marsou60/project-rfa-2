@@ -2005,6 +2005,10 @@ async def update_contract(contract_id: int, contract_update: Contract, session: 
         else:
             contract.scope = scope_val
     contract.marketing_rules = contract_update.marketing_rules
+    if hasattr(contract_update, "use_combined_global_rate"):
+        contract.use_combined_global_rate = contract_update.use_combined_global_rate
+    if hasattr(contract_update, "level_baremes"):
+        contract.level_baremes = contract_update.level_baremes
     contract.is_default = contract_update.is_default
     contract.is_active = contract_update.is_active
     contract.updated_at = datetime.now()
@@ -2067,8 +2071,12 @@ async def duplicate_contract(contract_id: int, session: Session = Depends(get_se
     new_contract = Contract(
         name=f"{contract.name} (copie)",
         description=contract.description,
+        scope=contract.scope,
         is_default=False,
-        is_active=True
+        is_active=True,
+        use_combined_global_rate=getattr(contract, "use_combined_global_rate", False),
+        level_baremes=getattr(contract, "level_baremes", None),
+        marketing_rules=getattr(contract, "marketing_rules", None),
     )
     session.add(new_contract)
     session.commit()
