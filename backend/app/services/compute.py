@@ -142,8 +142,7 @@ def get_entity_rfa_grand_total(
             groupe_client_norm = (data.get("groupe_client") or "").strip().upper() or None
             contract = resolve_contract(
                 code_union=code_union_norm,
-                groupe_client=groupe_client_norm,
-            )
+                groupe_client=groupe_client_norm, year=2025)
             recap_ca = {"global": data["global"], "tri": data["tri"]}
             rfa_result = calculate_rfa(recap_ca, contract=contract, code_union=entity_id)
         else:
@@ -151,7 +150,7 @@ def get_entity_rfa_grand_total(
                 return None
             data = import_data.by_group[entity_id]
             groupe_norm = entity_id.strip().upper() if entity_id else None
-            contract = resolve_contract(groupe_client=groupe_norm)
+            contract = resolve_contract(groupe_client=groupe_norm, year=2025)
             recap_ca = {"global": data["global"], "tri": data["tri"]}
             rfa_result = calculate_rfa(recap_ca, contract=contract, groupe_client=groupe_norm)
         totals = rfa_result.get("totals") or {}
@@ -197,8 +196,7 @@ def get_entity_detail_with_rfa(
             groupe_client_norm = groupe_client.strip().upper() if groupe_client else None
             contract = resolve_contract(
                 code_union=code_union_norm if code_union_norm else None,
-                groupe_client=groupe_client_norm if groupe_client_norm else None
-            )
+                groupe_client=groupe_client_norm if groupe_client_norm else None, year=2025)
         
         # Préparer les données CA pour le calculateur RFA
         recap_ca = {
@@ -279,7 +277,7 @@ def get_entity_detail_with_rfa(
             if not contract:
                 raise ValueError(f"Contrat {contract_id} non trouvé")
         else:
-            contract = resolve_contract(groupe_client=groupe_client)
+            contract = resolve_contract(groupe_client=groupe_client, year=2025)
         
         # Préparer les données CA pour le calculateur RFA
         recap_ca = {
@@ -380,7 +378,7 @@ def get_global_recap_rfa(import_data: ImportData, dissolved_groups: Optional[set
         if not groupe_client or groupe_client_norm in dissolved_groups:
             # Résoudre le contrat pour ce client
             code_union_norm = code_union.strip().upper() if code_union else None
-            contract = resolve_contract(code_union=code_union_norm)
+            contract = resolve_contract(code_union=code_union_norm, year=2025)
             
             # Préparer les données CA
             recap_ca = {
@@ -434,7 +432,7 @@ def get_global_recap_rfa(import_data: ImportData, dissolved_groups: Optional[set
             continue
         # Résoudre le contrat pour ce groupe
         groupe_norm = groupe.strip().upper() if groupe else None
-        contract = resolve_contract(groupe_client=groupe_norm)
+        contract = resolve_contract(groupe_client=groupe_norm, year=2025)
         
         # Préparer les données CA
         recap_ca = {
@@ -575,7 +573,7 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
             continue
 
         code_union_norm = code_union.strip().upper() if code_union else None
-        contract = resolve_contract(code_union=code_union_norm)
+        contract = resolve_contract(code_union=code_union_norm, year=2025)
         recap_ca = {"global": client_data["global"], "tri": client_data["tri"]}
         rfa_result = calculate_rfa(
             recap_ca,
@@ -609,7 +607,7 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
         if groupe_norm in dissolved_groups:
             continue
 
-        contract = resolve_contract(groupe_client=groupe_norm)
+        contract = resolve_contract(groupe_client=groupe_norm, year=2025)
         recap_ca = {"global": group_data["global"], "tri": group_data["tri"]}
         rfa_result = calculate_rfa(
             recap_ca,

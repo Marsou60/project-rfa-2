@@ -1162,7 +1162,7 @@ async def get_global_recap(
         # ── Batch 1 : résolution des contrats (3 requêtes) ──────────────
         _batch = BatchContractResolver()
         _orig_resolve = _resolver_mod.resolve_contract
-        _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None: _batch.resolve(code_union, groupe_client)
+        _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None, year=None: _batch.resolve(code_union, groupe_client, year=year)
 
         # ── Batch 2 : toutes les règles de contrats (1 requête) ─────────
         _all_rules     = session.exec(select(ContractRule)).all()
@@ -3564,7 +3564,7 @@ async def pure_data_cumulative_client_rfa(
         recap_ca = compute_recap_ca_from_rows(rows)
 
         # Contrat résolu par le mécanisme existant (Code Union > Groupe > Défaut)
-        contract = resolve_contract(**resolve_key)
+        contract = resolve_contract(**resolve_key, year=year)
         rfa_result = calculate_rfa(
             recap_ca,
             contract=contract,

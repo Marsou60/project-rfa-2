@@ -6,7 +6,7 @@
       "id": "CONTRAT_ADHERENT_2026",
       "name": "Adhérents 2026",
       "scope": "ADHERENT",
-      "isDefault": true,
+      "isDefault": false,
       "useCombinedGlobalRate": false,
       "notes": "Contrat de base Adhérents 2026. Niveau fixé par CA global (ACR+ALLIANCE+DCA+EXADIS) : Classique 25k-100k, Silver 100001-300k, Gold 300001+ (même barème au-delà de 700k). RFA+Bonus calculés plateforme par plateforme selon le tableau du niveau. Sous 25k global = aucune rémunération. Tripartites Silver & Gold : marque × famille Pure Data (ex. Alliance+DELPHI+FREINAGE, Alliance+DELPHI+PSD). Mapping : Freinage VL→FREINAGE, PSD→SUSPENSION ET DIRECTION, Distribution Alliance→MOTEUR ET PERIPHERIQUE, Filtration→FILTRATION, Embrayage→TRANSMISSION ET EMBRAYAGE, MT→DEMARRAGE ET CHARGE. DASIR/OTTOGO et marques partenaires hors scope.",
       "levelBaremes": [

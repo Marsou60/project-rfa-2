@@ -200,7 +200,7 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
     import app.services.rfa_calculator as _calc_mod
     import app.services.contract_resolver as _resolver_mod
     _orig_resolve = _resolver_mod.resolve_contract
-    _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None: _batch_resolver.resolve(code_union, groupe_client)
+    _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None, year=None: _batch_resolver.resolve(code_union, groupe_client, year=year)
     _calc_mod.resolve_contract = _resolver_mod.resolve_contract
 
     # =====================================================================
