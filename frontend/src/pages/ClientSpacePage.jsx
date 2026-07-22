@@ -1816,7 +1816,20 @@ function Rfa26TierLadder({ tierGroups, ca, fmt, fmtPct }) {
   )
 }
 
-function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = true, tierGroups = [], proj = null, fmt, fmtPct }) {
+function Rfa26ProgressCard({
+  logoPlatform,
+  logos,
+  label,
+  ca,
+  prog,
+  hasTiers = true,
+  tierGroups = [],
+  proj = null,
+  fmt,
+  fmtPct,
+  locked = false,
+  lockHint = null,
+}) {
   const [open, setOpen] = useState(false)
   const achieved = prog.achieved
   // Non éligible : aucun palier configuré pour cette plateforme/tri sur le contrat du client
@@ -1837,6 +1850,75 @@ function Rfa26ProgressCard({ logoPlatform, logos, label, ca, prog, hasTiers = tr
       </div>
     )
   }
+
+  // Verrouillé Silver/Gold : on montre le potentiel pour motiver
+  if (locked) {
+    // Taux du palier atteint sur la marque, sinon 1er palier du barème
+    const firstTierRate = (() => {
+      const tiers = tierGroups.flatMap((g) => g.tiers || [])
+      if (!tiers.length) return 0
+      const sorted = [...tiers].sort((a, b) => a.min - b.min)
+      let rate = 0
+      for (const t of sorted) {
+        if (t.min <= ca) rate = t.rate
+        else break
+      }
+      if (rate === 0 && sorted[0]) rate = sorted[0].rate
+      return rate
+    })()
+    const potentialValue = firstTierRate * ca
+    const hasLadder = tierGroups.some((g) => g.tiers?.length > 0)
+    return (
+      <div
+        className={`rounded-xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-4 ${hasLadder ? 'cursor-pointer' : ''}`}
+        onClick={() => hasLadder && setOpen((o) => !o)}
+        title={hasLadder ? 'Cliquez pour voir tous les paliers' : undefined}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={24} />}
+          <span className="font-bold text-amber-950 text-sm flex-1 truncate">{label}</span>
+          <span className="font-mono text-sm text-amber-900/80">{fmt(ca)}</span>
+          {hasLadder && (
+            <svg className={`w-4 h-4 text-amber-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-amber-200 text-amber-900">
+            🔒 Réservé Silver &amp; Gold
+          </span>
+          {potentialValue > 0 && (
+            <span className="text-[11px] text-amber-800">
+              Potentiel : <strong className="text-amber-950">{fmt(potentialValue)}</strong>
+              <span className="text-amber-700"> à {fmtPct(firstTierRate)}</span>
+            </span>
+          )}
+        </div>
+        {lockHint && (
+          <p className="text-[11px] text-amber-800/90 leading-snug mb-2">{lockHint}</p>
+        )}
+        <div className="h-2 rounded-full bg-amber-100 overflow-hidden opacity-60">
+          <div className="h-full rounded-full bg-amber-400/70" style={{ width: `${Math.min(prog.progress || 0, 100)}%` }} />
+        </div>
+        <div className="flex items-center justify-between text-[11px] mt-1.5 text-amber-800/80">
+          {prog.nextMin != null ? (
+            <span>Palier marque : plus que <strong>{fmt(prog.missing)}</strong> sur cette ligne</span>
+          ) : (
+            <span>Palier marque atteint — débloquez Silver pour encaisser</span>
+          )}
+        </div>
+        {proj && (proj.value > 0 || proj.ca > 0) && (
+          <div className="mt-2 pt-2 border-t border-dashed border-amber-200 flex items-center justify-between text-[11px]">
+            <span className="text-cyan-700 font-semibold">📈 Si Silver atteint fin 2026</span>
+            <span className="text-cyan-800">
+              {fmt(proj.ca)} · {fmtPct(proj.rate)} · <strong>{fmt(proj.value)} RFA</strong>
+            </span>
+          </div>
+        )}
+        {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} />}
+      </div>
+    )
+  }
+
   const hasLadder = tierGroups.some((g) => g.tiers?.length > 0)
   return (
     <div
@@ -1936,18 +2018,25 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const contractLevel = data.contract_level || data.contract_applied || {}
   const levelId = contractLevel.id || contractLevel.level || null
   const triEnabled = contractLevel.tripartites_enabled === true
-  // Ne montrer que les tri-partites qui ont des paliers sur CE contrat
-  // (évite les anciennes clés famille ACR/EXADIS marquées « non éligible » à tort)
+  const SILVER_MIN = 100001
+  const gapToSilver = Math.max(SILVER_MIN - caGlobal, 0)
+  // Toujours afficher les tri-partites avec CA + paliers (même en Classique → mode « à débloquer »)
   const triItems = Object.entries(rfa.tri || {})
     .filter(([, v]) => (v.ca || 0) > 0)
-    .filter(([, v]) => {
-      const tiers = rfa26ParseTiers(v.tiers)
-      return tiers.length > 0
-    })
+    .filter(([, v]) => rfa26ParseTiers(v.tiers).length > 0)
   const projected = data.rfa_projected || null
   const projGrand = projected?.totals?.grand_total || null
+  const projLevelId = projected?.contract_level?.id || null
+  const projTriEnabled = projected?.contract_level?.tripartites_enabled === true
+  const projCaGlobal = (() => {
+    if (!projected?.global) return null
+    return Object.values(projected.global).reduce((s, it) => s + (it.ca || 0), 0)
+  })()
   const MONTHS_FR = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
   const projLabel = data.reporting_month ? `au rythme de ${MONTHS_FR[data.reporting_month] || `M${data.reporting_month}`}` : null
+  const lockHintBase = gapToSilver > 0
+    ? `Encore ${fmt(gapToSilver)} de CA global pour passer Silver et encaisser ces tripartites. À vous de les aller chercher !`
+    : `Passez Silver ou Gold pour encaisser ces tripartites.`
 
   return (
     <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm overflow-hidden">
@@ -2023,14 +2112,29 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
           </div>
         )}
 
-        {/* Tri-partites — jauges de progression */}
+        {/* Tri-partites — toujours visibles (motivantes si Classique) */}
         <div>
           <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Tri-partites — progression vers le prochain palier</h4>
-          {levelId && !triEnabled ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Niveau <strong>{levelId}</strong> : les tripartites sont réservées aux contrats <strong>Silver</strong> et <strong>Gold</strong> (CA global ≥ 100 001 €).
+          {!triEnabled && (
+            <div className="rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 px-4 py-3 mb-3">
+              <p className="text-sm text-amber-950 font-semibold">
+                🎯 Niveau {levelId || 'CLASSIQUE'} — tripartites verrouillées
+              </p>
+              <p className="text-[13px] text-amber-900 mt-1 leading-snug">
+                Réservées aux clients <strong>Silver</strong> &amp; <strong>Gold</strong> (CA global ≥ {fmt(SILVER_MIN)}).
+                {gapToSilver > 0 && (
+                  <> Il vous reste <strong>{fmt(gapToSilver)}</strong> pour les débloquer — allez les chercher !</>
+                )}
+              </p>
+              {projTriEnabled && projCaGlobal != null && (
+                <p className="text-[12px] text-cyan-800 mt-2 font-medium">
+                  📈 Bonne nouvelle : au rythme actuel (~{fmt(projCaGlobal)} fin 2026
+                  {projLevelId ? `, niveau ${projLevelId}` : ''}), ces tripartites seraient débloquées.
+                </p>
+              )}
             </div>
-          ) : triItems.length > 0 ? (
+          )}
+          {triItems.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {triItems.map(([key, it]) => {
                 const tiers = rfa26ParseTiers(it.tiers)
@@ -2038,12 +2142,26 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                 const pjt = projected?.tri?.[key]
                 const proj = pjt ? { ca: pjt.ca || 0, rate: pjt.rate || 0, value: pjt.value || 0 } : null
                 return (
-                  <Rfa26ProgressCard key={key} logoPlatform={null} logos={logos} label={it.label} ca={it.ca || 0} prog={prog} hasTiers={tiers.length > 0} tierGroups={[{ label: 'Paliers', tiers }]} proj={proj} fmt={fmt} fmtPct={fmtPct} />
+                  <Rfa26ProgressCard
+                    key={key}
+                    logoPlatform={null}
+                    logos={logos}
+                    label={it.label}
+                    ca={it.ca || 0}
+                    prog={prog}
+                    hasTiers={tiers.length > 0}
+                    tierGroups={[{ label: 'Paliers', tiers }]}
+                    proj={proj}
+                    fmt={fmt}
+                    fmtPct={fmtPct}
+                    locked={!triEnabled}
+                    lockHint={!triEnabled ? lockHintBase : null}
+                  />
                 )
               })}
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Aucune tri-partite avec CA et paliers sur ce contrat pour le moment.</p>
+            <p className="text-sm text-gray-500">Aucune tri-partite avec CA sur les marques éligibles pour le moment — développez vos achats sur les marques Silver/Gold pour constituer un potentiel.</p>
           )}
         </div>
 
