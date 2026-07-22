@@ -8,7 +8,7 @@
       "scope": "ADHERENT",
       "isDefault": true,
       "useCombinedGlobalRate": false,
-      "notes": "Contrat de base Adhérents 2026. Niveau fixé par CA global (ACR+ALLIANCE+DCA+EXADIS) : Classique 25k-100k, Silver 100001-300k, Gold 300001+ (même barème au-delà de 700k). RFA+Bonus calculés plateforme par plateforme selon le tableau du niveau. Sous 25k global = aucune rémunération. Tripartites réservées Silver & Gold. DASIR/OTTOGO et marques partenaires (TOTAL, FUCHS, NPS…) hors scope pour l'instant.",
+      "notes": "Contrat de base Adhérents 2026. Niveau fixé par CA global (ACR+ALLIANCE+DCA+EXADIS) : Classique 25k-100k, Silver 100001-300k, Gold 300001+ (même barème au-delà de 700k). RFA+Bonus calculés plateforme par plateforme selon le tableau du niveau. Sous 25k global = aucune rémunération. Tripartites Silver & Gold : marque × famille Pure Data (ex. Alliance+DELPHI+FREINAGE, Alliance+DELPHI+PSD). Mapping : Freinage VL→FREINAGE, PSD→SUSPENSION ET DIRECTION, Distribution Alliance→MOTEUR ET PERIPHERIQUE, Filtration→FILTRATION, Embrayage→TRANSMISSION ET EMBRAYAGE, MT→DEMARRAGE ET CHARGE. DASIR/OTTOGO et marques partenaires hors scope.",
       "levelBaremes": [
         {
           "id": "CLASSIQUE",
@@ -78,126 +78,61 @@
         "GLOBAL_ALLIANCE": {"tiersRfa": [], "tiersBonus": []}
       },
       "triRules": {
-        "TRI_ALLIANCE_DELPHI": {
-          "tiers": [
-            {"min": 15000, "rate": 0.025},
-            {"min": 25000, "rate": 0.04}
-          ]
-        },
-        "TRI_ALLIANCE_BREMBO": {
-          "tiers": [
-            {"min": 15000, "rate": 0.025},
-            {"min": 25000, "rate": 0.04}
-          ]
-        },
-        "TRI_ALLIANCE_SKF": {
-          "tiers": [
-            {"min": 15000, "rate": 0.025},
-            {"min": 25000, "rate": 0.04}
-          ]
-        },
-        "TRI_PURFLUX_COOPERS": {
-          "tiers": [
-            {"min": 15000, "rate": 0.025},
-            {"min": 25000, "rate": 0.04}
-          ]
-        },
-        "TRI_SCHAEFFLER": {
-          "tiers": [
-            {"min": 15000, "rate": 0.01},
-            {"min": 25000, "rate": 0.025}
-          ]
-        },
-        "TRI_ALLIANCE_SOGEFI": {
-          "tiers": [
-            {"min": 15000, "rate": 0.01},
-            {"min": 25000, "rate": 0.025}
-          ]
-        },
-        "TRI_DCA_SBS": {
-          "tiers": [
-            {"min": 15000, "rate": 0.01},
-            {"min": 25000, "rate": 0.025}
-          ]
-        },
-        "TRI_DCA_DAYCO": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_ACR_FREINAGE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_ACR_EMBRAYAGE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_ACR_FILTRE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_ACR_DISTRIBUTION": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_ACR_MACHINE_TOURNANTE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_ACR_LIAISON_AU_SOL": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_EXADIS_FREINAGE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_EXADIS_EMBRAYAGE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_EXADIS_FILTRATION": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_EXADIS_DISTRIBUTION": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_EXADIS_ETANCHEITE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        },
-        "TRI_EXADIS_THERMIQUE": {
-          "tiers": [
-            {"min": 15000, "rate": 0.005},
-            {"min": 25000, "rate": 0.01}
-          ]
-        }
+        "TRI_ALLIANCE_DELPHI_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.025}, {"min": 25000, "rate": 0.04}]},
+        "TRI_ALLIANCE_DELPHI_PSD": {"tiers": [{"min": 15000, "rate": 0.025}, {"min": 25000, "rate": 0.04}]},
+        "TRI_ALLIANCE_BREMBO_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.025}, {"min": 25000, "rate": 0.04}]},
+        "TRI_ALLIANCE_SKF_DISTRIBUTION": {"tiers": [{"min": 15000, "rate": 0.025}, {"min": 25000, "rate": 0.04}]},
+        "TRI_ALLIANCE_PURFLUX_FILTRATION": {"tiers": [{"min": 15000, "rate": 0.025}, {"min": 25000, "rate": 0.04}]},
+        "TRI_ALLIANCE_COOPERS_FILTRATION": {"tiers": [{"min": 15000, "rate": 0.025}, {"min": 25000, "rate": 0.04}]},
+        "TRI_ALLIANCE_GATES_DISTRIBUTION": {"tiers": [{"min": 15000, "rate": 0.025}, {"min": 25000, "rate": 0.04}]},
+
+        "TRI_ALLIANCE_FEBI_PSD": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_KYB_AMORTISSEURS": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_LUK_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_CEVAM_MT": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_INA_DISTRIBUTION": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_MANN_FILTRATION": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_SNR_ROULEMENTS": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_VALEO_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_LTM_AMORTISSEURS": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_SASIC_PSD": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_ALLIANCE_BOSCH_MT": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+
+        "TRI_ALLIANCE_SKF_ROULEMENTS": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ALLIANCE_VALEO_MT": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ALLIANCE_MECAFILTER_FILTRATION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+
+        "TRI_ACR_BREMBO_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_LUK_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_VALEO_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_BOSCH_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_ABS_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_CHAMPION_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_FERODO_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_TRW_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_BLUEPRINT_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_ACR_SACHS_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+
+        "TRI_DCA_SBS": {"tiers": [{"min": 15000, "rate": 0.01}, {"min": 25000, "rate": 0.025}]},
+        "TRI_DCA_SASIC_PSD": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_DCA_DAYCO": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+
+        "TRI_EXADIS_BREMBO_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_FERODO_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_TRW_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_BLUEPRINT_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_LPR_FREINAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_PURFLUX_FILTRATION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_WIX_FILTRATION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_MANN_FILTRATION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_GATES_DISTRIBUTION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_HEPU_DISTRIBUTION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_IPD_DISTRIBUTION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_SNR_DISTRIBUTION": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_LUK_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_SACHS_EMBRAYAGE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_THERMIQUE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]},
+        "TRI_EXADIS_ETANCHEITE": {"tiers": [{"min": 15000, "rate": 0.005}, {"min": 25000, "rate": 0.01}]}
       }
     }
   ]
