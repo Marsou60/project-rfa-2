@@ -5,6 +5,8 @@ openpyxl>=3.1.2
 pydantic>=2.5.0
 python-multipart>=0.0.6
 sqlmodel>=0.0.14
+# greenlet 3.5.4 : uv sur Vercel (manylinux_2_34) ne trouve pas de wheel compatible
+greenlet>=3.0.3,<3.5
 jinja2>=3.1.2
 python-dotenv>=1.0.0
 google-api-python-client>=2.100.0
