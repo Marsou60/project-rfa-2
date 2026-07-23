@@ -1937,18 +1937,18 @@ function Rfa26Readme({ isLevelBased, contractName, fmt, SILVER_MIN, GOLD_MIN }) 
           <p>
             Contrat : <strong>{contractName}</strong>. Les montants sont estimés à partir du Pure Data cumulé.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
             <div className="rounded-lg bg-white border border-emerald-200 px-2.5 py-2">
               <div className="font-bold text-emerald-700">Vert</div>
-              <div className="text-slate-600">RFA / CA <strong>à date</strong> (déjà réalisé)</div>
+              <div className="text-slate-600">RFA / CA <strong>à date</strong>, ou projection <strong>en hausse</strong> vs N-1</div>
             </div>
             <div className="rounded-lg bg-white border border-cyan-300 px-2.5 py-2">
               <div className="font-bold text-cyan-700">Cyan</div>
               <div className="text-slate-600">Projection <strong>fin d&apos;année</strong> si le rythme se maintient</div>
             </div>
             <div className="rounded-lg bg-white border border-amber-300 px-2.5 py-2">
-              <div className="font-bold text-amber-700">Ambre</div>
-              <div className="text-slate-600">Action : palier ou niveau <strong>pas encore atteint</strong></div>
+              <div className="font-bold text-amber-700">Ambre / Rose</div>
+              <div className="text-slate-600">Action à faire, ou projection <strong>en baisse</strong> vs N-1</div>
             </div>
           </div>
           {isLevelBased ? (
@@ -2246,6 +2246,8 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const MONTHS_FR = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
   const monthName = data.reporting_month ? (MONTHS_FR[data.reporting_month] || `M${data.reporting_month}`) : null
   const projLabel = monthName ? `Au rythme de ${monthName}` : null
+  const cmp = data.comparison_n1 || null
+  const trend = cmp?.trend || null
   const lockHintBase = gapToSilver > 0
     ? `Encore ${fmt(gapToSilver)} de CA global pour passer Silver et encaisser ces tripartites.`
     : `Passez Silver ou Gold pour encaisser ces tripartites.`
@@ -2376,7 +2378,7 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
               <div>
                 <div className="text-[11px] text-slate-500">CA projeté</div>
                 <div className="text-lg font-bold text-slate-800 font-mono">
-                  {projCaGlobal != null ? fmt(projCaGlobal) : '—'}
+                  {cmp?.ca_projected_full != null ? fmt(cmp.ca_projected_full) : (projCaGlobal != null ? fmt(projCaGlobal) : '—')}
                 </div>
               </div>
               {isLevelBased && (projLevelId || levelId) && (
@@ -2392,6 +2394,67 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
             {levelWillUpgrade && (
               <div className="mt-1 text-[11px] text-cyan-800 font-semibold">
                 Inclut le passage {levelId} → {projLevelId}
+              </div>
+            )}
+
+            {/* CA N-1 vs projection — hausse / baisse d'un coup d'œil */}
+            {cmp?.has_n1_data && (
+              <div className={`mt-4 rounded-xl border-2 px-3 py-3 ${
+                trend === 'up'
+                  ? 'border-emerald-300 bg-emerald-50'
+                  : trend === 'down'
+                    ? 'border-rose-300 bg-rose-50'
+                    : 'border-slate-200 bg-slate-50'
+              }`}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                    vs CA complet {cmp.year_previous}
+                  </span>
+                  {trend === 'up' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                      ▲ En hausse
+                    </span>
+                  )}
+                  {trend === 'down' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-black text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-lg">
+                      ▼ En baisse
+                    </span>
+                  )}
+                  {trend === 'flat' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-black text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
+                      → Stable
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-lg bg-white/80 border border-slate-200 px-2 py-1.5">
+                    <div className="text-[9px] font-bold uppercase text-slate-500">CA {cmp.year_previous}</div>
+                    <div className="text-sm font-black text-slate-800 font-mono mt-0.5">{fmt(cmp.ca_n1_full)}</div>
+                  </div>
+                  <div className="rounded-lg bg-white/80 border border-cyan-200 px-2 py-1.5">
+                    <div className="text-[9px] font-bold uppercase text-cyan-700">CA projeté {cmp.year_current}</div>
+                    <div className="text-sm font-black text-cyan-900 font-mono mt-0.5">
+                      {cmp.ca_projected_full != null ? fmt(cmp.ca_projected_full) : '—'}
+                    </div>
+                  </div>
+                </div>
+                {cmp.delta != null && (
+                  <div className={`mt-2 text-center text-sm font-bold ${
+                    trend === 'up' ? 'text-emerald-700' : trend === 'down' ? 'text-rose-700' : 'text-slate-600'
+                  }`}>
+                    {cmp.delta >= 0 ? '+' : ''}{fmt(cmp.delta)}
+                    {cmp.delta_pct != null && (
+                      <span className="ml-1.5 text-[12px] font-semibold opacity-80">
+                        ({cmp.delta_pct >= 0 ? '+' : ''}{cmp.delta_pct.toFixed(1).replace('.', ',')} %)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {cmp && !cmp.has_n1_data && (
+              <div className="mt-3 text-[11px] text-slate-400">
+                Pas de CA {cmp.year_previous} disponible dans le Pure Data pour ce client.
               </div>
             )}
           </div>

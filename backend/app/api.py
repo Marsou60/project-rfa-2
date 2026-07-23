@@ -3662,6 +3662,54 @@ async def pure_data_cumulative_client_rfa(
         global_total = round(sum(recap_ca["global"].values()), 2)
         tri_total = round(sum(recap_ca["tri"].values()), 2)
 
+        # ── Comparaison CA complet N-1 vs projection fin d'année ──
+        year_previous = year - 1
+        rows_prev_year = [r for r in all_rows if r.get("year") == year_previous]
+        if code_union:
+            targets = _code_union_candidates(code_union)
+            rows_n1 = [r for r in rows_prev_year if _norm_text(r.get("code_union")) in targets]
+        else:
+            target = _norm_text(groupe_client)
+            rows_n1 = [r for r in rows_prev_year if _norm_text(r.get("groupe_client")) == target]
+
+        def _sum_rows_ca(rs):
+            return round(sum(float(r.get("ca") or 0.0) for r in rs), 2)
+
+        ca_n1_full = _sum_rows_ca(rows_n1) if rows_n1 else 0.0
+        ca_n_ytd_full = _sum_rows_ca(rows)
+        if projection_factor and ca_n_ytd_full:
+            ca_projected_full = round(ca_n_ytd_full * projection_factor, 2)
+        elif reporting_month == 12 and ca_n_ytd_full:
+            # Année complète : la projection = réalisé N
+            ca_projected_full = ca_n_ytd_full
+        else:
+            ca_projected_full = None
+        comparison_n1 = None
+        if ca_n1_full > 0 or ca_projected_full is not None:
+            delta = None
+            delta_pct = None
+            trend = None
+            if ca_projected_full is not None:
+                delta = round(ca_projected_full - ca_n1_full, 2)
+                delta_pct = round((delta / ca_n1_full) * 100, 1) if ca_n1_full else None
+                if delta > 50:
+                    trend = "up"
+                elif delta < -50:
+                    trend = "down"
+                else:
+                    trend = "flat"
+            comparison_n1 = {
+                "year_previous": year_previous,
+                "year_current": year,
+                "ca_n1_full": ca_n1_full,
+                "ca_n_ytd_full": ca_n_ytd_full,
+                "ca_projected_full": ca_projected_full,
+                "delta": delta,
+                "delta_pct": delta_pct,
+                "trend": trend,
+                "has_n1_data": bool(rows_n1),
+            }
+
         return {
             "available": True,
             "entity_kind": entity_kind,
@@ -3676,6 +3724,7 @@ async def pure_data_cumulative_client_rfa(
             "rfa_projected": rfa_projected,
             "reporting_month": reporting_month,
             "projection_factor": projection_factor,
+            "comparison_n1": comparison_n1,
             "contract_applied": {
                 "id": contract.id,
                 "name": contract.name,
