@@ -3680,11 +3680,13 @@ async def pure_data_cumulative_client_rfa(
                 "id": contract.id,
                 "name": contract.name,
                 "level": (contract_level or {}).get("id"),
+                "level_based": bool(contract_level),
                 "tripartites_enabled": (contract_level or {}).get("tripartites_enabled"),
                 "total_ca_for_level": (contract_level or {}).get("total_ca"),
             } if contract else {"id": None, "name": "Aucun contrat"},
             "contract_level": contract_level,
             "projected_level": (rfa_projected or {}).get("contract_level") if rfa_projected else None,
+            "level_based": bool(contract_level),
         }
     except HTTPException:
         raise

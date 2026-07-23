@@ -2080,9 +2080,12 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const caGlobal = data.ca?.totals?.global_total || 0
   const grand = totals.grand_total || 0
   const globalItems = Object.entries(rfa.global || {})
-  const contractLevel = data.contract_level || data.contract_applied || {}
-  const levelId = contractLevel.id || contractLevel.level || null
-  const triEnabled = contractLevel.tripartites_enabled === true
+  // Niveau Classique/Silver/Gold UNIQUEMENT si le contrat a des level_baremes (Adhérents 2026).
+  // Ne pas retomber sur contract_applied : son `id` est l'id DB, pas un niveau.
+  const contractLevel = data.contract_level || null
+  const isLevelBased = Boolean(data.level_based || contractLevel?.id)
+  const levelId = isLevelBased ? (contractLevel?.id || null) : null
+  const triEnabled = isLevelBased ? contractLevel?.tripartites_enabled === true : true
   const SILVER_MIN = 100001
   const gapToSilver = Math.max(SILVER_MIN - caGlobal, 0)
   // Toujours afficher les tri-partites avec CA + paliers (même en Classique → mode « à débloquer »)
@@ -2091,10 +2094,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
     .filter(([, v]) => rfa26ParseTiers(v.tiers).length > 0)
   const projected = data.rfa_projected || null
   const projGrand = projected?.totals?.grand_total || null
-  const projectedLevel = data.projected_level || projected?.contract_level || null
+  const projectedLevel = data.projected_level || null
   const projLevelId = projectedLevel?.id || null
   const projTriEnabled = projectedLevel?.tripartites_enabled === true
-  const levelWillUpgrade = Boolean(levelId && projLevelId && levelId !== projLevelId)
+  const levelWillUpgrade = Boolean(isLevelBased && levelId && projLevelId && levelId !== projLevelId)
   const projCaGlobal = (() => {
     if (!projected?.global) return null
     return Object.values(projected.global).reduce((s, it) => s + (it.ca || 0), 0)
@@ -2104,6 +2107,7 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const lockHintBase = gapToSilver > 0
     ? `Encore ${fmt(gapToSilver)} de CA global pour passer Silver et encaisser ces tripartites. À vous de les aller chercher !`
     : `Passez Silver ou Gold pour encaisser ces tripartites.`
+  const showLevelLock = isLevelBased && !triEnabled
 
   return (
     <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm overflow-hidden">
@@ -2209,10 +2213,10 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
           </div>
         )}
 
-        {/* Tri-partites — toujours visibles (motivantes si Classique) */}
+        {/* Tri-partites — verrouillage Silver/Gold uniquement sur contrat Adhérents 2026 */}
         <div>
           <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Tri-partites — progression vers le prochain palier</h4>
-          {!triEnabled && (
+          {showLevelLock && (
             <div className="rounded-xl border border-amber-300 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 px-4 py-3 mb-3">
               <p className="text-sm text-amber-950 font-semibold">
                 🎯 Niveau {levelId || 'CLASSIQUE'} — tripartites verrouillées
@@ -2251,14 +2255,18 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                     proj={proj}
                     fmt={fmt}
                     fmtPct={fmtPct}
-                    locked={!triEnabled}
-                    lockHint={!triEnabled ? lockHintBase : null}
+                    locked={showLevelLock}
+                    lockHint={showLevelLock ? lockHintBase : null}
                   />
                 )
               })}
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Aucune tri-partite avec CA sur les marques éligibles pour le moment — développez vos achats sur les marques Silver/Gold pour constituer un potentiel.</p>
+            <p className="text-sm text-gray-500">
+              {isLevelBased
+                ? 'Aucune tri-partite avec CA sur les marques éligibles pour le moment — développez vos achats sur les marques Silver/Gold pour constituer un potentiel.'
+                : 'Aucune tri-partite avec CA sur les marques éligibles de ce contrat pour le moment.'}
+            </p>
           )}
         </div>
 
