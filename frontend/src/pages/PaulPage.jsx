@@ -27,7 +27,7 @@ const SECTIONS = [
     label: 'Récap général',
     icon: <BarChart3 className="w-4 h-4" />,
     emoji: '📊',
-    description: 'Récapitulatif global de toutes les RFA par adhérent, plateforme et contrat.',
+    description: 'Coût RFA sortante réseau + exports Excel / HTML (adhérents et groupes, sans double comptage).',
     color: 'from-blue-500 to-indigo-600',
     glow: 'hover:shadow-blue-500/30',
     needsImport: true,

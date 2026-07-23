@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { BarChart3, Eye, X, AlertTriangle, Download } from 'lucide-react'
-import { getGlobalRecap, getUnionEntity, exportGlobalRecapExcel, exportAllPdfReportsToDrive, exportPilotageSheetOnly } from '../api/client'
+import { getGlobalRecap, getUnionEntity, exportGlobalRecapExcel, exportGlobalRecapHtml, exportAllPdfReportsToDrive, exportPilotageSheetOnly } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import { SUPPLIER_KEYS, getKeysForSupplier } from '../constants/suppliers'
 
@@ -137,6 +137,7 @@ function RecapPage({ importId }) {
   })
   const [ratesAutoLoaded, setRatesAutoLoaded] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
+  const [exportingHtml, setExportingHtml] = useState(false)
   const [exportingPdfDrive, setExportingPdfDrive] = useState(false)
   const [exportingSheetOnly, setExportingSheetOnly] = useState(false)
   const [exportResult, setExportResult] = useState(null)
@@ -294,7 +295,7 @@ function RecapPage({ importId }) {
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `RFA_Clients_${importId.slice(0, 8)}.xlsx`)
+      link.setAttribute('download', `RFA_Sortante_${importId.slice(0, 8)}.xlsx`)
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -304,6 +305,27 @@ function RecapPage({ importId }) {
       setError(errorMsg)
     } finally {
       setExportingExcel(false)
+    }
+  }
+
+  const handleExportRecapHtml = async () => {
+    if (!importId || exportingHtml) return
+    setExportingHtml(true)
+    try {
+      const blob = await exportGlobalRecapHtml(importId, dissolvedGroups)
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `RFA_Sortante_${importId.slice(0, 8)}.html`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || err.response?.statusText || err.message || "Erreur lors de l'export HTML"
+      setError(errorMsg)
+    } finally {
+      setExportingHtml(false)
     }
   }
 
@@ -386,14 +408,17 @@ function RecapPage({ importId }) {
               </div>
               <div>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h2 className="text-2xl font-bold text-white">Récapitulatif Global RFA</h2>
+                  <h2 className="text-2xl font-bold text-white">Coût RFA sortante</h2>
                   {supplierFilter && (
                     <span className="px-3 py-1 rounded-full bg-white/20 text-white text-sm font-bold border border-white/30">
                       Vue {supplierFilter} uniquement
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-glass-secondary">RFA calculée sans double comptage{supplierFilter ? ` (données ${supplierFilter})` : ''}</p>
+                <p className="text-sm text-glass-secondary">
+                  RFA versée aux adhérents et groupes (sans double comptage)
+                  {supplierFilter ? ` — données ${supplierFilter}` : ''}
+                </p>
                 {dissolvedGroups.length > 0 && (
                   <p className="text-xs text-orange-400 mt-1 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
@@ -408,10 +433,20 @@ function RecapPage({ importId }) {
                 onClick={handleExportRecapExcel}
                 disabled={exportingExcel || !importId}
                 className="glass-btn-primary flex items-center gap-2"
-                title="Exporter le tableau clients et groupes en Excel"
+                title="Exporter coût RFA sortante (Synthèse + indépendants + groupes)"
               >
                 <Download className="w-4 h-4" />
-                {exportingExcel ? 'Export...' : 'Export Excel clients'}
+                {exportingExcel ? 'Export...' : 'Export Excel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportRecapHtml}
+                disabled={exportingHtml || !importId}
+                className="glass-btn-primary flex items-center gap-2"
+                title="Exporter le dashboard HTML coût RFA sortante (imprimable)"
+              >
+                <Download className="w-4 h-4" />
+                {exportingHtml ? 'Export...' : 'Export HTML'}
               </button>
               <button
                 type="button"
@@ -464,6 +499,43 @@ function RecapPage({ importId }) {
         </div>
 
         <div className="p-6 space-y-6">
+          {/* Bandeau KPI coût RFA sortante */}
+          {!supplierFilter && (() => {
+            const allDetails = Object.values(recap.platform_details || {}).flat()
+            const nIndep = new Set(allDetails.filter((d) => d.entity_type === 'client').map((d) => d.entity_id)).size
+            const nGroups = new Set(allDetails.filter((d) => d.entity_type === 'group').map((d) => d.entity_id)).size
+            return (
+              <div className="rounded-2xl border border-emerald-400/30 bg-gradient-to-br from-emerald-500/15 to-teal-500/10 p-5">
+                <div className="text-xs font-bold uppercase tracking-wider text-emerald-300/90 mb-3">
+                  Coût RFA versée aux adhérents
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-xl bg-black/20 border border-white/10 px-4 py-3">
+                    <div className="text-[11px] text-glass-muted">RFA sortante totale</div>
+                    <div className="text-2xl font-black text-emerald-300 mt-0.5">{formatAmount(recap.grand_total)}</div>
+                  </div>
+                  <div className="rounded-xl bg-black/20 border border-white/10 px-4 py-3">
+                    <div className="text-[11px] text-glass-muted">Plateformes (RFA+Bonus)</div>
+                    <div className="text-xl font-bold text-white mt-0.5">{formatAmount(recap.total_global)}</div>
+                  </div>
+                  <div className="rounded-xl bg-black/20 border border-white/10 px-4 py-3">
+                    <div className="text-[11px] text-glass-muted">Tripartites</div>
+                    <div className="text-xl font-bold text-orange-300 mt-0.5">{formatAmount(recap.total_tri)}</div>
+                  </div>
+                  <div className="rounded-xl bg-black/20 border border-white/10 px-4 py-3">
+                    <div className="text-[11px] text-glass-muted">Entités</div>
+                    <div className="text-xl font-bold text-white mt-0.5">
+                      {nIndep + nGroups}
+                      <span className="text-sm font-medium text-glass-secondary ml-1.5">
+                        ({nIndep} ind. · {nGroups} grp.)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {exportResult?.success && (
             <div className="glass-card p-4 border border-emerald-500/30 bg-emerald-500/10">
               <p className="font-semibold text-emerald-300">

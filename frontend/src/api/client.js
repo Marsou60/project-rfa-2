@@ -445,6 +445,18 @@ export const exportGlobalRecapExcel = async (importId, dissolvedGroups = []) => 
   return response.data
 }
 
+export const exportGlobalRecapHtml = async (importId, dissolvedGroups = []) => {
+  const params = {}
+  if (dissolvedGroups && dissolvedGroups.length > 0) {
+    params.dissolved_groups = dissolvedGroups.join(',')
+  }
+  const response = await api.get(`/imports/${importId}/recap/export-html`, {
+    params,
+    responseType: 'blob'
+  })
+  return response.data
+}
+
 export const exportAllPdfReportsToDrive = async (importId, body = {}) => {
   const response = await api.post(`/imports/${importId}/exports/pdf-drive`, {
     export_year: body.export_year ?? 2025,

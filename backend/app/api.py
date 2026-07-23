@@ -1230,6 +1230,7 @@ async def export_global_recap_excel(
 
     try:
         export_data = build_client_rfa_export_rows(import_data, dissolved_groups=dissolved_set)
+        recap = get_global_recap_rfa(import_data, dissolved_groups=dissolved_set)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur calcul export recap: {str(e)}")
 
@@ -1238,6 +1239,7 @@ async def export_global_recap_excel(
     header_font = Font(bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     subtotal_fill = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
+    highlight_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
     thin_border = Border(
         left=Side(style="thin"),
         right=Side(style="thin"),
@@ -1245,6 +1247,12 @@ async def export_global_recap_excel(
         bottom=Side(style="thin"),
     )
     money_fmt = '#,##0.00 "EUR"'
+    platform_labels = {
+        "GLOBAL_ACR": "ACR",
+        "GLOBAL_ALLIANCE": "ALLIANCE",
+        "GLOBAL_DCA": "DCA",
+        "GLOBAL_EXADIS": "EXADIS",
+    }
     headers = [
         "Code Union",
         "Nom Client",
@@ -1402,11 +1410,104 @@ async def export_global_recap_excel(
         ws.column_dimensions["J"].width = 16
         ws.column_dimensions["K"].width = 34
 
-    ws_indep = wb.active
-    _fill_sheet(ws_indep, "Magasins independants", export_data.get("independents", []))
+    # Feuille Synthèse (coût RFA sortante)
+    independents = export_data.get("independents", [])
+    groups = export_data.get("groups", [])
+    ca_indep = sum(float(r.get("montant_total_realise", 0) or 0) for r in independents)
+    rfa_indep = sum(float(r.get("rfa_client", 0) or 0) for r in independents)
+    ca_groups = sum(float(r.get("montant_total_realise", 0) or 0) for r in groups)
+    rfa_groups = sum(float(r.get("rfa_client", 0) or 0) for r in groups)
+
+    ws_syn = wb.active
+    ws_syn.title = "Synthese"
+    ws_syn.merge_cells("A1:C1")
+    ws_syn["A1"] = "COUT RFA SORTANTE — SYNTHESE RESEAU"
+    ws_syn["A1"].font = Font(bold=True, size=14, color="1F4E79")
+    ws_syn["A2"] = "RFA versée aux adhérents et groupes (sans double comptage)"
+    ws_syn["A2"].font = Font(italic=True, color="808080")
+    ws_syn["A3"] = f"Import ID: {import_id}"
+    ws_syn["A3"].font = Font(italic=True, color="808080")
+
+    syn_rows = [
+        (5, "Indicateur", "Valeur", True),
+        (6, "RFA sortante totale (grand total)", float(recap.grand_total), False),
+        (7, "Total plateformes (RFA + Bonus)", float(recap.total_global), False),
+        (8, "Total tripartites", float(recap.total_tri), False),
+        (9, "RFA globale (hors bonus)", float(recap.total_global_rfa), False),
+        (10, "Bonus global", float(recap.total_global_bonus), False),
+    ]
+    for row_idx, label, value, is_header in syn_rows:
+        cell_a = ws_syn.cell(row=row_idx, column=1, value=label)
+        cell_b = ws_syn.cell(row=row_idx, column=2, value=value if not is_header else value)
+        cell_a.border = thin_border
+        cell_b.border = thin_border
+        if is_header:
+            cell_a.font = header_font
+            cell_a.fill = header_fill
+            cell_b.font = header_font
+            cell_b.fill = header_fill
+        elif row_idx == 6:
+            cell_a.font = Font(bold=True)
+            cell_b.font = Font(bold=True)
+            cell_a.fill = highlight_fill
+            cell_b.fill = highlight_fill
+            cell_b.number_format = money_fmt
+        else:
+            cell_b.number_format = money_fmt
+
+    ws_syn.cell(row=12, column=1, value="Totaux par plateforme (RFA+Bonus)").font = Font(bold=True, size=12, color="1F4E79")
+    ws_syn.cell(row=13, column=1, value="Plateforme").font = header_font
+    ws_syn.cell(row=13, column=1).fill = header_fill
+    ws_syn.cell(row=13, column=1).border = thin_border
+    ws_syn.cell(row=13, column=2, value="RFA sortante").font = header_font
+    ws_syn.cell(row=13, column=2).fill = header_fill
+    ws_syn.cell(row=13, column=2).border = thin_border
+    row_idx = 14
+    for key, amount in (recap.global_rfa_by_platform or {}).items():
+        ws_syn.cell(row=row_idx, column=1, value=platform_labels.get(key, key)).border = thin_border
+        cell = ws_syn.cell(row=row_idx, column=2, value=float(amount or 0))
+        cell.number_format = money_fmt
+        cell.border = thin_border
+        row_idx += 1
+
+    row_idx += 1
+    ws_syn.cell(row=row_idx, column=1, value="Effectifs et totaux par type").font = Font(bold=True, size=12, color="1F4E79")
+    row_idx += 1
+    for col, label in enumerate(["Type", "Nb entites", "CA realise", "RFA sortante"], 1):
+        cell = ws_syn.cell(row=row_idx, column=col, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = thin_border
+    row_idx += 1
+    for label, n, ca, rfa in [
+        ("Magasins independants", len(independents), ca_indep, rfa_indep),
+        ("Groupes", len(groups), ca_groups, rfa_groups),
+        ("TOTAL RESEAU", len(independents) + len(groups), ca_indep + ca_groups, rfa_indep + rfa_groups),
+    ]:
+        ws_syn.cell(row=row_idx, column=1, value=label).border = thin_border
+        ws_syn.cell(row=row_idx, column=2, value=n).border = thin_border
+        ca_cell = ws_syn.cell(row=row_idx, column=3, value=ca)
+        ca_cell.number_format = money_fmt
+        ca_cell.border = thin_border
+        rfa_cell = ws_syn.cell(row=row_idx, column=4, value=rfa)
+        rfa_cell.number_format = money_fmt
+        rfa_cell.border = thin_border
+        if label.startswith("TOTAL"):
+            for c in range(1, 5):
+                ws_syn.cell(row=row_idx, column=c).font = Font(bold=True)
+                ws_syn.cell(row=row_idx, column=c).fill = subtotal_fill
+        row_idx += 1
+
+    ws_syn.column_dimensions["A"].width = 42
+    ws_syn.column_dimensions["B"].width = 18
+    ws_syn.column_dimensions["C"].width = 18
+    ws_syn.column_dimensions["D"].width = 18
+
+    ws_indep = wb.create_sheet("Magasins independants")
+    _fill_sheet(ws_indep, "Magasins independants", independents)
 
     ws_groups = wb.create_sheet("Groupes")
-    _fill_sheet(ws_groups, "Groupes", export_data.get("groups", []))
+    _fill_sheet(ws_groups, "Groupes", groups)
 
     ws_detail_indep = wb.create_sheet("Detail indep plateformes")
     _fill_detail_sheet(ws_detail_indep, "Independants", export_data.get("independents_details", []))
@@ -1421,7 +1522,46 @@ async def export_global_recap_excel(
     return Response(
         content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="RFA_Clients_{import_id[:8]}.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="RFA_Sortante_{import_id[:8]}.xlsx"'},
+    )
+
+
+@router.get("/imports/{import_id}/recap/export-html")
+async def export_global_recap_html(
+    import_id: str,
+    dissolved_groups: Optional[str] = Query(None, description="Liste des groupes dissous (séparés par des virgules)"),
+    session: Session = Depends(get_session),
+):
+    """
+    Export HTML autonome du dashboard coût RFA sortante (imprimable / partageable).
+    Totaux alignés sur get_global_recap_rfa (sans double comptage).
+    """
+    from app.services.recap_html_export import build_recap_sortante_html
+
+    import_data = _resolve_import_data(import_id, session)
+    if not import_data:
+        raise HTTPException(status_code=404, detail="Import non trouve")
+
+    dissolved_set = set()
+    if dissolved_groups:
+        dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
+
+    try:
+        export_data = build_client_rfa_export_rows(import_data, dissolved_groups=dissolved_set)
+        recap = get_global_recap_rfa(import_data, dissolved_groups=dissolved_set)
+        html = build_recap_sortante_html(
+            import_id=import_id,
+            recap=recap,
+            independents=export_data.get("independents", []),
+            groups=export_data.get("groups", []),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur export HTML recap: {str(e)}")
+
+    return Response(
+        content=html.encode("utf-8"),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="RFA_Sortante_{import_id[:8]}.html"'},
     )
 
 
