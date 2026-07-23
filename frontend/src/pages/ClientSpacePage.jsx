@@ -1125,6 +1125,8 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             <ClientRfa2026Section
               codeUnion={mode === 'client' ? entity?.code_union : null}
               groupeClient={mode === 'group' ? entity?.groupe_client : null}
+              caN1Rfa={entity?.ca?.totals?.global_total ?? null}
+              caN1Label="CA 2025 (Vue RFA)"
             />
           )}
 
@@ -2175,7 +2177,7 @@ function Rfa26ProgressCard({
 }
 
 /* ── Onglet RFA 2026 (depuis Pure Data, moteur RFA réutilisé) ── */
-function ClientRfa2026Section({ codeUnion, groupeClient }) {
+function ClientRfa2026Section({ codeUnion, groupeClient, caN1Rfa = null, caN1Label = 'CA N-1 (Vue RFA)' }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [logos, setLogos] = useState({})
@@ -2246,8 +2248,18 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
   const MONTHS_FR = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
   const monthName = data.reporting_month ? (MONTHS_FR[data.reporting_month] || `M${data.reporting_month}`) : null
   const projLabel = monthName ? `Au rythme de ${monthName}` : null
-  const cmp = data.comparison_n1 || null
-  const trend = cmp?.trend || null
+  // N-1 = CA complet Vue RFA 2025 (import Excel), PAS le Pure Data YTD 2025
+  const caProjectedForCmp = projCaGlobal != null
+    ? projCaGlobal
+    : (data.reporting_month === 12 ? caGlobal : null)
+  const caN1 = (caN1Rfa != null && Number(caN1Rfa) > 0) ? Number(caN1Rfa) : null
+  const cmpDelta = (caN1 != null && caProjectedForCmp != null)
+    ? caProjectedForCmp - caN1
+    : null
+  const cmpDeltaPct = (cmpDelta != null && caN1 > 0) ? (cmpDelta / caN1) * 100 : null
+  const trend = cmpDelta == null
+    ? null
+    : (cmpDelta > 50 ? 'up' : cmpDelta < -50 ? 'down' : 'flat')
   const lockHintBase = gapToSilver > 0
     ? `Encore ${fmt(gapToSilver)} de CA global pour passer Silver et encaisser ces tripartites.`
     : `Passez Silver ou Gold pour encaisser ces tripartites.`
@@ -2376,9 +2388,9 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
             </div>
             <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <div className="text-[11px] text-slate-500">CA projeté</div>
+                <div className="text-[11px] text-slate-500">CA projeté (plateformes)</div>
                 <div className="text-lg font-bold text-slate-800 font-mono">
-                  {cmp?.ca_projected_full != null ? fmt(cmp.ca_projected_full) : (projCaGlobal != null ? fmt(projCaGlobal) : '—')}
+                  {caProjectedForCmp != null ? fmt(caProjectedForCmp) : '—'}
                 </div>
               </div>
               {isLevelBased && (projLevelId || levelId) && (
@@ -2397,8 +2409,8 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
               </div>
             )}
 
-            {/* CA N-1 vs projection — hausse / baisse d'un coup d'œil */}
-            {cmp?.has_n1_data && (
+            {/* CA N-1 Vue RFA 2025 vs projection plateformes 2026 */}
+            {caN1 != null && (
               <div className={`mt-4 rounded-xl border-2 px-3 py-3 ${
                 trend === 'up'
                   ? 'border-emerald-300 bg-emerald-50'
@@ -2408,7 +2420,7 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
               }`}>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                    vs CA complet {cmp.year_previous}
+                    vs {caN1Label}
                   </span>
                   {trend === 'up' && (
                     <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-lg">
@@ -2420,7 +2432,7 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                       ▼ En baisse
                     </span>
                   )}
-                  {trend === 'flat' && (
+                  {trend === 'flat' && caProjectedForCmp != null && (
                     <span className="inline-flex items-center gap-1 text-xs font-black text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-lg">
                       → Stable
                     </span>
@@ -2428,33 +2440,33 @@ function ClientRfa2026Section({ codeUnion, groupeClient }) {
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <div className="rounded-lg bg-white/80 border border-slate-200 px-2 py-1.5">
-                    <div className="text-[9px] font-bold uppercase text-slate-500">CA {cmp.year_previous}</div>
-                    <div className="text-sm font-black text-slate-800 font-mono mt-0.5">{fmt(cmp.ca_n1_full)}</div>
+                    <div className="text-[9px] font-bold uppercase text-slate-500">{caN1Label}</div>
+                    <div className="text-sm font-black text-slate-800 font-mono mt-0.5">{fmt(caN1)}</div>
                   </div>
                   <div className="rounded-lg bg-white/80 border border-cyan-200 px-2 py-1.5">
-                    <div className="text-[9px] font-bold uppercase text-cyan-700">CA projeté {cmp.year_current}</div>
+                    <div className="text-[9px] font-bold uppercase text-cyan-700">CA projeté 2026</div>
                     <div className="text-sm font-black text-cyan-900 font-mono mt-0.5">
-                      {cmp.ca_projected_full != null ? fmt(cmp.ca_projected_full) : '—'}
+                      {caProjectedForCmp != null ? fmt(caProjectedForCmp) : '—'}
                     </div>
                   </div>
                 </div>
-                {cmp.delta != null && (
+                {cmpDelta != null && (
                   <div className={`mt-2 text-center text-sm font-bold ${
                     trend === 'up' ? 'text-emerald-700' : trend === 'down' ? 'text-rose-700' : 'text-slate-600'
                   }`}>
-                    {cmp.delta >= 0 ? '+' : ''}{fmt(cmp.delta)}
-                    {cmp.delta_pct != null && (
+                    {cmpDelta >= 0 ? '+' : ''}{fmt(cmpDelta)}
+                    {cmpDeltaPct != null && (
                       <span className="ml-1.5 text-[12px] font-semibold opacity-80">
-                        ({cmp.delta_pct >= 0 ? '+' : ''}{cmp.delta_pct.toFixed(1).replace('.', ',')} %)
+                        ({cmpDeltaPct >= 0 ? '+' : ''}{cmpDeltaPct.toFixed(1).replace('.', ',')} %)
                       </span>
                     )}
                   </div>
                 )}
               </div>
             )}
-            {cmp && !cmp.has_n1_data && (
+            {caN1 == null && (
               <div className="mt-3 text-[11px] text-slate-400">
-                Pas de CA {cmp.year_previous} disponible dans le Pure Data pour ce client.
+                Ouvrez d&apos;abord la Vue RFA 2025 (ou chargez l&apos;import) pour comparer au CA 2025 complet.
               </div>
             )}
           </div>
