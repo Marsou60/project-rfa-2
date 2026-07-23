@@ -27,7 +27,7 @@ const SECTIONS = [
     label: 'Récap général',
     icon: <BarChart3 className="w-4 h-4" />,
     emoji: '📊',
-    description: 'Coût RFA sortante réseau + exports Excel / HTML (adhérents et groupes, sans double comptage).',
+    description: 'Coût RFA sortante 2025 + dashboard 2026 (à date / projection / vs N-1) + exports.',
     color: 'from-blue-500 to-indigo-600',
     glow: 'hover:shadow-blue-500/30',
     needsImport: true,

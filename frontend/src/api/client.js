@@ -457,6 +457,21 @@ export const exportGlobalRecapHtml = async (importId, dissolvedGroups = []) => {
   return response.data
 }
 
+export const exportNetworkRfa2026Html = async ({ dissolvedGroups = [], compareImportId = null, year = 2026 } = {}) => {
+  const params = { year }
+  if (dissolvedGroups && dissolvedGroups.length > 0) {
+    params.dissolved_groups = dissolvedGroups.join(',')
+  }
+  if (compareImportId) {
+    params.compare_import_id = compareImportId
+  }
+  const response = await api.get('/pure-data/cumulative/network-rfa/export-html', {
+    params,
+    responseType: 'blob'
+  })
+  return response.data
+}
+
 export const exportAllPdfReportsToDrive = async (importId, body = {}) => {
   const response = await api.post(`/imports/${importId}/exports/pdf-drive`, {
     export_year: body.export_year ?? 2025,

@@ -3885,6 +3885,177 @@ async def pure_data_cumulative_client_rfa(
         raise HTTPException(status_code=500, detail=f"Erreur RFA 2026 Pure Data: {str(e)}")
 
 
+def _build_network_rfa_2026_payload(
+    session: Session,
+    *,
+    year: int = 2026,
+    dissolved_groups: Optional[str] = None,
+    compare_import_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Agrège RFA sortante réseau 2026 + comparaison Excel 2025."""
+    import json as _json
+    from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
+    from app.services.pure_data_network_rfa import compute_network_rfa_2026, attach_compare_2025
+    from app.services.contract_resolver import BatchContractResolver
+    from app.models import ContractRule, ContractOverride
+    import app.services.contract_resolver as _resolver_mod
+    import app.services.rfa_calculator as _rfa_calc
+
+    if count_cumulative_rows() == 0:
+        return {
+            "available": False,
+            "message": "Aucune donnée Pure Data cumulée. Importez un fichier cumulé.",
+            "year": year,
+        }
+
+    all_rows, _, _ = read_cumulative_rows()
+    rows_year = [r for r in all_rows if r.get("year") == year]
+    if not rows_year:
+        return {
+            "available": False,
+            "message": f"Aucune donnée Pure Data pour {year}.",
+            "year": year,
+        }
+
+    dissolved_set = set()
+    if dissolved_groups:
+        dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
+
+    reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+
+    _batch = BatchContractResolver()
+    _orig_resolve = _resolver_mod.resolve_contract
+    _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None, year=None: _batch.resolve(
+        code_union, groupe_client, year=year
+    )
+
+    _all_rules = session.exec(select(ContractRule)).all()
+    _all_overrides = session.exec(select(ContractOverride).where(ContractOverride.is_active == True)).all()
+    _rules_cache: Dict[Any, Any] = {}
+    for _r in _all_rules:
+        _rules_cache.setdefault(_r.contract_id, {})[_r.key] = _r
+    _ov_cache: Dict[Any, Any] = {}
+    for _ov in _all_overrides:
+        _tt = _ov.target_type.value if hasattr(_ov.target_type, "value") else str(_ov.target_type)
+        _k = (_tt, (_ov.target_value or "").strip().upper())
+        _ov_cache.setdefault(_k, {}).setdefault(_ov.field_key, {})
+        try:
+            _ov_cache[_k][_ov.field_key][
+                _ov.tier_type.value if hasattr(_ov.tier_type, "value") else str(_ov.tier_type)
+            ] = _json.loads(_ov.custom_tiers)
+        except Exception:
+            pass
+
+    _orig_rules = _rfa_calc.load_contract_rules
+    _orig_overrides = _rfa_calc.load_entity_overrides
+    _rfa_calc.load_contract_rules = lambda c: _rules_cache.get(c.id, {})
+    _rfa_calc.load_entity_overrides = lambda tt, tv: _ov_cache.get(
+        (str(tt) if not hasattr(tt, "value") else tt.value, (tv or "").strip().upper()),
+        {},
+    )
+
+    try:
+        network = compute_network_rfa_2026(
+            rows_year,
+            year=year,
+            reporting_month=reporting_month,
+            dissolved_groups=dissolved_set,
+        )
+    finally:
+        _resolver_mod.resolve_contract = _orig_resolve
+        _rfa_calc.load_contract_rules = _orig_rules
+        _rfa_calc.load_entity_overrides = _orig_overrides
+
+    # Comparaison 2025 (Excel Vue RFA) — total réseau + détail par entité
+    grand_2025 = None
+    used_import_id = compare_import_id
+    rows_2025 = None
+    try:
+        import_data = None
+        if compare_import_id:
+            import_data = _resolve_import_data(compare_import_id, session)
+        if import_data is None:
+            import_data = get_live_import()
+            used_import_id = LIVE_IMPORT_ID if import_data else None
+        if import_data is not None:
+            recap_2025 = get_global_recap_rfa(import_data, dissolved_groups=dissolved_set)
+            grand_2025 = float(recap_2025.grand_total)
+            rows_2025 = build_client_rfa_export_rows(import_data, dissolved_groups=dissolved_set)
+    except Exception as e:
+        print(f"[network-rfa-2026] compare 2025 indisponible: {e}")
+        grand_2025 = None
+        rows_2025 = None
+
+    return attach_compare_2025(
+        network,
+        grand_total_2025=grand_2025,
+        import_id=used_import_id,
+        rows_2025=rows_2025,
+    )
+
+
+@router.get("/pure-data/cumulative/network-rfa")
+async def pure_data_network_rfa(
+    year: int = 2026,
+    dissolved_groups: Optional[str] = Query(None),
+    compare_import_id: Optional[str] = Query(None, description="Import Excel 2025 pour comparaison"),
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """
+    Coût RFA sortante réseau 2026 (Pure Data) : à date + projection + vs 2025.
+    Sans double comptage (indépendants + groupes consolidés).
+    """
+    try:
+        return _build_network_rfa_2026_payload(
+            session,
+            year=year,
+            dissolved_groups=dissolved_groups,
+            compare_import_id=compare_import_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur RFA sortante réseau 2026: {str(e)}")
+
+
+@router.get("/pure-data/cumulative/network-rfa/export-html")
+async def pure_data_network_rfa_export_html(
+    year: int = 2026,
+    dissolved_groups: Optional[str] = Query(None),
+    compare_import_id: Optional[str] = Query(None, description="Import Excel 2025 pour comparaison"),
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """Dashboard HTML interactif RFA sortante 2026 (à date / projection / vs 2025)."""
+    from app.services.recap_html_export_2026 import build_recap_sortante_2026_html
+
+    try:
+        payload = _build_network_rfa_2026_payload(
+            session,
+            year=year,
+            dissolved_groups=dissolved_groups,
+            compare_import_id=compare_import_id,
+        )
+        if not payload.get("available", True) and payload.get("message"):
+            raise HTTPException(status_code=404, detail=payload["message"])
+        html = build_recap_sortante_2026_html(payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur export HTML RFA 2026: {str(e)}")
+
+    return Response(
+        content=html.encode("utf-8"),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="RFA_Sortante_{year}.html"'},
+    )
+
+
 @router.get("/pure-data/monthly/periods")
 async def pure_data_monthly_periods(user: User = Depends(require_staff)):
     """

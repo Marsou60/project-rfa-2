@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { BarChart3, Eye, X, AlertTriangle, Download } from 'lucide-react'
-import { getGlobalRecap, getUnionEntity, exportGlobalRecapExcel, exportGlobalRecapHtml, exportAllPdfReportsToDrive, exportPilotageSheetOnly } from '../api/client'
+import { getGlobalRecap, getUnionEntity, exportGlobalRecapExcel, exportGlobalRecapHtml, exportNetworkRfa2026Html, exportAllPdfReportsToDrive, exportPilotageSheetOnly } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import { SUPPLIER_KEYS, getKeysForSupplier } from '../constants/suppliers'
 
@@ -138,6 +138,7 @@ function RecapPage({ importId }) {
   const [ratesAutoLoaded, setRatesAutoLoaded] = useState(false)
   const [exportingExcel, setExportingExcel] = useState(false)
   const [exportingHtml, setExportingHtml] = useState(false)
+  const [exportingHtml2026, setExportingHtml2026] = useState(false)
   const [exportingPdfDrive, setExportingPdfDrive] = useState(false)
   const [exportingSheetOnly, setExportingSheetOnly] = useState(false)
   const [exportResult, setExportResult] = useState(null)
@@ -329,6 +330,42 @@ function RecapPage({ importId }) {
     }
   }
 
+  const handleExportRecapHtml2026 = async () => {
+    if (exportingHtml2026) return
+    setExportingHtml2026(true)
+    try {
+      const blob = await exportNetworkRfa2026Html({
+        dissolvedGroups,
+        compareImportId: importId || null,
+        year: 2026,
+      })
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', 'RFA_Sortante_2026.html')
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+    } catch (err) {
+      let errorMsg = err.response?.statusText || err.message || "Erreur lors de l'export HTML 2026"
+      const data = err.response?.data
+      if (data instanceof Blob) {
+        try {
+          const text = await data.text()
+          const parsed = JSON.parse(text)
+          errorMsg = parsed.detail || errorMsg
+        } catch (_) { /* keep fallback */ }
+      } else if (data?.detail) {
+        errorMsg = data.detail
+      }
+      setError(errorMsg)
+    } finally {
+      setExportingHtml2026(false)
+    }
+  }
+
   const handleExportPdfDrive = async () => {
     if (!importId || exportingPdfDrive) return
     setExportingPdfDrive(true)
@@ -443,10 +480,20 @@ function RecapPage({ importId }) {
                 onClick={handleExportRecapHtml}
                 disabled={exportingHtml || !importId}
                 className="glass-btn-primary flex items-center gap-2"
-                title="Exporter le dashboard HTML coût RFA sortante (imprimable)"
+                title="Exporter le dashboard HTML coût RFA sortante 2025 (imprimable)"
               >
                 <Download className="w-4 h-4" />
-                {exportingHtml ? 'Export...' : 'Export HTML'}
+                {exportingHtml ? 'Export...' : 'HTML 2025'}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportRecapHtml2026}
+                disabled={exportingHtml2026}
+                className="glass-btn-primary flex items-center gap-2"
+                title="Dashboard HTML interactif RFA sortante 2026 (à date + projection + vs 2025)"
+              >
+                <Download className="w-4 h-4" />
+                {exportingHtml2026 ? 'Export...' : 'HTML 2026 interactif'}
               </button>
               <button
                 type="button"
