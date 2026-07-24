@@ -1881,12 +1881,9 @@ function Rfa26TierLadder({ tierGroups, ca, fmt, fmtPct, levelLabel = null }) {
   )
 }
 
-function Rfa26ProjectionBlock({ proj, fmt, fmtPct, title = 'Projection fin 2026', hint = null, caNow = null }) {
+function Rfa26ProjectionBlock({ proj, fmt, fmtPct, title = 'Projection fin 2026', hint = null }) {
   if (!proj || (proj.value == null && !proj.ca && !proj.rate)) return null
   const caProj = proj.ca || 0
-  const progressVsNow = caNow != null && caProj > 0
-    ? Math.min(((caNow || 0) / caProj) * 100, 100)
-    : null
   return (
     <div className="mt-3 rounded-xl border-2 border-cyan-300 bg-cyan-50 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -1907,17 +1904,6 @@ function Rfa26ProjectionBlock({ proj, fmt, fmtPct, title = 'Projection fin 2026'
           <div className="text-[13px] font-black text-cyan-900 font-mono leading-tight mt-0.5">{fmt(proj.value || 0)}</div>
         </div>
       </div>
-      {progressVsNow != null && (
-        <div className="mt-2">
-          <div className="flex justify-between text-[10px] text-cyan-700 mb-0.5">
-            <span>Avancement vs projection</span>
-            <span className="font-semibold">{Math.round(progressVsNow)}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-cyan-100 overflow-hidden">
-            <div className="h-full rounded-full bg-cyan-500" style={{ width: `${progressVsNow}%` }} />
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -2061,7 +2047,6 @@ function Rfa26ProgressCard({
           fmtPct={fmtPct}
           title="RFA projetée (Silver atteint)"
           hint={projLevelLabel || 'Silver+'}
-          caNow={ca}
         />
         {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel} />}
       </div>
@@ -2102,7 +2087,7 @@ function Rfa26ProgressCard({
         <div className="h-2.5 rounded-full bg-amber-100 overflow-hidden opacity-70">
           <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.min(prog.progress || 0, 100)}%` }} />
         </div>
-        <Rfa26ProjectionBlock proj={proj} fmt={fmt} fmtPct={fmtPct} title="Projection fin 2026" caNow={ca} />
+        <Rfa26ProjectionBlock proj={proj} fmt={fmt} fmtPct={fmtPct} title="Projection fin 2026" />
         {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel} />}
       </div>
     )
@@ -2155,7 +2140,6 @@ function Rfa26ProgressCard({
         fmtPct={fmtPct}
         title="Projection fin 2026"
         hint={projLevelLabel || null}
-        caNow={ca}
       />
 
       {open && hasLadder && (
