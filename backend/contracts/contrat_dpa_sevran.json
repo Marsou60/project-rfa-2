@@ -8,7 +8,7 @@
       "scope": "ADHERENT",
       "isDefault": false,
       "useCombinedGlobalRate": false,
-      "notes": "Contrat DPA Sevran - 100% Alliance. 200-250k RFA 4% / bonus 3% ; 250-300k RFA 4,5% / bonus 3% ; >300k RFA 5% / bonus 3%. Tripartites : Schaeffler, Delphi/Brembo, Sogefi, SKF.",
+      "notes": "Contrat DPA Sevran - 100% Alliance. 200-300k RFA 7,5% ; ≥300k RFA 9%. Tripartites : Schaeffler, Delphi/Brembo, Sogefi, SKF, Mecafilter (marque Alliance).",
       "globalRules": {
         "GLOBAL_ACR": {
           "tiersRfa": [],
@@ -24,15 +24,10 @@
         },
         "GLOBAL_ALLIANCE": {
           "tiersRfa": [
-            {"min": 200000, "rate": 0.04},
-            {"min": 250000, "rate": 0.045},
-            {"min": 300000, "rate": 0.05}
+            {"min": 200000, "rate": 0.075},
+            {"min": 300000, "rate": 0.09}
           ],
-          "tiersBonus": [
-            {"min": 200000, "rate": 0.03},
-            {"min": 250000, "rate": 0.03},
-            {"min": 300000, "rate": 0.03}
-          ]
+          "tiersBonus": []
         }
       },
       "triRules": {
@@ -69,6 +64,9 @@
             {"min": 30000, "rate": 0.045},
             {"min": 40000, "rate": 0.06}
           ]
+        },
+        "TRI_ALLIANCE_MECAFILTER": {
+          "tiers": []
         }
       }
     }

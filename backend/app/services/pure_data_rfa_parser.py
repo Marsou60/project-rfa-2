@@ -143,6 +143,8 @@ TRI_RULES_LEGACY: List[TriRule] = [
     ("TRI_ALLIANCE_SKF", lambda frs, m, fa, sf: frs == "ALLIANCE" and m == "SKF"),
     ("TRI_ALLIANCE_NAPA", lambda frs, m, fa, sf: frs == "ALLIANCE" and m.startswith("NAPA")),
     ("TRI_ALLIANCE_SOGEFI", lambda frs, m, fa, sf: frs == "ALLIANCE" and m in ("PURFLUX", "COOPERSFIAAM")),
+    ("TRI_ALLIANCE_MECAFILTER", lambda frs, m, fa, sf: frs == "ALLIANCE" and _is_mecafilter(m)),
+    ("TRI_ALLIANCE_MANN", lambda frs, m, fa, sf: frs == "ALLIANCE" and _is_mann(m)),
     ("TRI_SCHAEFFLER", lambda frs, m, fa, sf: frs == "ALLIANCE" and m in ("LUK", "INA", "FAG")),
 ]
 

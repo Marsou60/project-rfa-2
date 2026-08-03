@@ -66,6 +66,8 @@ FIELD_DEFINITIONS: List[Tuple[str, str, List[str]]] = [
     ("TRI_ALLIANCE_SOGEFI", "ALLIANCE – Sogefi", ["ca alliance sogefi (€)", "ca alliance sogefi"]),
     ("TRI_ALLIANCE_SKF", "ALLIANCE – SKF", ["ca alliance skf (€)", "ca alliance skf"]),
     ("TRI_ALLIANCE_NAPA", "ALLIANCE – NAPA", ["ca alliance napa (€)", "ca alliance napa"]),
+    ("TRI_ALLIANCE_MECAFILTER", "ALLIANCE – Mecafilter", ["ca alliance mecafilter (€)", "ca alliance mecafilter", "alliance mecafilter", "mecafilter"]),
+    ("TRI_ALLIANCE_MANN", "ALLIANCE – Mann Filter", ["ca alliance mann (€)", "ca alliance mann", "ca alliance mann filter (€)", "ca alliance mann filter", "alliance mann", "mann filter"]),
     ("TRI_PURFLUX_COOPERS", "Purflux / Coopers (Alliance+ACR)", ["ca purflux coopers (alliance acr) (€)", "ca purflux coopers (alliance acr)", "ca purflux coopers alliance acr", "ca purflux coopers"]),
 
     # Adhérents 2026 — Alliance marque × famille
@@ -170,6 +172,8 @@ TRI_TO_GLOBAL: Dict[str, str] = {
     "TRI_ALLIANCE_SOGEFI": "GLOBAL_ALLIANCE",
     "TRI_ALLIANCE_SKF": "GLOBAL_ALLIANCE",
     "TRI_ALLIANCE_NAPA": "GLOBAL_ALLIANCE",
+    "TRI_ALLIANCE_MECAFILTER": "GLOBAL_ALLIANCE",
+    "TRI_ALLIANCE_MANN": "GLOBAL_ALLIANCE",
     "TRI_PURFLUX_COOPERS": "GLOBAL_ALLIANCE",
     # Adhérents 2026
     "TRI_ALLIANCE_DELPHI_FREINAGE": "GLOBAL_ALLIANCE",
@@ -261,6 +265,8 @@ def get_tri_fields() -> List[str]:
         "TRI_ALLIANCE_SOGEFI",
         "TRI_ALLIANCE_SKF",
         "TRI_ALLIANCE_NAPA",
+        "TRI_ALLIANCE_MECAFILTER",
+        "TRI_ALLIANCE_MANN",
         "TRI_PURFLUX_COOPERS",
         # Adhérents 2026 — Alliance
         "TRI_ALLIANCE_DELPHI_FREINAGE",
