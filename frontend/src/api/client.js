@@ -370,6 +370,25 @@ export const getContractPdfMeta = async (mode, entityId, groupeClient = null) =>
   return response.data
 }
 
+function isTauriRuntime() {
+  return Boolean(
+    typeof window !== 'undefined' &&
+      (window.__TAURI_INTERNALS__ || window.__TAURI__ || window.__TAURI_METADATA__),
+  )
+}
+
+function triggerBlobDownload(blob, filename) {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', filename)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  // Laisser le temps au téléchargement de démarrer (surtout sous Tauri / WebView2)
+  setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+}
+
 /** Télécharge / ouvre le PDF de contrat applicable (Adhérents 2026 ou annexe spéciale). */
 export const downloadContractPdf = async (mode, entityId, groupeClient = null, openInNewTab = true) => {
   const params = { mode: String(mode), id: String(entityId) }
@@ -396,21 +415,21 @@ export const downloadContractPdf = async (mode, entityId, groupeClient = null, o
   const u8 = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(0)
   if (response.status === 200 && uint8IsPdf(u8)) {
     const blob = new Blob([buf], { type: 'application/pdf' })
-    const url = window.URL.createObjectURL(blob)
-    if (openInNewTab) {
-      window.open(url, '_blank', 'noopener,noreferrer')
-      // Révoquer plus tard pour laisser le temps à l'onglet de charger
-      setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
-    } else {
-      const link = document.createElement('a')
-      link.href = url
-      const entityLabel = String(entityId || 'contrat').replace(/ /g, '_')
-      link.setAttribute('download', `Contrat_${entityLabel}.pdf`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
+    const entityLabel = String(entityId || 'contrat').replace(/[^\w.-]+/g, '_')
+    const filename = `Contrat_${entityLabel}.pdf`
+    // Tauri WebView2 ignore window.open(blob:) sans erreur → forcer le téléchargement
+    // (même pattern que exportEntityPdf, qui fonctionne déjà en desktop).
+    if (!openInNewTab || isTauriRuntime()) {
+      triggerBlobDownload(blob, filename)
+      return
     }
+    const url = window.URL.createObjectURL(blob)
+    const opened = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!opened) {
+      triggerBlobDownload(blob, filename)
+      return
+    }
+    setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
     return
   }
 
