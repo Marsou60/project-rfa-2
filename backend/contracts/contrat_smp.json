@@ -23,12 +23,14 @@
         },
         "GLOBAL_ALLIANCE": {
           "tiersRfa": [
-            {"min": 300000, "rate": 0.05}
+            {"min": 300000, "rate": 0.05},
+            {"min": 350000, "rate": 0.075},
+            {"min": 450000, "rate": 0.085},
+            {"min": 500000, "rate": 0.09}
           ],
           "tiersBonus": [
             {"min": 300000, "rate": 0.02},
-            {"min": 350000, "rate": 0.025},
-            {"min": 400000, "rate": 0.03}
+            {"min": 350000, "rate": 0.0}
           ]
         }
       },
@@ -59,6 +61,11 @@
             {"min": 20000, "rate": 0.03},
             {"min": 30000, "rate": 0.045},
             {"min": 40000, "rate": 0.06}
+          ]
+        },
+        "TRI_ALLIANCE_MECAFILTER": {
+          "tiers": [
+            {"min": 20000, "rate": 0.04}
           ]
         }
       }
