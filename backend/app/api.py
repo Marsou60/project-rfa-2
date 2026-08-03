@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from datetime import datetime
 import tempfile
 import os
+import re
 import json
 import uuid
 import base64
@@ -2783,6 +2784,73 @@ def require_staff(user: Optional[User] = Depends(get_current_user)) -> User:
     if user.role not in (UserRole.ADMIN, UserRole.COMMERCIAL):
         raise HTTPException(status_code=403, detail="Accès réservé à l'équipe commerciale")
     return user
+
+
+# ==================== PDF CONTRAT / ANNEXE (espace commercial) ====================
+
+@router.get("/commercial/contract-pdf/meta")
+async def get_commercial_contract_pdf_meta(
+    mode: str = Query(..., pattern="^(client|group)$"),
+    id: str = Query(..., min_length=1, description="code_union ou groupe_client"),
+    groupe_client: Optional[str] = Query(None, description="Groupe du client (mode=client)"),
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """Indique si un PDF de contrat/annexe est disponible pour l'entité."""
+    from app.services.contract_pdf import resolve_contract_pdf
+
+    info = resolve_contract_pdf(
+        session,
+        mode=mode,
+        entity_id=id,
+        groupe_client=groupe_client,
+    )
+    return {
+        "available": info.available,
+        "kind": info.kind,
+        "label": info.label,
+        "contract_name": info.contract_name,
+        "filename": info.filename,
+        "reason": info.reason,
+    }
+
+
+@router.get("/commercial/contract-pdf")
+async def get_commercial_contract_pdf(
+    mode: str = Query(..., pattern="^(client|group)$"),
+    id: str = Query(..., min_length=1, description="code_union ou groupe_client"),
+    groupe_client: Optional[str] = Query(None, description="Groupe du client (mode=client)"),
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """Télécharge le PDF de contrat / annexe rémunération applicable (année 2026)."""
+    from app.services.contract_pdf import resolve_contract_pdf
+
+    info = resolve_contract_pdf(
+        session,
+        mode=mode,
+        entity_id=id,
+        groupe_client=groupe_client,
+    )
+    if not info.available or not info.path or not info.path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=info.reason or "PDF de contrat indisponible pour cette entité",
+        )
+
+    download_name = info.filename
+    if info.kind == "special":
+        safe = re.sub(r"[^A-Za-z0-9_-]+", "_", (info.contract_name or id).strip())[:60]
+        download_name = f"Annexe_{safe}.pdf"
+    elif info.kind == "standard":
+        download_name = "Contrat_Adherents_2026_Annexe_Remuneration.pdf"
+
+    return FileResponse(
+        path=str(info.path),
+        media_type="application/pdf",
+        filename=download_name,
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/auth/login", response_model=LoginResponse)

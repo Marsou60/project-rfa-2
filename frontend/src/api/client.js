@@ -362,6 +362,69 @@ export const exportEntityPdf = async (importId, mode, entityId, contractId = nul
   throw new Error(detail)
 }
 
+/** Métadonnées du PDF contrat / annexe (espace commercial). */
+export const getContractPdfMeta = async (mode, entityId, groupeClient = null) => {
+  const params = { mode: String(mode), id: String(entityId) }
+  if (groupeClient) params.groupe_client = String(groupeClient)
+  const response = await api.get('/commercial/contract-pdf/meta', { params })
+  return response.data
+}
+
+/** Télécharge / ouvre le PDF de contrat applicable (Adhérents 2026 ou annexe spéciale). */
+export const downloadContractPdf = async (mode, entityId, groupeClient = null, openInNewTab = true) => {
+  const params = { mode: String(mode), id: String(entityId) }
+  if (groupeClient) params.groupe_client = String(groupeClient)
+  let response
+  try {
+    response = await api.get('/commercial/contract-pdf', {
+      params,
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
+    })
+  } catch (err) {
+    const res = err.response
+    const msg = err.message || 'Réseau indisponible'
+    if (res?.data instanceof ArrayBuffer) {
+      const t = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(res.data))
+      const d = parseFastApiErrorBodyText(t)
+      throw new Error(d || msg)
+    }
+    throw new Error(msg)
+  }
+
+  const buf = response.data
+  const u8 = buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(0)
+  if (response.status === 200 && uint8IsPdf(u8)) {
+    const blob = new Blob([buf], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    if (openInNewTab) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+      // Révoquer plus tard pour laisser le temps à l'onglet de charger
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000)
+    } else {
+      const link = document.createElement('a')
+      link.href = url
+      const entityLabel = String(entityId || 'contrat').replace(/ /g, '_')
+      link.setAttribute('download', `Contrat_${entityLabel}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    }
+    return
+  }
+
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(u8)
+  let detail = parseFastApiErrorBodyText(text)
+  if (!detail) {
+    const preview = text.replace(/\s+/g, ' ').trim().slice(0, 280)
+    detail =
+      preview ||
+      `Réponse HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+  }
+  throw new Error(detail)
+}
+
 // ── Cotisation Union (stockée en DB — partagée browser / Tauri / prod) ───────────
 
 export const getCotisations = async (entityType = null) => {

@@ -141,13 +141,13 @@ def apply_year_contract_policy(
     # ── RFA 2026+ ──
     adherent_2026 = _find_adherent_2026(session)
     if contract is None:
-        print(f"[RESOLVE] year={year}: pas d'assignment → {ADHERENT_2026_NAME}")
+        print(f"[RESOLVE] year={year}: pas d'assignment -> {ADHERENT_2026_NAME}")
         return adherent_2026
     if is_adherent_2026_contract(contract):
         return contract
     if is_legacy_base_contract(contract):
         print(
-            f"[RESOLVE] year={year}: base/privilege '{contract.name}' → {ADHERENT_2026_NAME}"
+            f"[RESOLVE] year={year}: base/privilege '{contract.name}' -> {ADHERENT_2026_NAME}"
         )
         return adherent_2026 or contract
     # Contrats spéciaux (Warning, APC, groupes…) inchangés

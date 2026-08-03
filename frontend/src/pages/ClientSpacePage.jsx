@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026 } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026 } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -24,6 +24,8 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const [error, setError] = useState(null)
   const [supplierLogos, setSupplierLogos] = useState({})
   const [exportingPdf, setExportingPdf] = useState(false)
+  const [contractPdfMeta, setContractPdfMeta] = useState(null)
+  const [loadingContractPdf, setLoadingContractPdf] = useState(false)
   const [smartPlans, setSmartPlans] = useState([])
   const [loadingPlans, setLoadingPlans] = useState(false)
   const [plansRequested, setPlansRequested] = useState(false)
@@ -243,12 +245,30 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
       }
       setRulesMap(map)
       refreshCotisationMap()
+
+      // PDF contrat 2026 (espace commercial uniquement)
+      if (!isAdherent) {
+        const eid = mode === 'client'
+          ? (detail.code_union || detail.id || entityId)
+          : (detail.groupe_client || detail.id || entityId)
+        const grp = mode === 'client' ? (detail.groupe_client || null) : null
+        getContractPdfMeta(mode, eid, grp)
+          .then((meta) => {
+            if (loadIdRef.current === myId) setContractPdfMeta(meta)
+          })
+          .catch(() => {
+            if (loadIdRef.current === myId) setContractPdfMeta(null)
+          })
+      } else {
+        setContractPdfMeta(null)
+      }
     } catch (err) {
       if (loadIdRef.current !== myId) return
       setError(err.response?.data?.detail || `Erreur lors du chargement ${mode === 'client' ? 'du client' : 'du groupe'}`)
       setEntity(null)
       setRulesMap({})
       setSmartPlans([])
+      setContractPdfMeta(null)
     } finally {
       if (loadIdRef.current === myId) setLoading(false)
     }
@@ -519,7 +539,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
 
       {entity && (
         <>
-          {/* Export PDF + KPI Cards */}
+          {/* Export PDF + Contrat PDF + KPI Cards */}
           <div className="flex flex-wrap items-center gap-3 mb-3">
             <button
               type="button"
@@ -551,7 +571,45 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             >
               {exportingPdf ? '⏳ Génération...' : '📄 Exporter en PDF'}
             </button>
-            <p className="text-sm text-gray-500">Export identique à cette page pour envoyer les détails RFA au client.</p>
+            {!isAdherent && contractPdfMeta?.available && (
+              <button
+                type="button"
+                title={contractPdfMeta.label || 'Voir le contrat PDF'}
+                onClick={async () => {
+                  const entityId =
+                    mode === 'client'
+                      ? (entity.code_union || entity.id)
+                      : (entity.groupe_client || entity.id || '').toString().trim().toUpperCase()
+                  if (!entityId) return
+                  setLoadingContractPdf(true)
+                  try {
+                    await downloadContractPdf(
+                      mode,
+                      entityId,
+                      mode === 'client' ? (entity.groupe_client || null) : null,
+                      true,
+                    )
+                  } catch (err) {
+                    alert('Impossible d\'ouvrir le contrat PDF : ' + (err.message || err))
+                  } finally {
+                    setLoadingContractPdf(false)
+                  }
+                }}
+                disabled={loadingContractPdf}
+                className="px-4 py-2 bg-white border-2 border-amber-500 text-amber-700 rounded-xl font-semibold hover:bg-amber-50 transition-all disabled:opacity-50 flex items-center gap-2 shadow-md"
+              >
+                {loadingContractPdf
+                  ? '⏳ Ouverture...'
+                  : contractPdfMeta.kind === 'special'
+                    ? '📑 Voir l\'annexe contrat'
+                    : '📑 Voir le contrat 2026'}
+              </button>
+            )}
+            <p className="text-sm text-gray-500">
+              {contractPdfMeta?.available
+                ? (contractPdfMeta.label || 'Contrat PDF disponible')
+                : 'Export identique à cette page pour envoyer les détails RFA au client.'}
+            </p>
           </div>
 
           {/* Onglets de vue */}
