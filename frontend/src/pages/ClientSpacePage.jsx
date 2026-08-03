@@ -246,22 +246,18 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
       setRulesMap(map)
       refreshCotisationMap()
 
-      // PDF contrat 2026 (espace commercial uniquement)
-      if (!isAdherent) {
-        const eid = mode === 'client'
-          ? (detail.code_union || detail.id || entityId)
-          : (detail.groupe_client || detail.id || entityId)
-        const grp = mode === 'client' ? (detail.groupe_client || null) : null
-        getContractPdfMeta(mode, eid, grp)
-          .then((meta) => {
-            if (loadIdRef.current === myId) setContractPdfMeta(meta)
-          })
-          .catch(() => {
-            if (loadIdRef.current === myId) setContractPdfMeta(null)
-          })
-      } else {
-        setContractPdfMeta(null)
-      }
+      // PDF contrat 2026 (commercial + espace adhérent)
+      const eid = mode === 'client'
+        ? (detail.code_union || detail.id || entityId)
+        : (detail.groupe_client || detail.id || entityId)
+      const grp = mode === 'client' ? (detail.groupe_client || null) : null
+      getContractPdfMeta(mode, eid, grp)
+        .then((meta) => {
+          if (loadIdRef.current === myId) setContractPdfMeta(meta)
+        })
+        .catch(() => {
+          if (loadIdRef.current === myId) setContractPdfMeta(null)
+        })
     } catch (err) {
       if (loadIdRef.current !== myId) return
       setError(err.response?.data?.detail || `Erreur lors du chargement ${mode === 'client' ? 'du client' : 'du groupe'}`)
@@ -571,7 +567,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
             >
               {exportingPdf ? '⏳ Génération...' : '📄 Exporter en PDF'}
             </button>
-            {!isAdherent && contractPdfMeta?.available && (
+            {contractPdfMeta?.available && (
               <button
                 type="button"
                 title={contractPdfMeta.label || 'Voir le contrat PDF'}

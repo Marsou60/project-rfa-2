@@ -2786,7 +2786,38 @@ def require_staff(user: Optional[User] = Depends(get_current_user)) -> User:
     return user
 
 
-# ==================== PDF CONTRAT / ANNEXE (espace commercial) ====================
+def require_staff_or_adherent(user: Optional[User] = Depends(get_current_user)) -> User:
+    """Autorise ADMIN, COMMERCIAL et ADHERENT."""
+    if not user:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    if user.role not in (UserRole.ADMIN, UserRole.COMMERCIAL, UserRole.ADHERENT):
+        raise HTTPException(status_code=403, detail="Accès non autorisé")
+    return user
+
+
+def _assert_contract_pdf_access(
+    user: User,
+    *,
+    mode: str,
+    entity_id: str,
+) -> None:
+    """Un adhérent ne peut consulter que son propre code Union / groupe lié."""
+    if user.role != UserRole.ADHERENT:
+        return
+    eid = (entity_id or "").strip().upper()
+    linked_code = (user.linked_code_union or "").strip().upper()
+    linked_groupe = (user.linked_groupe or "").strip().upper()
+    if mode == "client" and linked_code and eid == linked_code:
+        return
+    if mode == "group" and linked_groupe and eid == linked_groupe:
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Accès limité à votre propre contrat",
+    )
+
+
+# ==================== PDF CONTRAT / ANNEXE (espace commercial + adhérent) ====================
 
 @router.get("/commercial/contract-pdf/meta")
 async def get_commercial_contract_pdf_meta(
@@ -2794,11 +2825,12 @@ async def get_commercial_contract_pdf_meta(
     id: str = Query(..., min_length=1, description="code_union ou groupe_client"),
     groupe_client: Optional[str] = Query(None, description="Groupe du client (mode=client)"),
     session: Session = Depends(get_session),
-    user: User = Depends(require_staff),
+    user: User = Depends(require_staff_or_adherent),
 ):
     """Indique si un PDF de contrat/annexe est disponible pour l'entité."""
     from app.services.contract_pdf import resolve_contract_pdf
 
+    _assert_contract_pdf_access(user, mode=mode, entity_id=id)
     info = resolve_contract_pdf(
         session,
         mode=mode,
@@ -2821,11 +2853,12 @@ async def get_commercial_contract_pdf(
     id: str = Query(..., min_length=1, description="code_union ou groupe_client"),
     groupe_client: Optional[str] = Query(None, description="Groupe du client (mode=client)"),
     session: Session = Depends(get_session),
-    user: User = Depends(require_staff),
+    user: User = Depends(require_staff_or_adherent),
 ):
     """Télécharge le PDF de contrat / annexe rémunération applicable (année 2026)."""
     from app.services.contract_pdf import resolve_contract_pdf
 
+    _assert_contract_pdf_access(user, mode=mode, entity_id=id)
     info = resolve_contract_pdf(
         session,
         mode=mode,
