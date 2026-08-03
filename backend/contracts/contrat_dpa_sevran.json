@@ -67,8 +67,7 @@
         },
         "TRI_ALLIANCE_MECAFILTER": {
           "tiers": [
-            {"min": 20000, "rate": 0.04},
-            {"min": 50000, "rate": 0.04}
+            {"min": 20000, "rate": 0.04}
           ]
         }
       }
