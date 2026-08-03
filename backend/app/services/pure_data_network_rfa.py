@@ -296,13 +296,13 @@ def compute_network_rfa_2026(
             continue
         recap_ca = compute_recap_ca_from_rows(rows)
         contract = resolve_contract(code_union=code, year=year)
-        rfa_ytd = calculate_rfa(recap_ca, contract=contract, code_union=code)
+        rfa_ytd = calculate_rfa(recap_ca, contract=contract, code_union=code, year=year)
 
         rfa_proj = None
         ca_proj = None
         if projection_factor and projection_factor != 1.0:
             projected_recap = _scale_recap(recap_ca, projection_factor)
-            rfa_proj = calculate_rfa(projected_recap, contract=contract, code_union=code)
+            rfa_proj = calculate_rfa(projected_recap, contract=contract, code_union=code, year=year)
             ca_proj = round(sum(projected_recap["global"].values()), 2)
         elif projection_factor == 1.0:
             rfa_proj = rfa_ytd
@@ -331,13 +331,13 @@ def compute_network_rfa_2026(
             continue
         recap_ca = compute_recap_ca_from_rows(rows)
         contract = resolve_contract(groupe_client=groupe, year=year)
-        rfa_ytd = calculate_rfa(recap_ca, contract=contract, groupe_client=groupe)
+        rfa_ytd = calculate_rfa(recap_ca, contract=contract, groupe_client=groupe, year=year)
 
         rfa_proj = None
         ca_proj = None
         if projection_factor and projection_factor != 1.0:
             projected_recap = _scale_recap(recap_ca, projection_factor)
-            rfa_proj = calculate_rfa(projected_recap, contract=contract, groupe_client=groupe)
+            rfa_proj = calculate_rfa(projected_recap, contract=contract, groupe_client=groupe, year=year)
             ca_proj = round(sum(projected_recap["global"].values()), 2)
         elif projection_factor == 1.0:
             rfa_proj = rfa_ytd

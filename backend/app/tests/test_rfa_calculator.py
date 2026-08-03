@@ -26,13 +26,29 @@ def test_warning_prime_triggered_adds_ht_to_grand_total():
         },
     }
     contract = _warning_contract()
-    # Sans règles chargées (pas de session DB), seuls les totaux + prime importent ici
-    result = calculate_rfa(recap_ca, contract=contract)
+    result = calculate_rfa(recap_ca, contract=contract, year=2026)
     assert result["totals"]["fixed_bonus_total"] == WARNING_PRIME_HT
     assert abs(result["totals"]["grand_total"] - WARNING_PRIME_HT) < 0.01
     prime = result["fixed_bonuses"][0]
     assert prime["triggered"] is True
     assert prime["amount_ttc"] == WARNING_PRIME_TTC
+
+
+def test_warning_prime_not_in_rfa_2025():
+    recap_ca = {
+        "global": {},
+        "tri": {
+            "TRI_SCHAEFFLER": 70000.0,
+            "TRI_ALLIANCE_DELPHI": 150000.0,
+            "TRI_ALLIANCE_SOGEFI": 20000.0,
+        },
+    }
+    contract = _warning_contract()
+    assert evaluate_warning_prime(recap_ca, contract, year=2025) is None
+    assert evaluate_warning_prime(recap_ca, contract, year=None) is None
+    result = calculate_rfa(recap_ca, contract=contract, year=2025)
+    assert result.get("fixed_bonuses") == []
+    assert result["totals"].get("fixed_bonus_total", 0) == 0
 
 
 def test_warning_prime_missing_one_threshold():
@@ -44,7 +60,7 @@ def test_warning_prime_missing_one_threshold():
             "TRI_ALLIANCE_SOGEFI": 20000.0,
         },
     }
-    prime = evaluate_warning_prime(recap_ca, _warning_contract())
+    prime = evaluate_warning_prime(recap_ca, _warning_contract(), year=2026)
     assert prime is not None
     assert prime["triggered"] is False
     assert prime["conditions"][1]["met"] is False
@@ -60,8 +76,8 @@ def test_warning_prime_not_for_other_contract():
         },
     }
     other = SimpleNamespace(id=1, name="Contrat APC", use_combined_global_rate=False, level_baremes=None)
-    assert evaluate_warning_prime(recap_ca, other) is None
-    result = calculate_rfa(recap_ca, contract=other)
+    assert evaluate_warning_prime(recap_ca, other, year=2026) is None
+    result = calculate_rfa(recap_ca, contract=other, year=2026)
     assert result.get("fixed_bonuses") == []
     assert result["totals"].get("fixed_bonus_total", 0) == 0
 

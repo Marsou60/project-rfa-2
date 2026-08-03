@@ -25,11 +25,18 @@ def is_warning_contract(contract: Optional[Contract]) -> bool:
     return "WARNING" in ((contract.name or "").strip().upper())
 
 
-def evaluate_warning_prime(recap_ca: Dict[str, Dict[str, float]], contract: Optional[Contract]) -> Optional[Dict[str, Any]]:
+def evaluate_warning_prime(
+    recap_ca: Dict[str, Dict[str, float]],
+    contract: Optional[Contract],
+    year: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
     """
     Évalue la prime Warning (3000 € TTC) si les 3 CA tri-partites sont atteints.
-    Retourne None si le contrat n'est pas Warning.
+    Applicable uniquement en RFA 2026+ (jamais en vue RFA 2025).
+    Retourne None si le contrat n'est pas Warning ou si l'année < 2026.
     """
+    if year is None or int(year) < 2026:
+        return None
     if not is_warning_contract(contract):
         return None
 
@@ -178,7 +185,8 @@ def calculate_rfa(
     contract_rules: Optional[Dict[str, ContractRule]] = None,
     code_union: Optional[str] = None,
     groupe_client: Optional[str] = None,
-    entity_overrides: Optional[Dict[str, Dict[str, List]]] = None
+    entity_overrides: Optional[Dict[str, Dict[str, List]]] = None,
+    year: Optional[int] = None,
 ) -> Dict:
     """
     Calcule les RFA a partir d'un recapitulatif de CA et d'un contrat.
@@ -193,6 +201,7 @@ def calculate_rfa(
         code_union: Code Union du client pour charger ses overrides (optionnel)
         groupe_client: Groupe client pour charger ses overrides (optionnel)
         entity_overrides: Dict des overrides deja charges (optionnel, evite un rechargement)
+        year: Année RFA. La prime Warning ne s'applique qu'à partir de 2026.
     
     Returns:
         {
@@ -475,10 +484,10 @@ def calculate_rfa(
     global_total = global_rfa_sum + global_bonus_sum
     grand_total = global_total + tri_total
 
-    # Prime fixe Warning (si applicable) — s'ajoute au grand total HT
+    # Prime fixe Warning 2026+ (si applicable) — s'ajoute au grand total HT
     fixed_bonuses: List[Dict[str, Any]] = []
     fixed_bonus_ht = 0.0
-    warning_prime = evaluate_warning_prime(recap_ca, contract)
+    warning_prime = evaluate_warning_prime(recap_ca, contract, year=year)
     if warning_prime is not None:
         fixed_bonuses.append(warning_prime)
         if warning_prime.get("triggered"):

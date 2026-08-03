@@ -3710,6 +3710,7 @@ async def pure_data_cumulative_client_rfa(
             contract=contract,
             code_union=code_union.strip().upper() if code_union else None,
             groupe_client=(_norm_text(groupe_client) if groupe_client else None),
+            year=year,
         )
 
         # Attacher les paliers (pour la jauge de progression côté client) — contrat + overrides
@@ -3783,6 +3784,7 @@ async def pure_data_cumulative_client_rfa(
                 contract=contract,
                 code_union=code_union.strip().upper() if code_union else None,
                 groupe_client=(_norm_text(groupe_client) if groupe_client else None),
+                year=year,
             )
             # Attacher les paliers du NIVEAU PROJETÉ (ex: GOLD) pour la jauge UI
             _proj_level = None
