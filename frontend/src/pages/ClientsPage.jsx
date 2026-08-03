@@ -396,7 +396,7 @@ function ClientsPage({ importId }) {
   }
 
   // Groupes dont on affiche quand même les clients individuellement
-  const GROUP_EXCEPTIONS = ['independant union', 'les lyonnais']
+  const GROUP_EXCEPTIONS = ['independant union', 'les lyonnais', 'sans groupe']
 
   const isFromExceptionGroup = (entity) => {
     if (!entity.groupe_client) return true
@@ -648,6 +648,11 @@ function ClientsPage({ importId }) {
                       <td>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{entity.id}</span>
+                          {entity.from_pure_data && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                              Nouveau 2026
+                            </span>
+                          )}
                           {calculatedClients.has(entity.id) && (
                             <span className="glass-badge-emerald text-xs">
                               <Check className="w-3 h-3" />
@@ -667,6 +672,11 @@ function ClientsPage({ importId }) {
                       <td>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{entity.label}</span>
+                          {entity.from_pure_data && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                              Nouveau 2026
+                            </span>
+                          )}
                           {calculatedClients.has(entity.id) && (
                             <span className="glass-badge-emerald text-xs">
                               <Check className="w-3 h-3" />

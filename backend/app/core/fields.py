@@ -23,7 +23,7 @@ FIELD_DEFINITIONS: List[Tuple[str, str, List[str]]] = [
     # Identifiants
     ("code_union", "Code Union", ["code union"]),
     ("nom_client", "Nom Client", ["nom client"]),
-    ("groupe_client", "Groupe Client", ["groupe client"]),
+    ("groupe_client", "Groupe Client", ["groupe client", "groupe", "groupe_client"]),
     
     # Global plateformes
     ("GLOBAL_ACR", "ACR (global)", ["ca rfa globale acr (€)", "ca rfa globale acr"]),

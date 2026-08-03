@@ -373,6 +373,9 @@ def get_global_recap_rfa(import_data: ImportData, dissolved_groups: Optional[set
     
     # 1. Compter les clients qui n'ont PAS de groupe OU qui sont dans un groupe dissous
     for code_union, client_data in import_data.by_client.items():
+        # Stubs Pure Data (nouveaux 2026) : exclus du récap RFA 2025
+        if client_data.get("from_pure_data"):
+            continue
         groupe_client = client_data.get("groupe_client", "").strip()
         groupe_client_norm = groupe_client.upper() if groupe_client else ""
         
@@ -427,6 +430,8 @@ def get_global_recap_rfa(import_data: ImportData, dissolved_groups: Optional[set
     
     # 2. Compter les groupes (qui incluent déjà leurs clients) SAUF les groupes dissous
     for groupe, group_data in import_data.by_group.items():
+        if group_data.get("from_pure_data"):
+            continue
         groupe_norm = groupe.strip().upper() if groupe else None
         
         # Ignorer les groupes dissous (leurs clients sont déjà comptés individuellement)
@@ -568,6 +573,8 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
 
     # 1) Magasins indépendants + clients de groupes dissous/exclus
     for code_union, client_data in import_data.by_client.items():
+        if client_data.get("from_pure_data"):
+            continue
         groupe_client = (client_data.get("groupe_client") or "").strip()
         groupe_norm = groupe_client.upper() if groupe_client else ""
 
@@ -605,6 +612,8 @@ def build_client_rfa_export_rows(import_data: ImportData, dissolved_groups: Opti
 
     # 2) Groupes consolidés (les magasins du groupe ne doivent pas réapparaître)
     for groupe, group_data in import_data.by_group.items():
+        if group_data.get("from_pure_data"):
+            continue
         groupe_norm = groupe.strip().upper() if groupe else ""
         if groupe_norm in dissolved_groups:
             continue

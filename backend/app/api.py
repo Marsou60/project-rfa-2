@@ -452,6 +452,10 @@ async def refresh_rfa_sheets(
             status_code=400,
             detail="Aucune donnée valide dans le Sheet.",
         )
+    # Toujours mettre à jour la mémoire live (sinon l'API continue de servir l'ancien import
+    # alors que Supabase a déjà les nouvelles lignes — ex. nouveaux groupes comme CODIFA).
+    set_live_import(raw_columns, column_mapping, data)
+
     # Sauvegarde dans la table rfa_data Supabase (source de vérité pour les cold starts)
     try:
         from app.services.rfa_supabase import write_rfa_to_supabase
@@ -459,7 +463,7 @@ async def refresh_rfa_sheets(
         print(f"[REFRESH] {nb} lignes écrites dans rfa_data")
     except Exception as e:
         print(f"[REFRESH] Erreur écriture rfa_data: {e}")
-        # Fallback : ancien cache JSON
+        # Fallback : ancien cache JSON (rappelle aussi set_live_import)
         _save_live_cache(session, data, raw_columns, column_mapping)
 
     if body and body.get("spreadsheet_id"):
@@ -580,6 +584,10 @@ async def get_entities(
                 status_code=500,
                 detail=f"Erreur lors de l'agrégation: {str(e)}"
             )
+
+    # Fusionner les clients/groupes Pure Data (mensuel + cumulé) absents du RFA 2025
+    from app.services.entity_directory import merge_entities_into_import
+    merge_entities_into_import(import_data)
     
     entities = []
 
@@ -587,7 +595,11 @@ async def get_entities(
         for code_union, data in import_data.by_client.items():
             nom = data.get("nom_client") or ""
             label = f"{code_union} - {nom}" if nom else code_union
-            rfa_total = get_entity_rfa_grand_total(import_data, mode, code_union) if with_rfa else None
+            # Stubs Pure Data : pas de calcul RFA 2025 (CA=0)
+            if data.get("from_pure_data"):
+                rfa_total = 0.0 if with_rfa else None
+            else:
+                rfa_total = get_entity_rfa_grand_total(import_data, mode, code_union) if with_rfa else None
             entities.append(EntitySummary(
                 id=code_union,
                 label=label,
@@ -596,12 +608,16 @@ async def get_entities(
                 tri_total=data["tri_total"],
                 grand_total=data["grand_total"],
                 rfa_total=rfa_total,
+                from_pure_data=bool(data.get("from_pure_data")),
             ))
         entities.sort(key=lambda x: x.label)
     
     else:  # mode == "group"
         for groupe, data in import_data.by_group.items():
-            rfa_total = get_entity_rfa_grand_total(import_data, mode, groupe) if with_rfa else None
+            if data.get("from_pure_data"):
+                rfa_total = 0.0 if with_rfa else None
+            else:
+                rfa_total = get_entity_rfa_grand_total(import_data, mode, groupe) if with_rfa else None
             entities.append(EntitySummary(
                 id=groupe,
                 label=groupe,
@@ -610,6 +626,7 @@ async def get_entities(
                 tri_total=data["tri_total"],
                 grand_total=data["grand_total"],
                 rfa_total=rfa_total,
+                from_pure_data=bool(data.get("from_pure_data")),
             ))
         entities.sort(key=lambda x: x.label)
     
@@ -640,6 +657,9 @@ async def get_entity(
     
     if mode not in ["client", "group"]:
         raise HTTPException(status_code=400, detail="mode doit etre 'client' ou 'group'")
+
+    from app.services.entity_directory import merge_entities_into_import
+    merge_entities_into_import(import_data)
     
     try:
         return get_entity_detail_with_rfa(import_data, mode, id, contract_id=contract_id)
@@ -668,6 +688,10 @@ async def get_entity_full(
         )
     if mode not in ["client", "group"]:
         raise HTTPException(status_code=400, detail="mode doit etre 'client' ou 'group'")
+
+    from app.services.entity_directory import merge_entities_into_import
+    merge_entities_into_import(import_data)
+
     try:
         entity = get_entity_detail_with_rfa(import_data, mode, id, contract_id=contract_id)
     except ValueError as e:
@@ -3596,26 +3620,47 @@ async def pure_data_cumulative_client_dashboard(
     try:
         from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
         from app.services.pure_data_cumulative_service import build_cumulative_dashboard
+        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
 
-        if count_cumulative_rows() == 0:
+        payload = None
+        data_source = None
+
+        if count_cumulative_rows() > 0:
+            rows, _, _ = read_cumulative_rows()
+            if rows:
+                payload = build_cumulative_dashboard(
+                    rows=rows,
+                    year_current=year_current,
+                    year_previous=year_previous,
+                    code_union=code_union,
+                    groupe_client=groupe_client,
+                    fournisseur=fournisseur,
+                )
+                if payload.get("available"):
+                    data_source = "cumulative"
+
+        # Fallback mensuel si l'entité est absente du cumulé (ex. nouveau groupe CODIFA)
+        if not payload or not payload.get("available"):
+            if count_monthly_rows() > 0:
+                monthly_rows, _, _ = read_monthly_rows()
+                payload = build_cumulative_dashboard(
+                    rows=monthly_rows,
+                    year_current=year_current,
+                    year_previous=year_previous,
+                    code_union=code_union,
+                    groupe_client=groupe_client,
+                    fournisseur=fournisseur,
+                )
+                if payload.get("available"):
+                    data_source = "monthly"
+
+        if not payload or not payload.get("available"):
             return {
                 "available": False,
-                "message": "Aucune donnee cumulee disponible. Importez un fichier Pure Data cumule.",
+                "message": "Aucune donnée Pure Data (cumulé ou mensuel) pour cette entité.",
             }
 
-        rows, _, _ = read_cumulative_rows()
-        if not rows:
-            return {"available": False}
-
-        payload = build_cumulative_dashboard(
-            rows=rows,
-            year_current=year_current,
-            year_previous=year_previous,
-            code_union=code_union,
-            groupe_client=groupe_client,
-            fournisseur=fournisseur,
-        )
-
+        payload["data_source"] = data_source
         month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
         reporting_year = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_YEAR_KEY))
         filename = _get_setting_value(session, PURE_DATA_CUMULATIVE_FILENAME_KEY)
@@ -3667,23 +3712,19 @@ async def pure_data_cumulative_client_rfa(
         raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
 
     try:
-        from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
-        from app.services.pure_data_cumulative_service import _norm_text, _code_union_candidates
+        from app.services.pure_data_cumulative_service import _norm_text
         from app.services.pure_data_rfa_parser import compute_recap_ca_from_rows
         from app.services.rfa_calculator import calculate_rfa
         from app.services.contract_resolver import resolve_contract
+        from app.services.entity_directory import load_pure_data_rows_for_entity
 
-        if count_cumulative_rows() == 0:
-            return {"available": False, "message": "Aucune donnée Pure Data cumulée. Importez un fichier cumulé."}
-
-        all_rows, _, _ = read_cumulative_rows()
-        rows_year = [r for r in all_rows if r.get("year") == year]
-        if not rows_year:
-            return {"available": False, "message": f"Aucune donnée Pure Data pour {year}."}
+        rows, data_source = load_pure_data_rows_for_entity(
+            code_union=code_union,
+            groupe_client=groupe_client,
+            year=year,
+        )
 
         if code_union:
-            targets = _code_union_candidates(code_union)
-            rows = [r for r in rows_year if _norm_text(r.get("code_union")) in targets]
             label = next(
                 (f"{(r.get('code_union') or '').strip()} — {(r.get('raison_sociale') or '').strip()}".strip(" —")
                  for r in rows if (r.get("raison_sociale") or "").strip()),
@@ -3692,14 +3733,17 @@ async def pure_data_cumulative_client_rfa(
             entity_kind = "client"
             resolve_key = {"code_union": code_union.strip().upper()}
         else:
-            target = _norm_text(groupe_client)
-            rows = [r for r in rows_year if _norm_text(r.get("groupe_client")) == target]
             label = groupe_client
             entity_kind = "group"
-            resolve_key = {"groupe_client": target}
+            resolve_key = {"groupe_client": _norm_text(groupe_client)}
 
         if not rows:
-            return {"available": False, "label": label, "entity_kind": entity_kind}
+            return {
+                "available": False,
+                "label": label,
+                "entity_kind": entity_kind,
+                "message": f"Aucune donnée Pure Data (cumulé ou mensuel) pour {year}.",
+            }
 
         recap_ca = compute_recap_ca_from_rows(rows)
 
@@ -3806,13 +3850,11 @@ async def pure_data_cumulative_client_rfa(
 
         # ── Comparaison CA complet N-1 vs projection fin d'année ──
         year_previous = year - 1
-        rows_prev_year = [r for r in all_rows if r.get("year") == year_previous]
-        if code_union:
-            targets = _code_union_candidates(code_union)
-            rows_n1 = [r for r in rows_prev_year if _norm_text(r.get("code_union")) in targets]
-        else:
-            target = _norm_text(groupe_client)
-            rows_n1 = [r for r in rows_prev_year if _norm_text(r.get("groupe_client")) == target]
+        rows_n1, _ = load_pure_data_rows_for_entity(
+            code_union=code_union,
+            groupe_client=groupe_client,
+            year=year_previous,
+        )
 
         def _sum_rows_ca(rs):
             return round(sum(float(r.get("ca") or 0.0) for r in rs), 2)
@@ -3857,6 +3899,7 @@ async def pure_data_cumulative_client_rfa(
             "entity_kind": entity_kind,
             "label": label,
             "year": year,
+            "data_source": data_source,
             "ca": {
                 "global": recap_ca["global"],
                 "tri": recap_ca["tri"],
@@ -3897,33 +3940,40 @@ def _build_network_rfa_2026_payload(
     """Agrège RFA sortante réseau 2026 + comparaison Excel 2025."""
     import json as _json
     from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
+    from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
     from app.services.pure_data_network_rfa import compute_network_rfa_2026, attach_compare_2025
+    from app.services.entity_directory import merge_network_payloads
     from app.services.contract_resolver import BatchContractResolver
     from app.models import ContractRule, ContractOverride
     import app.services.contract_resolver as _resolver_mod
     import app.services.rfa_calculator as _rfa_calc
-
-    if count_cumulative_rows() == 0:
-        return {
-            "available": False,
-            "message": "Aucune donnée Pure Data cumulée. Importez un fichier cumulé.",
-            "year": year,
-        }
-
-    all_rows, _, _ = read_cumulative_rows()
-    rows_year = [r for r in all_rows if r.get("year") == year]
-    if not rows_year:
-        return {
-            "available": False,
-            "message": f"Aucune donnée Pure Data pour {year}.",
-            "year": year,
-        }
 
     dissolved_set = set()
     if dissolved_groups:
         dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
 
     reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+
+    cumulative_rows_year: List[Dict[str, Any]] = []
+    if count_cumulative_rows() > 0:
+        all_rows, _, _ = read_cumulative_rows()
+        cumulative_rows_year = [r for r in all_rows if r.get("year") == year]
+
+    monthly_rows_year: List[Dict[str, Any]] = []
+    if count_monthly_rows() > 0:
+        all_monthly, _, _ = read_monthly_rows()
+        monthly_rows_year = [r for r in all_monthly if r.get("year") == year]
+        if not reporting_month and monthly_rows_year:
+            months = [int(r.get("month") or 0) for r in monthly_rows_year if r.get("month")]
+            if months:
+                reporting_month = max(months)
+
+    if not cumulative_rows_year and not monthly_rows_year:
+        return {
+            "available": False,
+            "message": f"Aucune donnée Pure Data (cumulé ou mensuel) pour {year}.",
+            "year": year,
+        }
 
     _batch = BatchContractResolver()
     _orig_resolve = _resolver_mod.resolve_contract
@@ -3957,16 +4007,68 @@ def _build_network_rfa_2026_payload(
     )
 
     try:
-        network = compute_network_rfa_2026(
-            rows_year,
-            year=year,
-            reporting_month=reporting_month,
-            dissolved_groups=dissolved_set,
-        )
+        network: Optional[Dict[str, Any]] = None
+        if cumulative_rows_year:
+            network = compute_network_rfa_2026(
+                cumulative_rows_year,
+                year=year,
+                reporting_month=reporting_month,
+                dissolved_groups=dissolved_set,
+            )
+            network["data_source"] = "cumulative"
+
+        # Compléter avec les entités présentes uniquement en mensuel
+        if monthly_rows_year:
+            if network and network.get("available"):
+                known_codes = {
+                    (e.get("code") or "").strip().upper()
+                    for e in (network.get("independents") or [])
+                }
+                known_groups = {
+                    (e.get("code") or "").strip().upper()
+                    for e in (network.get("groups") or [])
+                }
+                from app.services.pure_data_cumulative_service import _norm_text as _nt
+                missing_rows = []
+                for r in monthly_rows_year:
+                    code = _nt(r.get("code_union"))
+                    groupe = _nt(r.get("groupe_client"))
+                    if not code:
+                        continue
+                    # Déjà couvert comme indépendant ou membre d'un groupe consolidé
+                    if code in known_codes:
+                        continue
+                    if groupe and groupe in known_groups:
+                        continue
+                    missing_rows.append(r)
+                if missing_rows:
+                    extra = compute_network_rfa_2026(
+                        missing_rows,
+                        year=year,
+                        reporting_month=reporting_month,
+                        dissolved_groups=dissolved_set,
+                    )
+                    extra["data_source"] = "monthly"
+                    network = merge_network_payloads(network, extra)
+            else:
+                network = compute_network_rfa_2026(
+                    monthly_rows_year,
+                    year=year,
+                    reporting_month=reporting_month,
+                    dissolved_groups=dissolved_set,
+                )
+                network["data_source"] = "monthly"
     finally:
         _resolver_mod.resolve_contract = _orig_resolve
         _rfa_calc.load_contract_rules = _orig_rules
         _rfa_calc.load_entity_overrides = _orig_overrides
+
+    if not network or not network.get("available"):
+        return {
+            "available": False,
+            "message": f"Aucune donnée Pure Data exploitable pour {year}.",
+            "year": year,
+        }
 
     # Comparaison 2025 (Excel Vue RFA) — total réseau + détail par entité
     grand_2025 = None
@@ -5209,6 +5311,10 @@ async def genie_query_endpoint(
     import_data = _resolve_import_data(import_id, session)
     if not import_data:
         raise HTTPException(status_code=404, detail="Import non trouvé")
+
+    # Remonter les nouveaux clients/groupes Pure Data pour search / entity_profile
+    from app.services.entity_directory import merge_entities_into_import
+    merge_entities_into_import(import_data)
 
     from app.services.genie_engine import genie_query, genie_query_fast
     params = {}

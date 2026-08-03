@@ -105,6 +105,7 @@ class EntitySummary(BaseModel):
     tri_total: float
     grand_total: float
     rfa_total: Optional[float] = None  # Total RFA calculé (grand_total du RFA)
+    from_pure_data: bool = False  # Présent uniquement dans Pure Data (pas dans RFA 2025)
 
 
 class AmountItem(BaseModel):

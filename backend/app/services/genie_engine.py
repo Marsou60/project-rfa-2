@@ -227,8 +227,12 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
     client_details = {}  # code_union -> analysis
 
     # Tri par CA décroissant — top N clients sur Vercel, tous en local
+    # (exclure les stubs Pure Data : CA 2025 = 0, pas utiles pour l'analyse RFA)
     _sorted_clients = sorted(
-        import_data.by_client.keys(),
+        (
+            cu for cu in import_data.by_client.keys()
+            if not import_data.by_client[cu].get("from_pure_data")
+        ),
         key=lambda cu: import_data.by_client[cu].get("grand_total", 0),
         reverse=True
     )[:_max_clients]
@@ -267,6 +271,8 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
 
     for groupe_name in list(import_data.by_group.keys()):
         group_data = import_data.by_group[groupe_name]
+        if group_data.get("from_pure_data"):
+            continue
         # Ignorer les groupes avec un seul client (= le client individuel)
         if group_data.get("nb_comptes", 1) <= 1:
             continue
