@@ -8,7 +8,7 @@
       "scope": "ADHERENT",
       "isDefault": false,
       "useCombinedGlobalRate": false,
-      "notes": "Contrat Warning. Alliance : 250-300k RFA 7% / bonus 2% ; 300-350k RFA 7,5% / bonus 2% ; 350-400k RFA 8% / bonus 2% ; 400k+ RFA 9% / bonus 2%. ACR/DCA/EXADIS globaux = barème de base. Tripartites : Delphi, Schaeffler (CA 2025), LUK-INA-FAG (embrayage), NAPA, SBS, familles EXADIS et ACR.",
+      "notes": "Contrat Warning. Alliance : 250-300k RFA 7% / bonus 2% ; 300-350k RFA 7,5% / bonus 2% ; 350-400k RFA 8% / bonus 2% ; 400k+ RFA 9% / bonus 2%. ACR/DCA/EXADIS globaux = barème de base. Tripartites : Delphi, Schaeffler (CA 2025), LUK-INA-FAG (embrayage), NAPA (30-50k 3% / 50k+ 4%), SBS, familles EXADIS et ACR.",
       "globalRules": {
         "GLOBAL_ACR": {
           "tiersRfa": [
@@ -107,7 +107,7 @@
         "TRI_ALLIANCE_NAPA": {
           "tiers": [
             {"min": 30000, "rate": 0.03},
-            {"min": 50000, "rate": 0.03}
+            {"min": 50000, "rate": 0.04}
           ]
         },
         "TRI_DCA_SBS": {
@@ -118,7 +118,7 @@
         "TRI_EXADIS_FREINAGE": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_EXADIS_EMBRAYAGE": {
@@ -130,13 +130,13 @@
         "TRI_EXADIS_FILTRATION": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_EXADIS_DISTRIBUTION": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_EXADIS_ETANCHEITE": {
@@ -152,25 +152,25 @@
         "TRI_ACR_FREINAGE": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_ACR_EMBRAYAGE": {
           "tiers": [
             {"min": 25000, "rate": 0.03},
-            {"min": 50000, "rate": 0.03}
+            {"min": 50000, "rate": 0.035}
           ]
         },
         "TRI_ACR_FILTRE": {
           "tiers": [
             {"min": 25000, "rate": 0.015},
-            {"min": 50000, "rate": 0.015}
+            {"min": 50000, "rate": 0.02}
           ]
         },
         "TRI_ACR_DISTRIBUTION": {
           "tiers": [
             {"min": 25000, "rate": 0.015},
-            {"min": 50000, "rate": 0.015}
+            {"min": 50000, "rate": 0.02}
           ]
         }
       }

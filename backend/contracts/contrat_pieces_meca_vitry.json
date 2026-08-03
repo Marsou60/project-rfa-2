@@ -102,7 +102,7 @@
         "TRI_ALLIANCE_SOGEFI": {
           "tiers": [
             {"min": 20000, "rate": 0.04},
-            {"min": 50000, "rate": 0.04}
+            {"min": 50000, "rate": 0.045}
           ]
         },
         "TRI_DCA_SBS": {

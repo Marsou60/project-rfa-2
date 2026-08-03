@@ -116,25 +116,25 @@
         "TRI_EXADIS_FREINAGE": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_EXADIS_EMBRAYAGE": {
           "tiers": [
             {"min": 25000, "rate": 0.03},
-            {"min": 50000, "rate": 0.03}
+            {"min": 50000, "rate": 0.035}
           ]
         },
         "TRI_EXADIS_FILTRATION": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_EXADIS_DISTRIBUTION": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_EXADIS_ETANCHEITE": {
@@ -150,25 +150,25 @@
         "TRI_ACR_FREINAGE": {
           "tiers": [
             {"min": 25000, "rate": 0.02},
-            {"min": 50000, "rate": 0.02}
+            {"min": 50000, "rate": 0.025}
           ]
         },
         "TRI_ACR_EMBRAYAGE": {
           "tiers": [
             {"min": 25000, "rate": 0.03},
-            {"min": 50000, "rate": 0.03}
+            {"min": 50000, "rate": 0.035}
           ]
         },
         "TRI_ACR_FILTRE": {
           "tiers": [
             {"min": 25000, "rate": 0.015},
-            {"min": 50000, "rate": 0.015}
+            {"min": 50000, "rate": 0.02}
           ]
         },
         "TRI_ACR_DISTRIBUTION": {
           "tiers": [
             {"min": 25000, "rate": 0.015},
-            {"min": 50000, "rate": 0.015}
+            {"min": 50000, "rate": 0.02}
           ]
         }
       }
