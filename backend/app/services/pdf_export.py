@@ -651,6 +651,16 @@ def generate_espace_client_pdf_html(
         rfa_kpi_display = rfa_kpi_display + b_amt
         rfa_invoice_ht = rfa_invoice_ht + b_amt
 
+    # Prime Warning (déjà incluse en HT dans grand_total si déclenchée)
+    warning_prime = None
+    for fb in (entity_data.get("rfa") or {}).get("fixed_bonuses") or []:
+        if isinstance(fb, dict) and fb.get("key") == "WARNING_TRI_PRIME":
+            warning_prime = fb
+            break
+    warning_prime_active = bool(warning_prime and warning_prime.get("triggered"))
+    warning_prime_ttc = float((warning_prime or {}).get("amount_ttc") or 0)
+    warning_prime_conditions = list((warning_prime or {}).get("conditions") or [])
+
     rfa_total_ttc = rfa_invoice_ht * 1.2
     rfa_rate_global = (rfa_gross / ca_total * 100) if ca_total > 0 else 0
     potential_gain_near = sum(r.get("projected_gain") or 0 for r in global_rows if r.get("near")) + sum(r.get("projected_gain") or 0 for r in tri_rows if r.get("near"))
@@ -688,6 +698,10 @@ def generate_espace_client_pdf_html(
         bonus_active=bonus_active,
         bonus_amount=b_amt if bonus_active else 0.0,
         bonus_designation=bonus_designation,
+        warning_prime_active=warning_prime_active,
+        warning_prime_ttc=warning_prime_ttc,
+        warning_prime_conditions=warning_prime_conditions,
+        warning_prime_show=bool(warning_prime),
         rfa_invoice_ht_formatted=format_amount(rfa_invoice_ht),
         rfa_invoice_ttc_formatted=format_amount(rfa_total_ttc),
         rfa_rate_global=rfa_rate_global,
@@ -894,6 +908,29 @@ def _get_espace_client_template() -> str:
     <td style="padding:12px 14px; text-align:center; vertical-align:middle;">
         <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:#b45309; font-weight:bold; margin-bottom:4px;">Bonus accordé</div>
         <div style="font-size:20px; font-weight:bold; color:#c2410c;">+{{ format_amount(bonus_amount) }}</div>
+    </td>
+</tr>
+</table>
+{% endif %}
+
+{% if warning_prime_show %}
+<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:6px 0 14px 0; border:2px solid {% if warning_prime_active %}#15803d{% else %}#64748b{% endif %}; background:{% if warning_prime_active %}#ecfdf5{% else %}#f8fafc{% endif %};">
+<tr>
+    <td style="padding:12px 14px; vertical-align:top; width:70%;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:{% if warning_prime_active %}#15803d{% else %}#475569{% endif %}; font-weight:bold; margin-bottom:4px;">Prime Warning tripartites Alliance</div>
+        <div style="font-size:12px; font-weight:bold; color:{% if warning_prime_active %}#14532d{% else %}#334155{% endif %}; line-height:1.35;">
+            {% if warning_prime_active %}Prime débloquée — ajoutée à votre RFA{% else %}Objectifs pour débloquer la prime{% endif %}
+        </div>
+        <div style="font-size:9px; color:#475569; margin-top:6px; line-height:1.45;">
+        {% for c in warning_prime_conditions %}
+            {% if c.met %}&#10003;{% else %}&#9675;{% endif %}
+            {{ c.label }} : {{ format_amount(c.ca) }} / {{ format_amount(c.required) }}{% if not c.met and c.missing %} — reste {{ format_amount(c.missing) }}{% endif %}<br/>
+        {% endfor %}
+        </div>
+    </td>
+    <td style="padding:12px 14px; text-align:center; vertical-align:middle;">
+        <div style="font-size:9px; text-transform:uppercase; letter-spacing:1px; color:{% if warning_prime_active %}#15803d{% else %}#64748b{% endif %}; font-weight:bold; margin-bottom:4px;">{% if warning_prime_active %}Débloquée{% else %}En cours{% endif %}</div>
+        <div style="font-size:18px; font-weight:bold; color:{% if warning_prime_active %}#15803d{% else %}#475569{% endif %};">{% if warning_prime_active %}+{% endif %}{{ format_amount(warning_prime_ttc) }} TTC</div>
     </td>
 </tr>
 </table>

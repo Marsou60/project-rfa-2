@@ -8,6 +8,57 @@ from app.core.global_tiers import GLOBAL_PLATFORMS
 from app.services.tier_engine import compute_tier
 from app.models import Contract, ContractRule, ContractOverride, RuleScope, TargetType
 
+# Prime fixe Contrat Warning (TTC) — les 3 seuils TRI doivent être atteints ensemble.
+# Montant HT = TTC / 1.20 pour rester cohérent avec la facturation TVA de l'Espace Client / PDF.
+WARNING_PRIME_TTC = 3000.0
+WARNING_PRIME_HT = round(WARNING_PRIME_TTC / 1.20, 2)  # 2500.00
+WARNING_PRIME_REQUIRES = (
+    ("TRI_SCHAEFFLER", "Schaeffler", 70000.0),
+    ("TRI_ALLIANCE_DELPHI", "Delphi", 150000.0),
+    ("TRI_ALLIANCE_SOGEFI", "Sogefi / Coopers", 20000.0),
+)
+
+
+def is_warning_contract(contract: Optional[Contract]) -> bool:
+    if not contract:
+        return False
+    return "WARNING" in ((contract.name or "").strip().upper())
+
+
+def evaluate_warning_prime(recap_ca: Dict[str, Dict[str, float]], contract: Optional[Contract]) -> Optional[Dict[str, Any]]:
+    """
+    Évalue la prime Warning (3000 € TTC) si les 3 CA tri-partites sont atteints.
+    Retourne None si le contrat n'est pas Warning.
+    """
+    if not is_warning_contract(contract):
+        return None
+
+    tri_ca = (recap_ca or {}).get("tri") or {}
+    conditions = []
+    all_met = True
+    for key, label, required in WARNING_PRIME_REQUIRES:
+        ca = float(tri_ca.get(key) or 0.0)
+        met = ca >= required
+        if not met:
+            all_met = False
+        conditions.append({
+            "key": key,
+            "label": label,
+            "required": required,
+            "ca": round(ca, 2),
+            "met": met,
+            "missing": round(max(required - ca, 0.0), 2),
+        })
+
+    return {
+        "key": "WARNING_TRI_PRIME",
+        "label": "Prime Warning tripartites Alliance",
+        "amount_ttc": WARNING_PRIME_TTC,
+        "amount_ht": WARNING_PRIME_HT,
+        "triggered": all_met,
+        "conditions": conditions,
+    }
+
 
 def parse_level_baremes(contract: Optional[Contract]) -> List[Dict[str, Any]]:
     """Parse le JSON level_baremes d'un contrat (liste vide si absent / invalide)."""
@@ -423,15 +474,27 @@ def calculate_rfa(
     # Calculer les totaux
     global_total = global_rfa_sum + global_bonus_sum
     grand_total = global_total + tri_total
-    
+
+    # Prime fixe Warning (si applicable) — s'ajoute au grand total HT
+    fixed_bonuses: List[Dict[str, Any]] = []
+    fixed_bonus_ht = 0.0
+    warning_prime = evaluate_warning_prime(recap_ca, contract)
+    if warning_prime is not None:
+        fixed_bonuses.append(warning_prime)
+        if warning_prime.get("triggered"):
+            fixed_bonus_ht = float(warning_prime.get("amount_ht") or 0.0)
+            grand_total += fixed_bonus_ht
+
+    result["fixed_bonuses"] = fixed_bonuses
     result["totals"] = {
         "global_rfa": round(global_rfa_sum, 2),
         "global_bonus": round(global_bonus_sum, 2),
         "global_total": round(global_total, 2),
         "tri_total": round(tri_total, 2),
-        "grand_total": round(grand_total, 2)
+        "fixed_bonus_total": round(fixed_bonus_ht, 2),
+        "grand_total": round(grand_total, 2),
     }
-    
+
     return result
 
 

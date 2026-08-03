@@ -620,7 +620,11 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               <div className="text-emerald-100 text-xs">💰 RFA Totale{supplierFilter ? ` (${supplierFilter})` : ''}</div>
               <div className="text-xl font-black">{formatAmount(rfaCardTotal)}</div>
               <div className="text-emerald-100 text-xs">
-                {formatPercent(rfaRateDisplay)}{bonusInfo.amount > 0 ? ` • dont bonus +${formatAmount(bonusInfo.amount)}` : ''}
+                {formatPercent(rfaRateDisplay)}
+                {bonusInfo.amount > 0 ? ` • dont bonus +${formatAmount(bonusInfo.amount)}` : ''}
+                {(entity?.rfa?.fixed_bonuses || []).some((b) => b?.key === 'WARNING_TRI_PRIME' && b?.triggered)
+                  ? ` • dont prime Warning +${formatAmount(3000)} TTC`
+                  : ''}
               </div>
             </div>
             <div className={`card p-4 text-white ${nearCount > 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-gray-400 to-gray-500'}`}>
@@ -646,6 +650,56 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               </span>
             </div>
           )}
+
+          {/* Prime Warning : visible uniquement si le contrat appliqué expose fixed_bonuses Warning */}
+          {(entity?.rfa?.fixed_bonuses || []).filter((b) => b?.key === 'WARNING_TRI_PRIME').map((prime) => {
+            const triggered = !!prime.triggered
+            const conditions = Array.isArray(prime.conditions) ? prime.conditions : []
+            return (
+              <div
+                key={prime.key}
+                className={`rounded-xl border-2 px-4 py-3 flex flex-wrap items-start justify-between gap-3 ${
+                  triggered
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                    : 'bg-slate-50 border-slate-300 text-slate-800'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold uppercase tracking-wide opacity-80">
+                    {triggered ? 'Prime Warning débloquée' : 'Prime Warning — objectifs'}
+                  </div>
+                  <div className="text-lg font-black">
+                    {triggered ? '+' : ''}{formatAmount(prime.amount_ttc || 0)} TTC
+                  </div>
+                  <p className="text-sm mt-1">
+                    {triggered
+                      ? 'Les 3 objectifs tripartites Alliance sont atteints — prime ajoutée à votre RFA.'
+                      : 'Atteignez les 3 objectifs ci-dessous pour débloquer la prime de 3 000 € TTC.'}
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {conditions.map((c) => (
+                      <li key={c.key} className="flex flex-wrap items-baseline gap-x-2">
+                        <span className={c.met ? 'text-emerald-700 font-semibold' : 'text-slate-600 font-semibold'}>
+                          {c.met ? '✓' : '○'} {c.label}
+                        </span>
+                        <span className="opacity-80">
+                          {formatAmount(c.ca || 0)} / {formatAmount(c.required || 0)}
+                          {!c.met && c.missing > 0 ? ` — reste ${formatAmount(c.missing)}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <span
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ${
+                    triggered ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {triggered ? 'Débloquée' : 'En cours'}
+                </span>
+              </div>
+            )
+          })}
 
           {/* Cotisation offerte : bandeau sous les KPI (même réglage que la liste adhérents) */}
           {cotisationInfo.amount > 0 && cotisationInfo.isOfferte && (

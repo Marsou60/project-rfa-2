@@ -236,7 +236,8 @@ def get_entity_detail_with_rfa(
         rfa_schema = RfaResult(
             global_items=global_rfa_items,
             tri_items=tri_rfa_items,
-            totals=rfa_result["totals"]
+            totals=rfa_result["totals"],
+            fixed_bonuses=rfa_result.get("fixed_bonuses") or [],
         )
         
         return EntityDetailWithRfa(
@@ -317,7 +318,8 @@ def get_entity_detail_with_rfa(
         rfa_schema = RfaResult(
             global_items=global_rfa_items,
             tri_items=tri_rfa_items,
-            totals=rfa_result["totals"]
+            totals=rfa_result["totals"],
+            fixed_bonuses=rfa_result.get("fixed_bonuses") or [],
         )
         
         return EntityDetailWithRfa(

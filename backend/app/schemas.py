@@ -190,6 +190,7 @@ class RfaResult(BaseModel):
     marketing_items: Dict[str, MarketingItem] = Field(default={}, alias="marketing")
     totals: Dict[str, float]  # global_rfa, global_bonus, global_total, tri_total, grand_total, marketing_total
     bonus_groups: Optional[List[Dict]] = None  # Bonus groupes (ex: Soutien APA +3%)
+    fixed_bonuses: Optional[List[Dict[str, Any]]] = None  # Primes fixes conditionnelles (ex: Warning)
     
     class Config:
         populate_by_name = True
