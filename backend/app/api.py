@@ -4041,6 +4041,76 @@ async def pure_data_cumulative_client_rfa(
                 "has_n1_data": bool(rows_n1),
             }
 
+        # ── Cotisation Union 2026 (barème niveau / contrat spécial + Offrir/Facturer) ──
+        from app.services.cotisation_2026 import resolve_cotisation_2026_for_entity
+        from app.models import CotisationSetting as _Cotis
+
+        entity_key = (
+            code_union.strip().upper() if code_union
+            else _norm_text(groupe_client)
+        )
+        # Magasin : récupérer le groupe Pure Data pour savoir si cotisation au groupe
+        member_groupe = None
+        if code_union:
+            for r in rows:
+                g = _norm_text(r.get("groupe_client"))
+                if g:
+                    member_groupe = g
+                    break
+
+        cotis_setting = session.exec(
+            select(_Cotis).where(
+                _Cotis.entity_key == entity_key,
+                _Cotis.entity_type == ("client" if code_union else "group"),
+                _Cotis.year == int(year),
+            )
+        ).first()
+        # Fallback : parfois entity_type group stocké pour CODIFA etc.
+        if not cotis_setting and not code_union:
+            cotis_setting = session.exec(
+                select(_Cotis).where(
+                    _Cotis.entity_key == entity_key,
+                    _Cotis.year == int(year),
+                )
+            ).first()
+
+        level_for_cotis = None
+        if rfa_projected and (rfa_projected.get("contract_level") or {}).get("id"):
+            level_for_cotis = rfa_projected["contract_level"]["id"]
+        elif (contract_level or {}).get("id"):
+            level_for_cotis = contract_level["id"]
+
+        cotisation = resolve_cotisation_2026_for_entity(
+            entity_key=entity_key,
+            level_based=bool(contract_level) or bool(parse_level_baremes(contract)),
+            level_id=level_for_cotis,
+            contract_name=contract.name if contract else None,
+            setting=cotis_setting,
+            entity_type="client" if code_union else "group",
+            groupe_client=member_groupe if code_union else None,
+        )
+        # Si magasin d'un groupe : exposer aussi la cotisation du groupe (info)
+        if cotisation.get("source") == "group_member" and member_groupe:
+            group_setting = session.exec(
+                select(_Cotis).where(
+                    _Cotis.entity_key == member_groupe,
+                    _Cotis.year == int(year),
+                )
+            ).first()
+            group_cotis = resolve_cotisation_2026_for_entity(
+                entity_key=member_groupe,
+                level_based=False,
+                level_id=None,
+                contract_name=None,
+                setting=group_setting,
+                entity_type="group",
+            )
+            cotisation["group_cotisation"] = group_cotis
+
+        rfa_gross = float((rfa_result.get("totals") or {}).get("grand_total") or 0)
+        proj_gross = float(((rfa_projected or {}).get("totals") or {}).get("grand_total") or 0) if rfa_projected else None
+        deducted = float(cotisation.get("deducted") or 0)
+
         return {
             "available": True,
             "entity_kind": entity_kind,
@@ -4057,6 +4127,9 @@ async def pure_data_cumulative_client_rfa(
             "reporting_month": reporting_month,
             "projection_factor": projection_factor,
             "comparison_n1": comparison_n1,
+            "cotisation": cotisation,
+            "rfa_net": round(max(rfa_gross - deducted, 0), 2),
+            "rfa_projected_net": round(max(proj_gross - deducted, 0), 2) if proj_gross is not None else None,
             "contract_applied": {
                 "id": contract.id,
                 "name": contract.name,

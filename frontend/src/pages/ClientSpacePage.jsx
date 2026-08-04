@@ -1250,6 +1250,8 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               groupeClient={mode === 'group' ? entity?.groupe_client : null}
               caN1Rfa={entity?.ca?.totals?.global_total ?? null}
               caN1Label="CA 2025 (Vue RFA)"
+              isAdherent={isAdherent}
+              onCotisationChanged={refreshCotisationMap}
             />
           )}
 
@@ -2284,13 +2286,30 @@ function Rfa26ProgressCard({
 }
 
 /* ── Onglet RFA 2026 (depuis Pure Data, moteur RFA réutilisé) ── */
-function ClientRfa2026Section({ codeUnion, groupeClient, caN1Rfa = null, caN1Label = 'CA N-1 (Vue RFA)' }) {
+function ClientRfa2026Section({
+  codeUnion,
+  groupeClient,
+  caN1Rfa = null,
+  caN1Label = 'CA N-1 (Vue RFA)',
+  isAdherent = false,
+  onCotisationChanged = null,
+}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [logos, setLogos] = useState({})
+  const [cotisBusy, setCotisBusy] = useState(false)
 
   const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
   const fmtPct = (r) => new Intl.NumberFormat('fr-FR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(r || 0)
+
+  const reload = useCallback(() => {
+    if (!codeUnion && !groupeClient) { setData(null); return }
+    setLoading(true)
+    getClientRfa2026({ codeUnion, groupeClient, year: 2026 })
+      .then(setData)
+      .catch(() => setData({ available: false }))
+      .finally(() => setLoading(false))
+  }, [codeUnion, groupeClient])
 
   useEffect(() => {
     getSupplierLogos().then((list) => {
@@ -2301,14 +2320,31 @@ function ClientRfa2026Section({ codeUnion, groupeClient, caN1Rfa = null, caN1Lab
   }, [])
 
   useEffect(() => {
-    if (!codeUnion && !groupeClient) { setData(null); return }
-    setLoading(true)
-    setData(null)
-    getClientRfa2026({ codeUnion, groupeClient, year: 2026 })
-      .then(setData)
-      .catch(() => setData({ available: false }))
-      .finally(() => setLoading(false))
-  }, [codeUnion, groupeClient])
+    reload()
+  }, [reload])
+
+  const setCotisationStatus = async ({ facturee, deduite }) => {
+    const cot = data?.cotisation
+    const amount = Number(cot?.amount || 0)
+    if (amount <= 0) return
+    const key = (codeUnion || groupeClient || '').toString().trim().toUpperCase()
+    if (!key) return
+    setCotisBusy(true)
+    try {
+      await upsertCotisation(codeUnion ? 'client' : 'group', key, {
+        amount,
+        facturee: Boolean(facturee),
+        deduite: Boolean(deduite),
+        year: 2026,
+      })
+      reload()
+      if (onCotisationChanged) onCotisationChanged()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setCotisBusy(false)
+    }
+  }
 
   if (loading) return (
     <div className="rounded-2xl border border-indigo-100 bg-white p-6 shadow-sm">
@@ -2375,6 +2411,16 @@ function ClientRfa2026Section({ codeUnion, groupeClient, caN1Rfa = null, caN1Lab
   const triProjectedUnlock = showLevelLock && projTriEnabled
   const triFullyLocked = showLevelLock && !projTriEnabled
   const contractName = data.contract_applied?.name || 'Défaut'
+
+  const cotisation = data.cotisation || null
+  const cotAmount = Number(cotisation?.amount || 0)
+  const cotFacture = Boolean(cotisation?.is_facture)
+  const cotOfferte = Boolean(cotisation?.is_offerte)
+  const cotGroupMember = cotisation?.source === 'group_member'
+  const rfaNet = data.rfa_net != null ? data.rfa_net : (cotFacture ? Math.max(grand - cotAmount, 0) : grand)
+  const projNet = data.rfa_projected_net != null
+    ? data.rfa_projected_net
+    : (projGrand != null ? (cotFacture ? Math.max(projGrand - cotAmount, 0) : projGrand) : null)
 
   const platformOpps = globalItems
     .filter(([, it]) => (it.ca || 0) > 0)
@@ -2515,6 +2561,12 @@ function ClientRfa2026Section({ codeUnion, groupeClient, caN1Rfa = null, caN1Lab
             </div>
             <div className="text-[11px] font-semibold text-slate-500">RFA estimée</div>
             <div className="text-3xl font-black text-emerald-600 leading-none mt-0.5">{fmt(grand)}</div>
+            {cotAmount > 0 && cotFacture && (
+              <div className="mt-2 text-sm font-bold text-orange-700">
+                RFA nette {fmt(rfaNet)}
+                <span className="font-semibold text-orange-600/80"> · après cotisation</span>
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="text-[11px] text-slate-500">CA cumulé</div>
@@ -2542,6 +2594,17 @@ function ClientRfa2026Section({ codeUnion, groupeClient, caN1Rfa = null, caN1Lab
             <div className="text-3xl font-black text-cyan-700 leading-none mt-0.5">
               {projGrand != null ? fmt(projGrand) : '—'}
             </div>
+            {cotAmount > 0 && cotFacture && projNet != null && (
+              <div className="mt-2 text-sm font-bold text-orange-700">
+                RFA nette projetée {fmt(projNet)}
+                <span className="font-semibold text-orange-600/80"> · après cotisation</span>
+              </div>
+            )}
+            {cotAmount > 0 && cotOfferte && (
+              <div className="mt-2 text-sm font-bold text-emerald-700">
+                Cotisation offerte — RFA intégrale conservée
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="text-[11px] text-slate-500">CA projeté (plateformes)</div>
@@ -2562,6 +2625,85 @@ function ClientRfa2026Section({ codeUnion, groupeClient, caN1Rfa = null, caN1Lab
             {levelWillUpgrade && (
               <div className="mt-1 text-[11px] text-cyan-800 font-semibold">
                 Inclut le passage {levelId} → {projLevelId}
+              </div>
+            )}
+
+            {/* Cotisation Union 2026 */}
+            {(cotAmount > 0 || cotGroupMember) && (
+              <div className={`mt-4 rounded-xl border-2 px-3 py-3 ${
+                cotOfferte
+                  ? 'border-emerald-300 bg-emerald-50'
+                  : cotGroupMember
+                    ? 'border-sky-300 bg-sky-50'
+                    : 'border-orange-300 bg-orange-50'
+              }`}>
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                      Cotisation Union 2026
+                    </div>
+                    {cotGroupMember ? (
+                      <>
+                        <div className="text-sm font-semibold text-sky-900 mt-1">
+                          Facturée au groupe {cotisation.billed_at_group}
+                        </div>
+                        {cotisation.group_cotisation?.amount > 0 && (
+                          <div className="text-lg font-black text-sky-800 font-mono mt-0.5">
+                            {fmt(cotisation.group_cotisation.amount)}
+                            <span className="text-xs font-semibold ml-1 opacity-80">
+                              {cotisation.group_cotisation.is_offerte ? '(offerte au groupe)' : '(au groupe)'}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-xl font-black text-slate-900 font-mono mt-0.5">{fmt(cotAmount)}</div>
+                        <div className="text-[11px] text-slate-600 mt-0.5">
+                          {cotisation.label || 'Barème 2026'}
+                          {cotOfferte ? ' · geste commercial' : ' · déduite de la RFA'}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-bold ${
+                      cotOfferte
+                        ? 'bg-emerald-200 text-emerald-900'
+                        : cotGroupMember
+                          ? 'bg-sky-200 text-sky-900'
+                          : 'bg-orange-200 text-orange-900'
+                    }`}>
+                      {cotOfferte ? 'Offerte' : cotGroupMember ? 'Via groupe' : 'Facturée'}
+                    </span>
+                    {!isAdherent && cotAmount > 0 && !cotGroupMember && (
+                      cotFacture ? (
+                        <button
+                          type="button"
+                          disabled={cotisBusy}
+                          onClick={() => setCotisationStatus({ facturee: false, deduite: false })}
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          Offrir
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={cotisBusy}
+                          onClick={() => setCotisationStatus({ facturee: true, deduite: true })}
+                          className="text-[11px] font-semibold px-3 py-1.5 rounded-lg bg-white border border-orange-300 text-orange-900 hover:bg-orange-100 disabled:opacity-50"
+                        >
+                          Facturer
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+                {cotAmount > 0 && cotFacture && projGrand != null && (
+                  <div className="mt-2 pt-2 border-t border-orange-200/80 text-xs text-orange-900">
+                    Projection : {fmt(projGrand)} − {fmt(cotAmount)} = <strong>{fmt(projNet)}</strong> nette
+                  </div>
+                )}
               </div>
             )}
 
