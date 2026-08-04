@@ -42,12 +42,23 @@ SPECIAL_PDF_KEYS = {
     "GROUPE_CENTER",
     "GROUPE_JUMBO",
     "GROUPE_SMP",
+    "GROUPE_APA_MARSEILLE",
+    "GROUPE_DISCOUNT",
+    "CODIFA",
     "M0248",
     "M0164",
     "M0173",
     "M0258",
     "M0166",
     "M0022",
+}
+
+# Libellés d'affichage quand le PDF est rattaché à une cible (utile si le
+# contrat DB n'est pas encore le contrat spécial, ex. Codifa / Otto'Parts).
+SPECIAL_PDF_LABELS = {
+    "GROUPE_APA_MARSEILLE": "Convention APA Marseille 2026",
+    "GROUPE_DISCOUNT": "Groupe Discount 2026",
+    "CODIFA": "Groupe Codifa — Otto'Parts 2026",
 }
 
 
@@ -123,11 +134,21 @@ def resolve_contract_pdf(
     for key in lookup_keys:
         path = special_pdf_path(key)
         if path:
+            fkey = _file_key(key)
+            display = SPECIAL_PDF_LABELS.get(fkey) or cname or key
+            # Si un contrat spécial DB existe, préférer son nom
+            if (
+                contract
+                and not is_adherent_2026_contract(contract)
+                and not is_legacy_base_contract(contract)
+                and cname
+            ):
+                display = cname
             return ContractPdfInfo(
                 available=True,
                 kind="special",
-                label=f"Annexe rémunération — {cname or key}",
-                contract_name=cname,
+                label=f"Annexe rémunération — {display}",
+                contract_name=display,
                 filename=path.name,
                 path=path,
             )
