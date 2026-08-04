@@ -447,6 +447,80 @@ def build_network_dashboard(
     cli_boom.sort(key=lambda x: -x["delta"])
     cli_new.sort(key=lambda x: -x["current"])
 
+    # Décrochages récents : cumul encore OK, mais les 2 derniers mois plongent
+    cli_recent: List[Dict[str, Any]] = []
+    recent_months: List[int] = []
+    mens_platforms = {p for p, ms in plat_months_cur.items() if len(ms) >= 2}
+    if len(months_current) >= 2 and mens_platforms:
+        recent_months = list(months_current[-2:])
+        last_m = set(recent_months)
+        recent_agg: Dict[str, Dict[str, Any]] = {}
+        for r in rows:
+            p = normalize_platform(r.get("fournisseur"))
+            if p not in mens_platforms:
+                continue
+            code = _norm(r.get("code_union")).upper()
+            if not code:
+                continue
+            y = r.get("year")
+            m = r.get("month")
+            try:
+                ca = float(r.get("ca") or 0.0)
+            except (TypeError, ValueError):
+                ca = 0.0
+            o = recent_agg.get(code)
+            if o is None:
+                o = {
+                    "rc": 0.0, "rp": 0.0, "cc": 0.0, "cp": 0.0,
+                    "name": cli_name.get(code) or code,
+                }
+                recent_agg[code] = o
+            name = _norm(r.get("raison_sociale"))
+            if name:
+                o["name"] = name
+            try:
+                m_i = int(m) if m is not None else None
+            except (TypeError, ValueError):
+                m_i = None
+            is_recent = m_i is not None and m_i in last_m
+            if y == year_current:
+                if _row_in_period(r):
+                    o["cc"] += ca
+                if is_recent:
+                    o["rc"] += ca
+            elif y == year_previous:
+                if _row_in_period(r):
+                    o["cp"] += ca
+                if is_recent:
+                    o["rp"] += ca
+
+        min_recent = max(1000.0, ca_min / 3.0)
+        for code, o in recent_agg.items():
+            if o["rp"] < min_recent:
+                continue
+            rpct = _pct(o["rc"] - o["rp"], o["rp"])
+            cpct = _pct(o["cc"] - o["cp"], o["cp"]) if o["cp"] else None
+            # Signal silencieux : récent ≤ -seuil, mais cumul pas encore en alerte cumul
+            if (
+                rpct is not None
+                and rpct <= -thr
+                and o["cc"] > 0
+                and (cpct is None or cpct > -thr)
+            ):
+                cli_recent.append({
+                    "key": o["name"],
+                    "code_union": code,
+                    "raison_sociale": o["name"],
+                    "recent_current": round(o["rc"], 2),
+                    "recent_previous": round(o["rp"], 2),
+                    "recent_delta": round(o["rc"] - o["rp"], 2),
+                    "recent_pct": rpct,
+                    "current": round(o["cc"], 2),
+                    "previous": round(o["cp"], 2),
+                    "delta_pct": cpct,
+                })
+        cli_recent.sort(key=lambda x: x["recent_delta"])
+
     mar_risque = []
     mar_perdues = []
     mar_boom = []
@@ -488,16 +562,26 @@ def build_network_dashboard(
         sum(x["delta"] for x in cli_boom) + sum(x["current"] for x in cli_new),
         2,
     )
-    n_crit = len(cli_risque) + len(cli_perdus) + len(mar_risque) + len(mar_perdues)
+    ca_recent = round(sum(abs(x["recent_delta"]) for x in cli_recent), 2)
+    n_crit = (
+        len(cli_risque)
+        + len(cli_perdus)
+        + len(cli_recent)
+        + len(mar_risque)
+        + len(mar_perdues)
+    )
 
     alertes = {
         "cfg": {"pct": thr, "ca_min": ca_min},
         "ca_risque": ca_risque,
         "ca_perdu": ca_perdu,
         "ca_opportunites": ca_oppo,
+        "ca_recent": ca_recent,
+        "recent_months": recent_months,
         "n_crit": n_crit,
         "clients_risque": cli_risque[:25],
         "clients_perdus": cli_perdus[:25],
+        "clients_recent": cli_recent[:30],
         "clients_boom": cli_boom[:25],
         "clients_new": cli_new[:25],
         "marques_risque": mar_risque[:25],

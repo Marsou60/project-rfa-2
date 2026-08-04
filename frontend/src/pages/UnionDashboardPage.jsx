@@ -366,6 +366,7 @@ const UD_CSS = `
   .ud-insight { border-radius:14px; padding:14px 16px; color:#fff; background:linear-gradient(135deg,#0d2f5e,#1b6ec2); box-shadow:var(--ud-shadow); }
   .ud-insight.r { background:linear-gradient(135deg,#8b1520,#d81f2a); }
   .ud-insight.g { background:linear-gradient(135deg,#0f6b3f,#1a9e5f); }
+  .ud-insight.o { background:linear-gradient(135deg,#a66a00,#e0a400); }
   .ud-insight.dark { background:linear-gradient(135deg,#3a3f4b,#565d6d); }
   .ud-insight .il { font-size:11px; opacity:.85; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
   .ud-insight .iv { font-size:22px; font-weight:800; margin-top:4px; }
@@ -628,8 +629,30 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
             </div>
             <div className="ud-insights">
               <Insight tone="r" label="CA à risque" value={fmtCompact(alertes.ca_risque)} detail={`${alertes.clients_risque?.length || 0} clients ≤ -${alertPct}%`} />
+              <Insight tone="o" label="Décrochages silencieux" value={fmtCompact(alertes.ca_recent)} detail={`${alertes.clients_recent?.length || 0} clients · 2 derniers mois`} />
               <Insight tone="dark" label="CA perdu (silencieux)" value={fmtCompact(alertes.ca_perdu)} detail={`${alertes.clients_perdus?.length || 0} sans commande ${data.year_current}`} />
               <Insight tone="g" label="CA opportunités" value={`+${fmtCompact(alertes.ca_opportunites)}`} detail={`${alertes.clients_boom?.length || 0} hausses · ${alertes.clients_new?.length || 0} nouveaux`} />
+            </div>
+            <div className="ud-panel" style={{ borderTop: '4px solid #e0a400' }}>
+              <h3>Décrochages récents (silencieux) <span className="ud-acount o">{alertes.clients_recent?.length || 0}</span></h3>
+              <p className="psub">
+                Cumul encore correct, mais les 2 derniers mois
+                {alertes.recent_months?.length
+                  ? ` (${alertes.recent_months.map((m) => MONTH_FR[m]).join(' + ')})`
+                  : ''}{' '}
+                décrochent ≥ {alertPct}% vs {data.year_previous} — signal avant la baisse cumulée
+              </p>
+              <AlertTable
+                rows={alertes.clients_recent}
+                columns={[
+                  { t: 'Client', render: (r) => <><div className="name">{r.key}</div><div className="subcode">{r.code_union}</div></> },
+                  { t: '2 derniers mois', render: (r) => fmtCompact(r.recent_current) },
+                  { t: `vs ${data.year_previous}`, render: (r) => fmtCompact(r.recent_previous) },
+                  { t: 'Écart récent', render: (r) => <span className="neg">{fmtCompact(r.recent_delta)}</span> },
+                  { t: 'Récent', render: (r) => <TrendBadge pct={r.recent_pct} /> },
+                  { t: 'Cumul', render: (r) => <TrendBadge pct={r.delta_pct} /> },
+                ]}
+              />
             </div>
             <div className="ud-grid2">
               <div className="ud-panel">

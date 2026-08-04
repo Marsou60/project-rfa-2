@@ -112,3 +112,40 @@ def test_alertes_and_cross(monkeypatch):
     assert X["n_platforms"] >= 2
     assert X["avg_platforms"] >= 1
     assert any(c["code_union"] == "D1" for c in X["loyal_clients"])
+
+
+def test_clients_recent_silent_drop(monkeypatch):
+    """Cumul OK mais 2 derniers mois en chute → clients_recent."""
+    rows = []
+    # Mois 1-4 : 2026 en avance → cumul reste > -15%
+    for m in range(1, 5):
+        rows.append({
+            "year": 2026, "month": m, "fournisseur": "DCA", "code_union": "S1",
+            "raison_sociale": "Silent Drop", "marque": "SBS", "famille": "FREINAGE",
+            "ca": 15000, "commercial": "Bob", "region_commerciale": "IDF",
+        })
+        rows.append({
+            "year": 2025, "month": m, "fournisseur": "DCA", "code_union": "S1",
+            "raison_sociale": "Silent Drop", "marque": "SBS", "famille": "FREINAGE",
+            "ca": 10000, "commercial": "Bob", "region_commerciale": "IDF",
+        })
+    # Mois 5-6 : chute récente vs N-1
+    for m in (5, 6):
+        rows.append({
+            "year": 2026, "month": m, "fournisseur": "DCA", "code_union": "S1",
+            "raison_sociale": "Silent Drop", "marque": "SBS", "famille": "FREINAGE",
+            "ca": 2000, "commercial": "Bob", "region_commerciale": "IDF",
+        })
+        rows.append({
+            "year": 2025, "month": m, "fournisseur": "DCA", "code_union": "S1",
+            "raison_sociale": "Silent Drop", "marque": "SBS", "famille": "FREINAGE",
+            "ca": 10000, "commercial": "Bob", "region_commerciale": "IDF",
+        })
+    monkeypatch.setattr(dash, "load_evolution_sales_rows", lambda: (rows, "cumulative"))
+    payload = build_network_dashboard(alert_pct=15, alert_ca_min=1000)
+    recent = payload["alertes"]["clients_recent"]
+    assert payload["alertes"]["recent_months"] == [5, 6]
+    assert any(c["code_union"] == "S1" for c in recent)
+    hit = next(c for c in recent if c["code_union"] == "S1")
+    assert hit["recent_pct"] <= -15
+    assert hit["delta_pct"] is None or hit["delta_pct"] > -15
