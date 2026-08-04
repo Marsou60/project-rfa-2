@@ -36,7 +36,7 @@ import MarginSimulatorPage from './pages/MarginSimulatorPage'
 import GeniePage from './pages/GeniePage'
 import PureDataPage from './pages/PureDataPage'
 import LoginPage from './pages/LoginPage'
-import HubPage from './pages/HubPage'
+import UnionDashboardPage from './pages/UnionDashboardPage'
 import NathaliePage from './pages/NathaliePage'
 import PaulPage from './pages/PaulPage'
 import PureDataMonthlyImportPage from './pages/PureDataMonthlyImportPage'
@@ -656,8 +656,7 @@ function AppContent() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
         {effectivePage === 'hub' && (isAdmin || isCommercial) && (
-          <HubPage
-            user={user}
+          <UnionDashboardPage
             currentImportId={currentImportId}
             isCommercial={isCommercial}
             onNavigate={(page) => {

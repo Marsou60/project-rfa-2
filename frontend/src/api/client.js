@@ -889,6 +889,25 @@ export const getPureDataCumulativeStatus = async () => {
   return response.data
 }
 
+export const getNetworkDashboard = async ({
+  yearCurrent = 2026,
+  yearPrevious = 2025,
+  fournisseur,
+  commercial,
+  region,
+} = {}) => {
+  const response = await api.get('/pure-data/cumulative/network-dashboard', {
+    params: {
+      year_current: yearCurrent,
+      year_previous: yearPrevious,
+      fournisseur: fournisseur || undefined,
+      commercial: commercial || undefined,
+      region: region || undefined,
+    },
+  })
+  return response.data
+}
+
 export const getClientRfa2026 = async ({ codeUnion, groupeClient, year = 2026 } = {}) => {
   const response = await api.get('/pure-data/cumulative/client-rfa', {
     params: {

@@ -3757,6 +3757,56 @@ async def pure_data_cumulative_status(
         raise HTTPException(status_code=500, detail=f"Erreur status Pure Data cumule: {str(e)}")
 
 
+@router.get("/pure-data/cumulative/network-dashboard")
+async def pure_data_network_dashboard(
+    year_current: int = 2026,
+    year_previous: int = 2025,
+    fournisseur: Optional[str] = None,
+    commercial: Optional[str] = None,
+    region: Optional[str] = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """
+    Dashboard Accueil / Pilotage Union :
+    KPI réseau, évolution mois, plateformes, tops marques/familles/clients.
+    """
+    try:
+        from app.services.pure_data_network_dashboard import build_network_dashboard
+
+        platforms_meta = _load_cumulative_platforms_meta(session)
+        platform_months = _platform_months_from_meta(platforms_meta)
+
+        obj_raw = _get_setting_value(session, "ca_objectif_2026")
+        try:
+            objectif_f = float(obj_raw) if obj_raw not in (None, "") else 21000000.0
+        except Exception:
+            objectif_f = 21000000.0
+
+        ca25_raw = _get_setting_value(session, "ca_2025_realise")
+        try:
+            ca25_f = float(ca25_raw) if ca25_raw not in (None, "") else None
+        except Exception:
+            ca25_f = None
+
+        return build_network_dashboard(
+            year_current=year_current,
+            year_previous=year_previous,
+            fournisseur=fournisseur,
+            commercial=commercial,
+            region=region,
+            objectif=objectif_f,
+            ca_n1_realise=ca25_f,
+            platform_months=platform_months,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur dashboard réseau: {str(e)}")
+
+
 @router.post("/pure-data/cumulative/import-excel")
 async def import_pure_data_cumulative_excel(
     file: UploadFile = File(...),
