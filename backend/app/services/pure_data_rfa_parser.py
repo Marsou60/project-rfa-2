@@ -237,13 +237,18 @@ def compute_recap_ca_from_rows(rows: List[Dict]) -> Dict[str, Dict[str, float]]:
         if ca == 0.0:
             continue
 
-        frs = _u(r.get("fournisseur"))
+        frs_raw = _u(r.get("fournisseur"))
+        try:
+            from app.services.pure_data_cumulative_supabase import normalize_platform
+            frs = normalize_platform(frs_raw) or frs_raw
+        except Exception:
+            frs = frs_raw
         marque = _u(r.get("marque"))
         famille = _u(r.get("famille"))
         sous_famille = _u(r.get("sous_famille"))
 
         # Global : tout le CA du fournisseur
-        gkey = GLOBAL_BY_FOURNISSEUR.get(frs)
+        gkey = GLOBAL_BY_FOURNISSEUR.get(frs) or GLOBAL_BY_FOURNISSEUR.get(frs_raw)
         if gkey and gkey in recap["global"]:
             recap["global"][gkey] += ca
 

@@ -15,11 +15,18 @@ PURE_DATA_CUMULATIVE_TABLE = "pure_data_cumulative"
 
 CANONICAL_PLATFORMS = ("ACR", "DCA", "EXADIS", "ALLIANCE")
 
-COLUMNS = [
-    "mois", "annee", "code_union", "raison_sociale", "groupe_client",
-    "region_commerciale", "fournisseur", "marque", "groupe_frs",
-    "famille", "sous_famille", "ca", "commercial",
-]
+# Libelles historiques / variantes a effacer lors d'un replace plateforme
+PLATFORM_ALIASES: Dict[str, Tuple[str, ...]] = {
+    "ACR": ("ACR",),
+    "DCA": ("DCA", "DCA_GLOBAL", "DCA GLOBAL"),
+    "EXADIS": ("EXADIS",),
+    "ALLIANCE": (
+        "ALLIANCE",
+        "AAG",
+        "ALLIANCE AUTOMOTIVE",
+        "ALLIANCE AUTOMOTIVE GROUP",
+    ),
+}
 
 
 def _norm_year(value) -> Optional[int]:
@@ -65,16 +72,30 @@ def normalize_platform(value: Optional[str]) -> Optional[str]:
     raw = str(value).strip().upper()
     if not raw:
         return None
+    # Alias exacts d'abord
+    for platform, aliases in PLATFORM_ALIASES.items():
+        if raw in aliases or raw == platform:
+            return platform
     for p in CANONICAL_PLATFORMS:
-        if raw == p or raw.startswith(p):
+        if raw == p or raw.startswith(p + " ") or raw.startswith(p + "_") or raw.startswith(p + "-"):
             return p
-    # Alias frequents
-    aliases = {
-        "ALLIANCE AUTOMOTIVE": "ALLIANCE",
-        "ALLIANCE AUTOMOTIVE GROUP": "ALLIANCE",
-        "AAG": "ALLIANCE",
-    }
-    return aliases.get(raw)
+    return None
+
+
+def platform_delete_labels(platform: str) -> List[str]:
+    """Tous les libelles fournisseur a supprimer pour une plateforme."""
+    p = normalize_platform(platform) or str(platform).strip().upper()
+    labels = {p}
+    for alias in PLATFORM_ALIASES.get(p, ()):
+        labels.add(alias)
+    return sorted(labels)
+
+
+COLUMNS = [
+    "mois", "annee", "code_union", "raison_sociale", "groupe_client",
+    "region_commerciale", "fournisseur", "marque", "groupe_frs",
+    "famille", "sous_famille", "ca", "commercial",
+]
 
 
 def _table_exists() -> bool:
@@ -141,8 +162,25 @@ def _clean_tuple(row: Dict, *, fallback_month: Optional[int], force_fournisseur:
 
 
 def _delete_sql_and_params(platform: str, years: List[int]):
-    """Construit le DELETE scope plateforme × annees."""
+    """
+    DELETE scope plateforme × annees.
+    Match tous les alias (DCA_GLOBAL, ALLIANCE AUTOMOTIVE, …)
+    + prefixe 'PLATFORM %' + annee NULL (anciens imports).
+    """
     from sqlalchemy import text
+
+    labels = platform_delete_labels(platform)
+    params: Dict = {"frs_prefix": f"{platform} %"}
+    label_placeholders = []
+    for idx, label in enumerate(labels):
+        key = f"lbl{idx}"
+        label_placeholders.append(f":{key}")
+        params[key] = label
+
+    frs_clause = (
+        f'(UPPER(TRIM("fournisseur")) IN ({", ".join(label_placeholders)})'
+        f' OR UPPER(TRIM("fournisseur")) LIKE :frs_prefix)'
+    )
 
     clean_years = sorted({int(y) for y in years if y is not None})
     if not clean_years:
@@ -150,23 +188,30 @@ def _delete_sql_and_params(platform: str, years: List[int]):
             text(
                 f'''
                 DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
-                WHERE UPPER(TRIM("fournisseur")) = :frs
+                WHERE {frs_clause}
                 '''
             ),
-            {"frs": platform},
+            params,
         )
 
-    params = {"frs": platform}
     year_placeholders = []
     for idx, y in enumerate(clean_years):
         key = f"y{idx}"
         year_placeholders.append(f":{key}")
         params[key] = y
+        params[f"ys{idx}"] = str(y)
+
+    # Inclure annee NULL : anciens imports mal types / incomplets
+    year_clause = (
+        f'("annee" IN ({", ".join(year_placeholders)})'
+        f' OR CAST("annee" AS TEXT) IN ({", ".join(f":ys{i}" for i in range(len(clean_years)))})'
+        f' OR "annee" IS NULL)'
+    )
     sql = text(
         f'''
         DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
-        WHERE UPPER(TRIM("fournisseur")) = :frs
-          AND "annee" IN ({", ".join(year_placeholders)})
+        WHERE {frs_clause}
+          AND {year_clause}
         '''
     )
     return sql, params
@@ -185,31 +230,38 @@ def _replace_platform_rows_atomic(
     _ensure_table()
     delete_sql, delete_params = _delete_sql_and_params(platform, years)
     col_list = ", ".join(f'"{c}"' for c in COLUMNS)
+    labels = platform_delete_labels(platform)
 
     if engine.dialect.name == "postgresql":
         from psycopg2.extras import execute_values
         raw = engine.raw_connection()
         try:
             cur = raw.cursor()
-            # Bind delete via sqlalchemy text params → expand manually for psycopg2
-            # Re-execute delete with named params converted
-            if years:
-                year_list = sorted({int(y) for y in years if y is not None})
+            year_list = sorted({int(y) for y in years if y is not None})
+            if year_list:
                 cur.execute(
                     f'''
                     DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
-                    WHERE UPPER(TRIM("fournisseur")) = %s
-                      AND "annee" IN %s
+                    WHERE (
+                        UPPER(TRIM("fournisseur")) = ANY(%s)
+                        OR UPPER(TRIM("fournisseur")) LIKE %s
+                    )
+                      AND (
+                        "annee" = ANY(%s)
+                        OR CAST("annee" AS TEXT) = ANY(%s)
+                        OR "annee" IS NULL
+                      )
                     ''',
-                    (platform, tuple(year_list)),
+                    (labels, f"{platform} %", year_list, [str(y) for y in year_list]),
                 )
             else:
                 cur.execute(
                     f'''
                     DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
-                    WHERE UPPER(TRIM("fournisseur")) = %s
+                    WHERE UPPER(TRIM("fournisseur")) = ANY(%s)
+                       OR UPPER(TRIM("fournisseur")) LIKE %s
                     ''',
-                    (platform,),
+                    (labels, f"{platform} %"),
                 )
             deleted = int(cur.rowcount or 0)
 

@@ -118,6 +118,54 @@ def test_write_cumulative_platform_rows_keeps_months_and_isolates_platforms(tmp_
     assert exadis[0]["month"] == 7
 
 
+def test_replace_deletes_legacy_aliases_like_dca_global(tmp_path, monkeypatch):
+    """Ancien libelle DCA_GLOBAL ne doit pas rester apres re-import DCA."""
+    import app.services.pure_data_cumulative_supabase as cum
+    from sqlalchemy import create_engine, text
+
+    db_path = tmp_path / "test_alias.db"
+    test_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    monkeypatch.setattr(cum, "engine", test_engine)
+
+    # Seed "ancien" format
+    cum._ensure_table()
+    with test_engine.begin() as conn:
+        conn.execute(
+            text(
+                f'''
+                INSERT INTO "{cum.PURE_DATA_CUMULATIVE_TABLE}"
+                (mois, annee, code_union, raison_sociale, groupe_client, region_commerciale,
+                 fournisseur, marque, groupe_frs, famille, sous_famille, ca, commercial)
+                VALUES (6, 2026, 'A1', 'Client A', '', '', 'DCA_GLOBAL', 'SBS', '', 'FREINAGE', '', 999, 'Bob')
+                '''
+            )
+        )
+
+    new_rows = [
+        {
+            "mois": 1, "annee": 2026, "code_union": "A1", "raison_sociale": "Client A",
+            "groupe_client": "", "region_commerciale": "", "fournisseur": "DCA",
+            "marque": "SBS", "groupe_frs": "", "famille": "FREINAGE", "sous_famille": "",
+            "ca": 10, "commercial": "Bob",
+        },
+        {
+            "mois": 6, "annee": 2026, "code_union": "A1", "raison_sociale": "Client A",
+            "groupe_client": "", "region_commerciale": "", "fournisseur": "DCA",
+            "marque": "SBS", "groupe_frs": "", "famille": "FREINAGE", "sous_famille": "",
+            "ca": 20, "commercial": "Bob",
+        },
+    ]
+    result = write_cumulative_platform_rows(new_rows, fournisseur="DCA", reporting_month=6, reporting_year=2026)
+    assert result["rows_deleted"] >= 1
+    assert result["rows_inserted"] == 2
+
+    rows, _, _ = read_cumulative_rows()
+    dca_like = [r for r in rows if "DCA" in str(r.get("fournisseur") or "").upper()]
+    assert len(dca_like) == 2
+    assert all(r["fournisseur"] == "DCA" for r in dca_like)
+    assert sum(float(r["ca"]) for r in dca_like) == 30.0
+
+
 def test_failed_replace_rolls_back_and_keeps_old_rows(tmp_path, monkeypatch):
     """Si l'INSERT echoue apres le DELETE, rollback → anciennes lignes intactes."""
     import app.services.pure_data_cumulative_supabase as cum
