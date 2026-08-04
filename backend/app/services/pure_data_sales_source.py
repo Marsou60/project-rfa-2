@@ -1,20 +1,18 @@
 """
-Source unique pour les vues d'evolution mensuelle.
+Source unique pour les vues d'evolution mensuelle / dashboard.
 
-Priorite :
-1. Plateformes importees via le nouvel import detaille (meta platforms)
-   OU plateformes avec >= 2 mois distincts dans pure_data_cumulative
-2. Compléter avec pure_data_monthly pour les autres plateformes
-3. Sinon monthly seul, sinon cumulative seul
-
-Ainsi : apres import EXADIS jan→juil, Hub / Chiffres mensuels utilisent EXADIS
-cumulatif + ACR/DCA/ALLIANCE encore sur le mensuel, sans double comptage.
+Par plateforme :
+1. Import detaille (meta) → pure_data_cumulative
+2. Cumulatif avec >= 2 mois distincts → cumulative
+3. Cumulatif seul (pas de mensuel pour cette plateforme) → cumulative
+4. Sinon → pure_data_monthly
+5. Dernier recours → cumulative même mono-mois
 """
 from __future__ import annotations
 
 import json
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 from app.services.pure_data_cumulative_supabase import (
     CANONICAL_PLATFORMS,
@@ -66,9 +64,18 @@ def _platforms_with_month_grain(rows: List[Dict]) -> Set[str]:
     return {p for p, months in by_plat.items() if len(months) >= 2}
 
 
+def _group_by_platform(rows: List[Dict]) -> Dict[str, List[Dict]]:
+    out: Dict[str, List[Dict]] = defaultdict(list)
+    for r in rows:
+        p = normalize_platform(r.get("fournisseur"))
+        if p in CANONICAL_PLATFORMS:
+            out[p].append(r)
+    return out
+
+
 def load_evolution_sales_rows() -> Tuple[List[Dict], str]:
     """
-    Retourne (rows, source) pour Hub / evolution / chiffres mensuels client.
+    Retourne (rows, source) pour Hub / evolution / dashboard.
     source: cumulative | monthly | hybrid | ""
     """
     cum_rows: List[Dict] = []
@@ -79,25 +86,50 @@ def load_evolution_sales_rows() -> Tuple[List[Dict], str]:
     if count_monthly_rows() > 0:
         mon_rows, _, _ = read_monthly_rows()
 
-    preferred = _platforms_from_meta() | _platforms_with_month_grain(cum_rows)
-    # Ne garder que les plateformes canoniques
-    preferred = {p for p in preferred if p in CANONICAL_PLATFORMS}
-
-    if preferred and cum_rows:
-        out = [
-            r for r in cum_rows
-            if normalize_platform(r.get("fournisseur")) in preferred
-        ]
-        if mon_rows:
-            for r in mon_rows:
-                p = normalize_platform(r.get("fournisseur"))
-                if not p or p not in preferred:
-                    out.append(r)
-            return out, "hybrid"
-        return out, "cumulative"
-
-    if mon_rows:
+    if not cum_rows and not mon_rows:
+        return [], ""
+    if not cum_rows:
         return mon_rows, "monthly"
-    if cum_rows:
+    if not mon_rows:
         return cum_rows, "cumulative"
+
+    meta = {p for p in _platforms_from_meta() if p in CANONICAL_PLATFORMS}
+    multi = {p for p in _platforms_with_month_grain(cum_rows) if p in CANONICAL_PLATFORMS}
+    cum_by = _group_by_platform(cum_rows)
+    mon_by = _group_by_platform(mon_rows)
+
+    out: List[Dict] = []
+    used_cum = False
+    used_mon = False
+
+    for p in CANONICAL_PLATFORMS:
+        cum_p = cum_by.get(p) or []
+        mon_p = mon_by.get(p) or []
+        if not cum_p and not mon_p:
+            continue
+
+        # Prefer detailed cumulative when imported or multi-month.
+        if cum_p and (p in meta or p in multi):
+            out.extend(cum_p)
+            used_cum = True
+            continue
+        # Cumulative is the only source for this platform.
+        if cum_p and not mon_p:
+            out.extend(cum_p)
+            used_cum = True
+            continue
+        # Monthly available and cum is weak (single-month / not meta) → monthly.
+        if mon_p:
+            out.extend(mon_p)
+            used_mon = True
+            continue
+        out.extend(cum_p)
+        used_cum = True
+
+    if used_cum and used_mon:
+        return out, "hybrid"
+    if used_cum:
+        return out, "cumulative"
+    if used_mon:
+        return out, "monthly"
     return [], ""

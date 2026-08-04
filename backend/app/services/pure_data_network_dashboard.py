@@ -61,10 +61,22 @@ def _ca(rows: List[Dict], year: int, month: Optional[int] = None) -> float:
 def _in_period(m: Any, period_months: Set[int]) -> bool:
     if m is None:
         return True
+    if not period_months:
+        return True
     try:
         return int(m) in period_months
     except (TypeError, ValueError):
         return False
+
+
+EMPTY_DIM = "Non renseigné"
+
+
+def _dim(value: Optional[str]) -> str:
+    s = _norm(value)
+    if not s or s in ("—", "-", "N/A", "NULL", "None"):
+        return EMPTY_DIM
+    return s
 
 
 def _rank_items(
@@ -72,15 +84,21 @@ def _rank_items(
     prev_map: Dict[str, float],
     *,
     limit: Optional[int] = None,
+    include_zero_current: bool = False,
     extra: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     keys = set(cur_map) | set(prev_map)
     items = []
     for k in keys:
-        if k in ("—", "", "-", "N/A"):
+        if not k:
             continue
         cur = round(cur_map.get(k, 0.0), 2)
         prev = round(prev_map.get(k, 0.0), 2)
+        if not include_zero_current and cur <= 0 and prev > 0:
+            # Lignes N-1 only → pas dans les classements principaux (évite tables de 0)
+            continue
+        if cur <= 0 and prev <= 0:
+            continue
         d = round(cur - prev, 2)
         row = {
             "key": k,
@@ -92,7 +110,7 @@ def _rank_items(
         if extra and k in extra:
             row.update(extra[k])
         items.append(row)
-    items.sort(key=lambda x: x["current"], reverse=True)
+    items.sort(key=lambda x: (x["current"], x["previous"]), reverse=True)
     if limit is not None:
         return items[:limit]
     return items
@@ -134,14 +152,52 @@ def build_network_dashboard(
         if r.get("year") == year_current and r.get("month") is not None
     })
     reporting_month = max(months_current) if months_current else (max(months) if months else None)
-    period_months = set(months_current) if months_current else set(months)
+
+    # Période comparable par plateforme (évite de tirer N-1 jusqu'au max global)
+    plat_months_cur: Dict[str, Set[int]] = defaultdict(set)
+    for r in rows:
+        if r.get("year") != year_current or r.get("month") is None:
+            continue
+        p = normalize_platform(r.get("fournisseur"))
+        if not p:
+            continue
+        try:
+            plat_months_cur[p].add(int(r["month"]))
+        except (TypeError, ValueError):
+            pass
+
+    plat_period: Dict[str, Set[int]] = {}
+    for p, ms in plat_months_cur.items():
+        plat_period[p] = set(ms)
+    if platform_months:
+        for p, rm in platform_months.items():
+            pn = normalize_platform(p) or p
+            try:
+                rm_i = int(rm)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= rm_i <= 12:
+                plat_period[pn] = set(range(1, rm_i + 1)) | plat_period.get(pn, set())
+
+    global_period = set(months_current) if months_current else set(months)
+
+    def _row_in_period(r: Dict) -> bool:
+        m = r.get("month")
+        if m is None:
+            return True
+        p = normalize_platform(r.get("fournisseur"))
+        allowed = plat_period.get(p) if p else None
+        if not allowed:
+            allowed = global_period
+        return _in_period(m, allowed)
+
+    period_months = global_period  # exposé / compat
 
     ca_ytd = 0.0
     ca_n1_same = 0.0
     for r in rows:
         y = r.get("year")
-        m = r.get("month")
-        if not _in_period(m, period_months) and m is not None:
+        if not _row_in_period(r):
             continue
         try:
             ca = float(r.get("ca") or 0.0)
@@ -229,8 +285,7 @@ def build_network_dashboard(
 
     for r in rows:
         y = r.get("year")
-        m = r.get("month")
-        if not _in_period(m, period_months) and m is not None:
+        if not _row_in_period(r):
             continue
         try:
             ca = float(r.get("ca") or 0.0)
@@ -241,12 +296,12 @@ def build_network_dashboard(
 
         p = normalize_platform(r.get("fournisseur"))
         code = _norm(r.get("code_union")).upper()
-        mq = _norm(r.get("marque")) or "—"
-        fa = _norm(r.get("famille")) or "—"
-        sf = _norm(r.get("sous_famille")) or "—"
-        grp = _norm(r.get("groupe_client")) or "—"
-        comm = _norm(r.get("commercial")) or "—"
-        reg = _norm(r.get("region_commerciale")) or "—"
+        mq = _dim(r.get("marque"))
+        fa = _dim(r.get("famille"))
+        sf = _dim(r.get("sous_famille"))
+        grp = _dim(r.get("groupe_client"))
+        comm = _dim(r.get("commercial"))
+        reg = _dim(r.get("region_commerciale"))
         name = _norm(r.get("raison_sociale"))
 
         if y == year_current:
@@ -256,7 +311,7 @@ def build_network_dashboard(
                     plat_clients[p].add(code)
                     cli_plats[code].add(p)
                     cli_plat_ca[code][p] += ca
-                if mq not in ("—",):
+                if mq != EMPTY_DIM:
                     plat_marques[p].add(mq.upper())
             mq_cur[mq] += ca
             fa_cur[fa] += ca
@@ -266,14 +321,14 @@ def build_network_dashboard(
                 codes_cur.add(code)
                 if name and not cli_name.get(code):
                     cli_name[code] = name
-                if mq not in ("—",):
+                if mq != EMPTY_DIM:
                     mq_buyers_cur[mq].add(code)
             grp_cur[grp] += ca
             comm_cur[comm] += ca
             reg_cur[reg] += ca
-            if mq not in ("—", "-", "N/A"):
+            if mq != EMPTY_DIM:
                 marques_set.add(mq.upper())
-            if fa not in ("—",):
+            if fa != EMPTY_DIM:
                 familles_set.add(fa.upper())
         elif y == year_previous:
             if p:
@@ -286,14 +341,14 @@ def build_network_dashboard(
                 codes_prev.add(code)
                 if name and not cli_name.get(code):
                     cli_name[code] = name
-                if mq not in ("—",):
+                if mq != EMPTY_DIM:
                     mq_buyers_prev[mq].add(code)
             grp_prev[grp] += ca
             comm_prev[comm] += ca
             reg_prev[reg] += ca
-            if mq not in ("—", "-", "N/A"):
+            if mq != EMPTY_DIM:
                 marques_set.add(mq.upper())
-            if fa not in ("—",):
+            if fa != EMPTY_DIM:
                 familles_set.add(fa.upper())
 
     platforms = []
@@ -354,7 +409,7 @@ def build_network_dashboard(
     clients_all.sort(key=lambda x: x["current"], reverse=True)
     top_up = sorted(clients_all, key=lambda x: x["delta"], reverse=True)[:8]
     top_down = sorted(clients_all, key=lambda x: x["delta"])[:8]
-    clients = clients_all[:50]
+    clients = [c for c in clients_all if c["current"] > 0][:50]
 
     # --- Alertes ---
     thr = float(alert_pct or 15.0)
@@ -397,7 +452,7 @@ def build_network_dashboard(
     mar_boom = []
     mar_acheteurs = []
     for mq in set(mq_cur) | set(mq_prev):
-        if mq in ("—", "", "-"):
+        if mq == EMPTY_DIM:
             continue
         cur = mq_cur.get(mq, 0.0)
         prev = mq_prev.get(mq, 0.0)

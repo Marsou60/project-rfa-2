@@ -83,6 +83,26 @@ def test_build_network_dashboard_empty(monkeypatch):
     assert payload["available"] is False
 
 
+def test_rankings_exclude_prev_only_zeros(monkeypatch):
+    rows = [
+        {"year": 2026, "month": 1, "fournisseur": "DCA", "code_union": "A1",
+         "raison_sociale": "Client A", "marque": "", "famille": "",
+         "sous_famille": "", "groupe_client": "", "ca": 1000,
+         "commercial": "", "region_commerciale": ""},
+        {"year": 2025, "month": 1, "fournisseur": "DCA", "code_union": "A1",
+         "raison_sociale": "Client A", "marque": "SBS", "famille": "FREINAGE",
+         "sous_famille": "PLAQUETTES", "groupe_client": "GA", "ca": 800,
+         "commercial": "Bob", "region_commerciale": "IDF"},
+    ]
+    monkeypatch.setattr(dash, "load_evolution_sales_rows", lambda: (rows, "cumulative"))
+    payload = build_network_dashboard()
+    assert payload["kpis"]["ca_ytd"] == 1000.0
+    # CA 2026 sans marque → bucket "Non renseigné", pas une table de marques à 0
+    assert any(m["key"] == "Non renseigné" and m["current"] == 1000 for m in payload["marques"])
+    assert all(m["current"] > 0 for m in payload["marques"])
+    assert all(m["current"] > 0 for m in payload["top_marques"])
+
+
 def test_alertes_and_cross(monkeypatch):
     monkeypatch.setattr(dash, "load_evolution_sales_rows", lambda: (_sample_rows(), "cumulative"))
     payload = build_network_dashboard(alert_pct=15, alert_ca_min=1000)
