@@ -18,6 +18,8 @@ import {
   Home,
   MoreHorizontal,
   RefreshCw,
+  Archive,
+  Database,
 } from 'lucide-react'
 import UploadPage from './pages/UploadPage'
 import ClientsPage from './pages/ClientsPage'
@@ -180,7 +182,7 @@ function AppContent() {
   const effectivePage = needsImport && !currentImportId ? 'upload' : currentPage
 
   // Pages accessibles uniquement aux admins
-  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'paul', 'union-space']
+  const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'paul', 'union-space', 'pure-data-platform-import', 'pure-data-monthly-import']
   // Pages accessibles aux commerciaux (Nicolas + Nathalie)
   const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'pure-data-monthly', 'nathalie']
 
@@ -261,7 +263,7 @@ function AppContent() {
                       <ChevronDown className="w-3 h-3 opacity-60" />
                     </button>
                     {openMenu === 'nicolas' && (
-                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-56 z-50 dropdown-menu">
+                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-60 z-50 dropdown-menu">
                         <button
                           onClick={() => { setCurrentPage(currentImportId ? 'client-space' : 'hub'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'client-space' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
@@ -273,33 +275,38 @@ function AppContent() {
                           </div>
                         </button>
                         <button
-                          onClick={() => { setCurrentPage(currentImportId ? 'genie' : 'hub'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'genie' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
-                        >
-                          <Sparkles className="w-4 h-4 text-violet-400" />
-                          <div>
-                            <div className="font-semibold">Union Intelligence</div>
-                            <div className="text-[10px] text-white/40">Analyse avancée IA</div>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}
-                        >
-                          <TrendingUp className="w-4 h-4 text-teal-400" />
-                          <div>
-                            <div className="font-semibold">Pure Data</div>
-                            <div className="text-[10px] text-white/40">Données brutes N-1</div>
-                          </div>
-                        </button>
-                        <button
                           onClick={() => { setCurrentPage('pure-data-monthly'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data-monthly' ? 'active' : ''}`}
                         >
                           <TrendingUp className="w-4 h-4 text-emerald-400" />
                           <div>
-                            <div className="font-semibold">2025 / 2026 Mensuel</div>
-                            <div className="text-[10px] text-white/40">Suivi mensuel clients</div>
+                            <div className="font-semibold">Suivi 2025 / 2026</div>
+                            <div className="text-[10px] text-white/40">Évolutions mensuelles</div>
+                          </div>
+                        </button>
+                        <div className="border-t border-white/10 my-1" />
+                        <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-white/35 font-semibold flex items-center gap-1.5">
+                          <Archive className="w-3 h-3" />
+                          Archives
+                        </div>
+                        <button
+                          onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}
+                        >
+                          <Database className="w-4 h-4 text-white/50" />
+                          <div>
+                            <div className="font-semibold text-white/80">Pure Data 2024 / 2025</div>
+                            <div className="text-[10px] text-white/35">Comparatif historique N-1</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage(currentImportId ? 'genie' : 'hub'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'genie' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
+                        >
+                          <Sparkles className="w-4 h-4 text-violet-400/70" />
+                          <div>
+                            <div className="font-semibold text-white/80">Union Intelligence</div>
+                            <div className="text-[10px] text-white/35">À retravailler</div>
                           </div>
                         </button>
                       </div>
@@ -337,7 +344,7 @@ function AppContent() {
                       <ChevronDown className="w-3 h-3 opacity-60" />
                     </button>
                     {openMenu === 'nicolas' && (
-                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-56 z-50 dropdown-menu">
+                      <div className="glass-dropdown absolute top-full left-0 mt-2 w-60 z-50 dropdown-menu">
                         <button
                           onClick={() => { setCurrentPage(currentImportId ? 'client-space' : 'upload'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'client-space' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
@@ -349,33 +356,38 @@ function AppContent() {
                           </div>
                         </button>
                         <button
-                          onClick={() => { setCurrentPage(currentImportId ? 'genie' : 'upload'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'genie' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
-                        >
-                          <Sparkles className="w-4 h-4 text-violet-400" />
-                          <div>
-                            <div className="font-semibold">Union Intelligence</div>
-                            <div className="text-[10px] text-white/40">Analyse avancée IA</div>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}
-                        >
-                          <TrendingUp className="w-4 h-4 text-teal-400" />
-                          <div>
-                            <div className="font-semibold">Pure Data</div>
-                            <div className="text-[10px] text-white/40">Données brutes N-1</div>
-                          </div>
-                        </button>
-                        <button
                           onClick={() => { setCurrentPage('pure-data-monthly'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data-monthly' ? 'active' : ''}`}
                         >
                           <TrendingUp className="w-4 h-4 text-emerald-400" />
                           <div>
-                            <div className="font-semibold">2025 / 2026 Mensuel</div>
-                            <div className="text-[10px] text-white/40">Suivi mensuel clients</div>
+                            <div className="font-semibold">Suivi 2025 / 2026</div>
+                            <div className="text-[10px] text-white/40">Évolutions mensuelles</div>
+                          </div>
+                        </button>
+                        <div className="border-t border-white/10 my-1" />
+                        <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-white/35 font-semibold flex items-center gap-1.5">
+                          <Archive className="w-3 h-3" />
+                          Archives
+                        </div>
+                        <button
+                          onClick={() => { setCurrentPage('pure-data'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data' ? 'active' : ''}`}
+                        >
+                          <Database className="w-4 h-4 text-white/50" />
+                          <div>
+                            <div className="font-semibold text-white/80">Pure Data 2024 / 2025</div>
+                            <div className="text-[10px] text-white/35">Comparatif historique N-1</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage(currentImportId ? 'genie' : 'upload'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'genie' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
+                        >
+                          <Sparkles className="w-4 h-4 text-violet-400/70" />
+                          <div>
+                            <div className="font-semibold text-white/80">Union Intelligence</div>
+                            <div className="text-[10px] text-white/35">À retravailler</div>
                           </div>
                         </button>
                       </div>
@@ -462,7 +474,7 @@ function AppContent() {
                   {/* ── Plus ── */}
                   <div className="relative dropdown-container">
                     <NavButton
-                      active={['contracts','assignments','ads','users','settings','upload','test-raw-import'].includes(effectivePage)}
+                      active={['contracts','assignments','ads','users','settings','upload','test-raw-import','pure-data-platform-import','pure-data-monthly-import'].includes(effectivePage)}
                       onClick={() => setOpenMenu(openMenu === 'more' ? null : 'more')}
                       icon={<MoreHorizontal className="w-4 h-4" />}
                       label="Plus"
@@ -509,10 +521,15 @@ function AppContent() {
                           <span>Test Import Brut</span>
                         </button>
                         <div className="border-t border-white/10 my-1" />
+                        <button onClick={() => { setCurrentPage('pure-data-platform-import'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data-platform-import' ? 'active' : ''}`}>
+                          <Database className="w-4 h-4 text-teal-400" />
+                          <span>Import ventes plateformes</span>
+                        </button>
                         <button onClick={() => { setCurrentPage('pure-data-monthly-import'); setOpenMenu(null) }}
-                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'pure-data-monthly-import' ? 'active' : ''}`}>
-                          <TrendingUp className="w-4 h-4 text-teal-400" />
-                          <span>Import mensuel 2025/2026</span>
+                          className={`glass-dropdown-item w-full text-left text-sm opacity-40 ${effectivePage === 'pure-data-monthly-import' ? 'active' : ''}`}>
+                          <Archive className="w-4 h-4 text-white/40" />
+                          <span>Import mensuel (archive)</span>
                         </button>
                       </div>
                     )}
@@ -695,10 +712,13 @@ function AppContent() {
           <MarginSimulatorPage />
         )}
         {effectivePage === 'pure-data' && (isAdmin || isCommercial) && (
-          <PureDataPage monthlyEntry={false} />
+          <PureDataPage monthlyEntry={false} archiveMode />
         )}
         {effectivePage === 'pure-data-monthly' && (isAdmin || isCommercial) && (
           <PureDataPage monthlyEntry={true} />
+        )}
+        {effectivePage === 'pure-data-platform-import' && isAdmin && (
+          <PureDataPage platformImportOnly />
         )}
         {effectivePage === 'union-space' && isAdmin && currentImportId && (
           <UnionSpacePage importId={currentImportId} />

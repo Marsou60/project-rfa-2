@@ -316,8 +316,8 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
             gradient="from-blue-500 to-cyan-500"
             actions={[
               { label: 'Clients', onClick: () => onNavigate(currentImportId ? 'client-space' : 'upload'), primary: true },
-              { label: 'Intelligence', onClick: () => onNavigate(currentImportId ? 'genie' : 'upload'), icon: <Sparkles className="w-3.5 h-3.5" /> },
-              { label: 'Pure Data', onClick: () => onNavigate('pure-data') },
+              { label: 'Suivi 2026', onClick: () => onNavigate('pure-data-monthly') },
+              { label: 'Archives', onClick: () => onNavigate('pure-data') },
             ]}
           />
           {!isCommercial && (
@@ -352,7 +352,7 @@ export default function HubPage({ user, currentImportId, isCommercial = false, o
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-wider text-glass-muted mb-4">Accès rapide</h2>
         <div className="flex flex-wrap gap-3">
-          <QuickLink icon={<TrendingUp className="w-4 h-4" />} label="Pure Data" onClick={() => onNavigate('pure-data')} />
+          <QuickLink icon={<TrendingUp className="w-4 h-4" />} label="Suivi 2026" onClick={() => onNavigate('pure-data-monthly')} />
           {!isCommercial && (
             <>
               <QuickLink icon={<FileText className="w-4 h-4" />} label="Contrats" onClick={() => onNavigate('contracts')} />

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { BarChart3, Upload, Users, X, ChevronDown, RefreshCw, CheckCircle2, Database, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { BarChart3, Upload, Users, X, ChevronDown, RefreshCw, CheckCircle2, Database, TrendingUp, TrendingDown, Minus, Archive } from 'lucide-react'
 import { comparePureData, deletePureDataMonthlyRows, getPureDataComparison, getPureDataClientDetail, getPureDataCommercialDetail, getPureDataCumulativeStatus, getPureDataMarqueDetail, getPureDataMonthlyEntityDetail, getPureDataMonthlyEvolution, getPureDataMonthlyMonthDetail, getPureDataMonthlyPeriods, getPureDataPlatformDetail, getPureDataSheetsStatus, importPureDataCumulativeExcel, importPureDataMonthlyExcel, loadPureDataFromSupabase, loadPureDataMonthly, syncPureDataFromSheets } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import { SUPPLIER_KEYS, SUPPLIER_LABELS } from '../constants/suppliers'
@@ -421,7 +421,7 @@ function MonthlyEntityDetailModal({ entity, yearCurrent, yearPrevious, onClose, 
   )
 }
 
-function PureDataPage({ monthlyEntry = false }) {
+function PureDataPage({ monthlyEntry = false, archiveMode = false, platformImportOnly = false }) {
   const { supplierFilter } = useSupplierFilter()
   const [file, setFile] = useState(null)
   const [yearCurrent, setYearCurrent] = useState(monthlyEntry ? 2026 : 2025)
@@ -496,7 +496,7 @@ function PureDataPage({ monthlyEntry = false }) {
   }
 
   const refreshCumulativeStatus = async () => {
-    if (monthlyEntry) return
+    if (monthlyEntry && !platformImportOnly) return
     try {
       const data = await getPureDataCumulativeStatus()
       setCumulativeStatus(data || null)
@@ -552,6 +552,10 @@ function PureDataPage({ monthlyEntry = false }) {
   }
 
   useEffect(() => {
+    if (platformImportOnly) {
+      refreshCumulativeStatus()
+      return
+    }
     getPureDataSheetsStatus()
       .then((status) => {
         setSheetsStatus(status)
@@ -563,7 +567,7 @@ function PureDataPage({ monthlyEntry = false }) {
       .catch(() => {})
     refreshPeriods()
     refreshCumulativeStatus()
-  }, [monthlyEntry])
+  }, [monthlyEntry, platformImportOnly])
 
   const handleImportMonthly = async () => {
     if (!manageFile) {
@@ -960,8 +964,34 @@ function PureDataPage({ monthlyEntry = false }) {
   return (
     <div className="space-y-6">
 
-      {/* ── Bannière Google Sheets (source principale) — masquée en mode mensuel ── */}
-      {!monthlyEntry && (
+      {platformImportOnly && (
+        <>
+          <div className="glass-card p-4 border border-teal-500/30 bg-teal-500/5">
+            <div className="flex items-center gap-2 text-teal-200 text-sm font-semibold">
+              <Database className="w-4 h-4" />
+              Import ventes détaillées 2026 — une plateforme à la fois
+            </div>
+            <p className="text-white/45 text-xs mt-1">
+              Remplace uniquement la plateforme choisie. Les mois du fichier sont conservés (décalage EXADIS / DCA OK).
+            </p>
+          </div>
+        </>
+      )}
+
+      {archiveMode && !platformImportOnly && (
+        <div className="glass-card p-4 border border-white/15 bg-white/[0.03]">
+          <div className="flex items-center gap-2 text-white/70 text-sm font-semibold">
+            <Archive className="w-4 h-4" />
+            Archives — Pure Data 2024 / 2025
+          </div>
+          <p className="text-white/40 text-xs mt-1">
+            Historique N vs N-1. Le pilotage 2026 se fait via Suivi 2025/2026 et l’import ventes plateformes.
+          </p>
+        </div>
+      )}
+
+      {/* ── Bannière Google Sheets (archives 2024/2025) ── */}
+      {!monthlyEntry && !platformImportOnly && (
       <div className={`glass-card p-4 border ${sheetsStatus?.has_data ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
@@ -1003,8 +1033,8 @@ function PureDataPage({ monthlyEntry = false }) {
       </div>
       )}
 
-      {/* ── Imports mensuels — masqués en mode mensuel (page dédiée dans menu Plus) ── */}
-      {!monthlyEntry && (
+      {/* ── Gestion des imports mensuels : masquée (remplacée par import plateformes) ── */}
+      {false && !monthlyEntry && (
       <div className="glass-card p-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
@@ -1130,8 +1160,8 @@ function PureDataPage({ monthlyEntry = false }) {
       </div>
       )}
 
-      {/* ── Import Pure Data cumulé (dashboard espace client / RFA 2026) ── */}
-      {!monthlyEntry && (
+      {/* ── Import Pure Data cumulé (actif seulement sur page Import ventes) ── */}
+      {platformImportOnly && (
       <div className="glass-card p-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
@@ -1270,6 +1300,8 @@ function PureDataPage({ monthlyEntry = false }) {
       </div>
       )}
 
+      {!platformImportOnly && (
+      <>
       {/* ── Contrôles principaux ── */}
       {monthlyEntry ? (
         /* Mode mensuel: header compact + refresh uniquement */
@@ -1310,7 +1342,9 @@ function PureDataPage({ monthlyEntry = false }) {
           </div>
           <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-glass-primary text-xl font-bold">Pure Data • Comparatif N-1</h1>
+              <h1 className="text-glass-primary text-xl font-bold">
+                {archiveMode ? 'Archives • Pure Data 2024 / 2025' : 'Pure Data • Comparatif N-1'}
+              </h1>
               {supplierFilter && (
                 <span className="px-3 py-1 rounded-full bg-white/20 text-white text-sm font-bold border border-white/30">
                   Vue {supplierFilter} uniquement
@@ -1318,7 +1352,9 @@ function PureDataPage({ monthlyEntry = false }) {
               )}
             </div>
             <p className="text-glass-secondary text-sm">
-              Analyse mensuelle par adhérent et commercial (N vs N-1){supplierFilter ? ` — vue limitée à ${supplierFilter} (commerciaux et adhérents inclus)` : ''}.
+              {archiveMode
+                ? 'Comparatif historique N vs N-1 (hors pilotage 2026).'
+                : `Analyse mensuelle par adhérent et commercial (N vs N-1)${supplierFilter ? ` — vue limitée à ${supplierFilter} (commerciaux et adhérents inclus)` : ''}.`}
             </p>
             {supplierFilter && filteredComparisonLoading && (
               <p className="text-amber-300 text-xs mt-1">Chargement des données {supplierFilter}…</p>
@@ -2224,6 +2260,8 @@ function PureDataPage({ monthlyEntry = false }) {
           yearPrevious={yearPrevious}
           onClose={() => setMonthlyDetailEntity(null)}
         />
+      )}
+      </>
       )}
     </div>
   )
