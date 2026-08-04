@@ -53,8 +53,34 @@ def test_facture_status():
         entity_key="GROUPE JUMBO",
         level_based=False,
         level_id=None,
+        entity_type="group",
         setting=None,
     )
     assert resolved["amount"] == 1800
     assert resolved["is_facture"] is True
     assert resolved["deducted"] == 1800
+
+
+def test_group_member_pays_nothing():
+    resolved = resolve_cotisation_2026_for_entity(
+        entity_key="M0332",
+        level_based=True,
+        level_id="GOLD",
+        entity_type="client",
+        groupe_client="CODIFA",
+    )
+    assert resolved["amount"] == 0
+    assert resolved["source"] == "group_member"
+    assert resolved["billed_at_group"] == "CODIFA"
+
+
+def test_independant_union_pays_individually():
+    resolved = resolve_cotisation_2026_for_entity(
+        entity_key="M0110",
+        level_based=False,
+        level_id=None,
+        entity_type="independent",
+        groupe_client="INDEPENDANT UNION",
+    )
+    assert resolved["amount"] == 1800
+    assert resolved["source"] == "special"

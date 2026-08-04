@@ -99,6 +99,24 @@ def _norm_key(value: Optional[str]) -> str:
     return (value or "").strip().upper()
 
 
+def is_real_group_for_cotisation(groupe_client: Optional[str]) -> bool:
+    """
+    True si le client appartient à un vrai groupe consolidé
+    (cotisation facturée au groupe, pas au magasin).
+    Les groupes fictifs EXCLUDED_GROUPS (ex. INDEPENDANT UNION) restent individuels.
+    """
+    from app.core.fields import EXCLUDED_GROUPS
+
+    g = _norm_key(groupe_client)
+    if not g or g in ("SANS GROUPE", "SANSGROUPE", "-"):
+        return False
+    if g in EXCLUDED_GROUPS:
+        return False
+    if "INDEPENDANT" in g:
+        return False
+    return True
+
+
 def special_cotisation_amount(entity_key: Optional[str]) -> Optional[float]:
     key = _norm_key(entity_key)
     if not key:
@@ -233,7 +251,32 @@ def resolve_cotisation_2026_for_entity(
     level_id: Optional[str],
     contract_name: Optional[str] = None,
     setting: Optional[Any] = None,
+    entity_type: Optional[str] = None,
+    groupe_client: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """
+    entity_type: 'independent' | 'group' | 'client'
+    Pour un magasin membre d'un vrai groupe : montant 0 (cotisation au groupe).
+    """
+    # Client rattaché à un groupe consolidé → pas de cotisation individuelle
+    if (entity_type or "").lower() in ("independent", "client", ""):
+        # Si on connaît le groupe du magasin et que c'est un vrai groupe
+        if is_real_group_for_cotisation(groupe_client):
+            return {
+                "amount": 0.0,
+                "facturee": False,
+                "deduite": False,
+                "is_offerte": False,
+                "is_facture": False,
+                "deducted": 0.0,
+                "source": "group_member",
+                "label": f"Cotisation au niveau groupe ({_norm_key(groupe_client)})",
+                "fiche": None,
+                "level_id": None,
+                "overridden": False,
+                "billed_at_group": _norm_key(groupe_client),
+            }
+
     default = default_cotisation_2026(
         entity_key=entity_key,
         level_based=level_based,

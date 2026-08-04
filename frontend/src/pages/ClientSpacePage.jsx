@@ -385,7 +385,24 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
   const totalObjectives = filteredGlobalRows.length + filteredTriRows.length
 
   const cotisationInfo = useMemo(
-    () => resolveCotisationInfo(cotisationMap, mode, entity),
+    () => {
+      // Magasin d'un vrai groupe : pas de cotisation individuelle (facturée au groupe)
+      if (mode === 'client' && entity) {
+        const g = (entity.groupe_client || '').toString().trim().toUpperCase()
+        const fictif = !g || g === 'INDEPENDANT UNION' || g.includes('INDEPENDANT') || g === 'GROUPE LES LYONNAIS' || g === 'SANS GROUPE'
+        if (g && !fictif) {
+          return {
+            amount: 0,
+            facturee: false,
+            deduite: false,
+            isOfferte: false,
+            isFacture: false,
+            billedAtGroup: g,
+          }
+        }
+      }
+      return resolveCotisationInfo(cotisationMap, mode, entity)
+    },
     [cotisationMap, mode, entity],
   )
 
@@ -760,7 +777,12 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
               </div>
             </div>
           )}
-          {entity && cotisationInfo.amount === 0 && !isAdherent && (
+          {entity && cotisationInfo.billedAtGroup && !isAdherent && (
+            <p className="text-xs text-sky-700 -mt-2 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+              Cotisation Union facturée au <strong>groupe {cotisationInfo.billedAtGroup}</strong> — ce magasin ne paie pas individuellement.
+            </p>
+          )}
+          {entity && cotisationInfo.amount === 0 && !cotisationInfo.billedAtGroup && !isAdherent && (
             <p className="text-xs text-gray-500 -mt-2">
               Aucune cotisation 2026 enregistrée pour cet adhérent — lancez le seed cotisations ou activez-la manuellement.
             </p>

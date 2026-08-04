@@ -121,6 +121,7 @@ def _entity_row_from_rfa(
     ca_proj: Optional[float],
     nb_comptes: int = 1,
     cotisation_setting: Optional[Any] = None,
+    groupe_client: Optional[str] = None,
 ) -> Dict[str, Any]:
     from app.services.cotisation_2026 import resolve_cotisation_2026_for_entity
 
@@ -164,6 +165,8 @@ def _entity_row_from_rfa(
     rfa_ytd_val = round(float(totals_ytd.get("grand_total", 0) or 0), 2)
 
     # Cotisation : barème sur niveau d'atterrissage (proj) si dispo, sinon YTD
+    # Les indépendants seuls / groupes consolidés — jamais les magasins d'un vrai groupe
+    # (ceux-ci n'apparaissent pas dans independents_rows grâce à la partition).
     level_for_cotis = meta_proj.get("level_id") or meta_ytd.get("level_id")
     cotisation = resolve_cotisation_2026_for_entity(
         entity_key=code,
@@ -171,6 +174,8 @@ def _entity_row_from_rfa(
         level_id=level_for_cotis,
         contract_name=contract_name,
         setting=cotisation_setting,
+        entity_type=entity_type,
+        groupe_client=groupe_client if entity_type == "independent" else None,
     )
     deducted = float(cotisation.get("deducted") or 0)
 
@@ -355,6 +360,7 @@ def compute_network_rfa_2026(
             ca_proj=ca_proj,
             nb_comptes=1,
             cotisation_setting=cotisation_by_key.get(_norm_text(code)),
+            groupe_client=meta.get("groupe") or None,
         ))
         _accumulate(ytd, rfa_ytd)
         if rfa_proj:

@@ -154,8 +154,15 @@ def main() -> None:
                     continue
                 entity_type = "group" if e.get("entity_type") == "group" else "client"
                 # Ne pas écraser un spécial déjà mappé
-                from app.services.cotisation_2026 import special_cotisation_amount
+                from app.services.cotisation_2026 import special_cotisation_amount, is_real_group_for_cotisation
                 if special_cotisation_amount(e.get("code")) is not None:
+                    continue
+                # Jamais de cotisation magasin si vrai groupe (défense en profondeur)
+                if entity_type == "client" and is_real_group_for_cotisation(
+                    (e.get("cotisation") or {}).get("billed_at_group")
+                ):
+                    continue
+                if (e.get("cotisation") or {}).get("source") == "group_member":
                     continue
                 action = _upsert(
                     session,
