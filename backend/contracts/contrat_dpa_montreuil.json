@@ -8,7 +8,7 @@
       "scope": "ADHERENT",
       "isDefault": false,
       "useCombinedGlobalRate": false,
-      "notes": "Contrat DPA Montreuil - 100% Alliance. 150-170k : RFA 4% / bonus 2,5% ; 170-225k : RFA 7% ; ≥225k : RFA 8%. Tripartites Alliance : Schaeffler, Delphi/Brembo, Sogefi.",
+      "notes": "Contrat DPA Montreuil - 100% Alliance. 150-170k : RFA 4% / bonus 2,5% ; 170-225k : RFA 7% ; ≥225k : RFA 8%. Tripartites Alliance : Schaeffler (15-20k = 3%, ≥20k = 5%), Delphi/Brembo, Sogefi.",
       "globalRules": {
         "GLOBAL_ACR": {
           "tiersRfa": [],
@@ -37,8 +37,8 @@
       "triRules": {
         "TRI_SCHAEFFLER": {
           "tiers": [
-            {"min": 25000, "rate": 0.03},
-            {"min": 50000, "rate": 0.05}
+            {"min": 15000, "rate": 0.03},
+            {"min": 20000, "rate": 0.05}
           ]
         },
         "TRI_ALLIANCE_DELPHI": {
