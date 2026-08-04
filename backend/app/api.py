@@ -3911,12 +3911,16 @@ async def pure_data_cumulative_client_rfa(
             parse_level_baremes,
             select_contract_level,
             compute_total_global_ca,
+            should_apply_entity_overrides,
         )
         _rules = load_contract_rules(contract) if contract else {}
-        if code_union:
-            _ovr = load_entity_overrides("CODE_UNION", code_union.strip().upper())
-        elif groupe_client:
-            _ovr = load_entity_overrides("GROUPE_CLIENT", _norm_text(groupe_client))
+        if should_apply_entity_overrides(contract, year):
+            if code_union:
+                _ovr = load_entity_overrides("CODE_UNION", code_union.strip().upper())
+            elif groupe_client:
+                _ovr = load_entity_overrides("GROUPE_CLIENT", _norm_text(groupe_client))
+            else:
+                _ovr = {}
         else:
             _ovr = {}
 

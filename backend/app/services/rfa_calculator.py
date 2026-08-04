@@ -25,6 +25,30 @@ def is_warning_contract(contract: Optional[Contract]) -> bool:
     return "WARNING" in ((contract.name or "").strip().upper())
 
 
+def is_adherents_2026_contract(contract: Optional[Contract]) -> bool:
+    """Contrat standard unique 2026 (Classique / Silver / Gold) — hors contrats spéciaux."""
+    if not contract:
+        return False
+    name = (getattr(contract, "name", None) or "").strip().upper()
+    # Normalise accents courants (ADHÉRENTS / ADHERENTS)
+    name = name.replace("É", "E").replace("È", "E").replace("Ê", "E")
+    return name == "ADHERENTS 2026"
+
+
+def should_apply_entity_overrides(
+    contract: Optional[Contract],
+    year: Optional[int] = None,
+) -> bool:
+    """
+    En 2026, Adhérents 2026 remplace les barèmes 2025 pour tous les clients
+    sans contrat particulier. Les overrides client/groupe 2025 ne doivent
+    pas personnaliser ce contrat standard.
+    """
+    if year is not None and int(year) >= 2026 and is_adherents_2026_contract(contract):
+        return False
+    return True
+
+
 def is_apa_2026_contract(contract: Optional[Contract]) -> bool:
     if not contract:
         return False
@@ -247,6 +271,42 @@ def load_client_overrides(code_union: str) -> Dict[str, Dict[str, List]]:
     return load_entity_overrides("CODE_UNION", code_union)
 
 
+def _tri_rule_has_tiers(rule: Optional[ContractRule]) -> bool:
+    """True si la règle TRI a au moins un palier non vide."""
+    if not rule:
+        return False
+    raw = getattr(rule, "tiers", None)
+    if not raw or raw in ("[]", "null"):
+        return False
+    try:
+        tiers = json.loads(raw) if isinstance(raw, str) else raw
+        return bool(tiers)
+    except Exception:
+        return False
+
+
+def superseded_legacy_tri_keys(contract_rules: Optional[Dict[str, ContractRule]]) -> set:
+    """
+    Clés TRI « marque entière » à ignorer quand le contrat définit déjà des
+    clés marque × famille (ex. TRI_ALLIANCE_DELPHI vs *_FREINAGE / *_PSD).
+
+    Évite qu'un override 2025 sur Delphi agrégé réapparaisse en 2026 à côté
+    de Delphi Freinage / Delphi PSD (Adhérents 2026).
+    """
+    rules = contract_rules or {}
+    keys_with_tiers = {k for k, r in rules.items() if _tri_rule_has_tiers(r)}
+    if not keys_with_tiers:
+        return set()
+
+    candidates = set(get_tri_fields()) | set(rules.keys())
+    superseded = set()
+    for legacy in candidates:
+        prefix = f"{legacy}_"
+        if any(k.startswith(prefix) for k in keys_with_tiers):
+            superseded.add(legacy)
+    return superseded
+
+
 def calculate_rfa(
     recap_ca: Dict[str, Dict[str, float]],
     contract: Optional[Contract] = None,
@@ -318,13 +378,17 @@ def calculate_rfa(
         else:
             contract_rules = {}
     
-    # Charger les overrides de l'entite (client ou groupe)
-    client_overrides = entity_overrides or {}
-    if not entity_overrides:
-        if code_union:
-            client_overrides = load_entity_overrides("CODE_UNION", code_union)
-        elif groupe_client:
-            client_overrides = load_entity_overrides("GROUPE_CLIENT", groupe_client)
+    # Overrides client/groupe : ignorés sur Adhérents 2026 (barème unique 2026)
+    if not should_apply_entity_overrides(contract, year):
+        client_overrides: Dict[str, Dict[str, List]] = {}
+    elif entity_overrides is not None:
+        client_overrides = entity_overrides
+    elif code_union:
+        client_overrides = load_entity_overrides("CODE_UNION", code_union)
+    elif groupe_client:
+        client_overrides = load_entity_overrides("GROUPE_CLIENT", groupe_client)
+    else:
+        client_overrides = {}
     
     # Calculer RFA pour les plateformes globales
     global_rfa_sum = 0.0
@@ -552,9 +616,14 @@ def calculate_rfa(
     
     # Calculer RFA pour les tri-partites
     tri_total = 0.0
+    legacy_tri_superseded = superseded_legacy_tri_keys(contract_rules)
     
     for key in get_tri_fields():
         if key not in recap_ca.get("tri", {}):
+            continue
+        # Contrats 2026 marque×famille : ne pas appliquer / exposer l'agrégat legacy
+        # (y compris via override client 2025).
+        if key in legacy_tri_superseded:
             continue
         
         ca = recap_ca["tri"][key]

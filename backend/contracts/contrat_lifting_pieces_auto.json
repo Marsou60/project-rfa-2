@@ -133,14 +133,10 @@
           ]
         },
         "TRI_ACR_MACHINE_TOURNANTE": {
-          "tiers": [
-            {"min": 0, "rate": 0.02}
-          ]
+          "tiers": []
         },
         "TRI_ACR_LIAISON_AU_SOL": {
-          "tiers": [
-            {"min": 0, "rate": 0.02}
-          ]
+          "tiers": []
         },
         "TRI_EXADIS_FREINAGE": {
           "tiers": []
