@@ -900,11 +900,17 @@ export const getClientRfa2026 = async ({ codeUnion, groupeClient, year = 2026 } 
   return response.data
 }
 
-export const importPureDataCumulativeExcel = async ({ file, reportingMonth, reportingYear }) => {
+export const importPureDataCumulativeExcel = async ({
+  file,
+  reportingMonth,
+  reportingYear,
+  fournisseur,
+}) => {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('reporting_month', reportingMonth)
   formData.append('reporting_year', reportingYear)
+  formData.append('fournisseur', fournisseur)
   const response = await api.post('/pure-data/cumulative/import-excel', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   })

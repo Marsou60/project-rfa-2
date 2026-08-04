@@ -99,6 +99,80 @@ def _scale_recap(recap_ca: Dict[str, Dict[str, float]], factor: float) -> Dict[s
     }
 
 
+def _platform_from_ca_key(key: str) -> Optional[str]:
+    """Mappe une cle GLOBAL_* / TRI_* vers ACR|DCA|EXADIS|ALLIANCE."""
+    from app.core.fields import TRI_TO_GLOBAL
+
+    k = (key or "").strip().upper()
+    if not k:
+        return None
+    global_key = k if k.startswith("GLOBAL_") else TRI_TO_GLOBAL.get(k)
+    if not global_key:
+        return None
+    for platform in ("ACR", "DCA", "EXADIS", "ALLIANCE"):
+        if global_key == f"GLOBAL_{platform}":
+            return platform
+    return None
+
+
+def _factor_for_month(month: Optional[int]) -> Optional[float]:
+    if month is None:
+        return None
+    m = int(month)
+    if m == 12:
+        return 1.0
+    if 1 <= m < 12:
+        return 12.0 / float(m)
+    return None
+
+
+def scale_recap_by_platform_months(
+    recap_ca: Dict[str, Dict[str, float]],
+    *,
+    platform_months: Optional[Dict[str, int]] = None,
+    fallback_month: Optional[int] = None,
+) -> Tuple[Optional[Dict[str, Dict[str, float]]], Optional[float], Optional[int]]:
+    """
+    Projection fin d'annee avec decalage possible entre plateformes.
+    Chaque cle CA est annualisee avec le mois de SA plateforme.
+    Retourne (projected_recap, display_factor, display_month).
+    """
+    platform_months = {
+        str(k).strip().upper(): int(v)
+        for k, v in (platform_months or {}).items()
+        if v is not None
+    }
+    fallback_factor = _factor_for_month(fallback_month)
+
+    used_months: List[int] = []
+    projected = {"global": {}, "tri": {}}
+    has_any_factor = False
+
+    for section in ("global", "tri"):
+        for key, value in (recap_ca.get(section) or {}).items():
+            platform = _platform_from_ca_key(key)
+            month = platform_months.get(platform) if platform else None
+            factor = _factor_for_month(month)
+            if factor is None:
+                factor = fallback_factor
+            if factor is None:
+                projected[section][key] = round(float(value or 0), 2)
+                continue
+            has_any_factor = True
+            if month is not None:
+                used_months.append(int(month))
+            elif fallback_month is not None:
+                used_months.append(int(fallback_month))
+            projected[section][key] = round(float(value or 0) * factor, 2)
+
+    if not has_any_factor:
+        return None, None, fallback_month
+
+    display_month = min(used_months) if used_months else fallback_month
+    display_factor = _factor_for_month(display_month)
+    return projected, display_factor, display_month
+
+
 def _platform_totals_from_rfa(rfa_result: Dict[str, Any]) -> Dict[str, float]:
     out = _empty_platform_totals()
     for key, item in (rfa_result.get("global") or {}).items():
@@ -273,19 +347,30 @@ def compute_network_rfa_2026(
     *,
     year: int = 2026,
     reporting_month: Optional[int] = None,
+    platform_months: Optional[Dict[str, int]] = None,
     dissolved_groups: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Calcule le coût RFA sortante réseau 2026 à date + projection.
+    platform_months permet un décalage de mois entre plateformes.
     """
     dissolved = {_norm_text(g) for g in (dissolved_groups or set()) if g}
     dissolved |= EXCLUDED_GROUPS
 
+    # Facteur d'affichage (min mois) — la projection reelle est par plateforme
     projection_factor: Optional[float] = None
     if reporting_month and 1 <= int(reporting_month) < 12:
         projection_factor = 12.0 / float(reporting_month)
     elif reporting_month == 12:
         projection_factor = 1.0
+
+    def _project_recap(recap_ca: Dict[str, Dict[str, float]]):
+        projected_recap, display_factor, display_month = scale_recap_by_platform_months(
+            recap_ca,
+            platform_months=platform_months,
+            fallback_month=reporting_month,
+        )
+        return projected_recap, display_factor, display_month
 
     independents_meta, groups_meta = _partition_entities(rows_year, dissolved)
 
@@ -340,13 +425,16 @@ def compute_network_rfa_2026(
 
         rfa_proj = None
         ca_proj = None
-        if projection_factor and projection_factor != 1.0:
-            projected_recap = _scale_recap(recap_ca, projection_factor)
+        projected_recap, ent_factor, _ent_month = _project_recap(recap_ca)
+        if projected_recap is not None and ent_factor and ent_factor != 1.0:
             rfa_proj = calculate_rfa(projected_recap, contract=contract, code_union=code, year=year)
             ca_proj = round(sum(projected_recap["global"].values()), 2)
-        elif projection_factor == 1.0:
+            if projection_factor is None:
+                projection_factor = ent_factor
+        elif ent_factor == 1.0:
             rfa_proj = rfa_ytd
             ca_proj = round(sum(recap_ca["global"].values()), 2)
+            projection_factor = 1.0
 
         ca_ytd = round(sum(recap_ca["global"].values()), 2)
         independents_rows.append(_entity_row_from_rfa(
@@ -377,13 +465,16 @@ def compute_network_rfa_2026(
 
         rfa_proj = None
         ca_proj = None
-        if projection_factor and projection_factor != 1.0:
-            projected_recap = _scale_recap(recap_ca, projection_factor)
+        projected_recap, ent_factor, _ent_month = _project_recap(recap_ca)
+        if projected_recap is not None and ent_factor and ent_factor != 1.0:
             rfa_proj = calculate_rfa(projected_recap, contract=contract, groupe_client=groupe, year=year)
             ca_proj = round(sum(projected_recap["global"].values()), 2)
-        elif projection_factor == 1.0:
+            if projection_factor is None:
+                projection_factor = ent_factor
+        elif ent_factor == 1.0:
             rfa_proj = rfa_ytd
             ca_proj = round(sum(recap_ca["global"].values()), 2)
+            projection_factor = 1.0
 
         ca_ytd = round(sum(recap_ca["global"].values()), 2)
         groups_rows.append(_entity_row_from_rfa(

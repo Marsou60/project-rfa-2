@@ -3620,6 +3620,7 @@ PURE_DATA_CUMULATIVE_YEAR_KEY = "pure_data_cumulative_reporting_year"
 PURE_DATA_CUMULATIVE_FILENAME_KEY = "pure_data_cumulative_last_filename"
 PURE_DATA_CUMULATIVE_ROWS_KEY = "pure_data_cumulative_last_row_count"
 PURE_DATA_CUMULATIVE_UPDATED_AT_KEY = "pure_data_cumulative_last_updated_at"
+PURE_DATA_CUMULATIVE_PLATFORMS_KEY = "pure_data_cumulative_platforms"
 
 
 def _get_setting_value(session: Session, key: str) -> Optional[str]:
@@ -3636,17 +3637,108 @@ def _safe_int(value: Optional[str]) -> Optional[int]:
         return None
 
 
+def _load_cumulative_platforms_meta(session: Session) -> Dict[str, Any]:
+    raw = _get_setting_value(session, PURE_DATA_CUMULATIVE_PLATFORMS_KEY)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_cumulative_platforms_meta(session: Session, meta: Dict[str, Any]) -> None:
+    _upsert_setting(session, PURE_DATA_CUMULATIVE_PLATFORMS_KEY, json.dumps(meta, ensure_ascii=False))
+
+
+def _platform_months_from_meta(platforms_meta: Dict[str, Any]) -> Dict[str, int]:
+    out: Dict[str, int] = {}
+    for key, info in (platforms_meta or {}).items():
+        if not isinstance(info, dict):
+            continue
+        month = info.get("reporting_month")
+        try:
+            m = int(month)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= m <= 12:
+            out[str(key).strip().upper()] = m
+    return out
+
+
+def _sync_legacy_cumulative_month_keys(session: Session, platforms_meta: Dict[str, Any]) -> None:
+    """Maintient les cles globales (compat) = min mois / max annee des plateformes."""
+    months = []
+    years = []
+    latest_filename = None
+    latest_updated = None
+    latest_rows = None
+    for info in (platforms_meta or {}).values():
+        if not isinstance(info, dict):
+            continue
+        m = info.get("reporting_month")
+        y = info.get("reporting_year")
+        if m is not None:
+            try:
+                months.append(int(m))
+            except (TypeError, ValueError):
+                pass
+        if y is not None:
+            try:
+                years.append(int(y))
+            except (TypeError, ValueError):
+                pass
+        updated = info.get("updated_at")
+        if updated and (latest_updated is None or str(updated) > str(latest_updated)):
+            latest_updated = updated
+            latest_filename = info.get("filename")
+            latest_rows = info.get("rows_imported")
+    if months:
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_MONTH_KEY, str(min(months)))
+    if years:
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_YEAR_KEY, str(max(years)))
+    if latest_filename:
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_FILENAME_KEY, str(latest_filename))
+    if latest_rows is not None:
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_ROWS_KEY, str(latest_rows))
+    if latest_updated:
+        _upsert_setting(session, PURE_DATA_CUMULATIVE_UPDATED_AT_KEY, str(latest_updated))
+
+
 @router.get("/pure-data/cumulative/status")
 async def pure_data_cumulative_status(
     session: Session = Depends(get_session),
     user: User = Depends(require_staff),
 ):
-    """Etat du flux Pure Data cumule (separe du mode mensuel)."""
+    """Etat du flux Pure Data cumule (par plateforme)."""
     try:
-        from app.services.pure_data_cumulative_supabase import count_cumulative_rows
+        from app.services.pure_data_cumulative_supabase import (
+            CANONICAL_PLATFORMS,
+            count_cumulative_rows,
+            count_cumulative_rows_by_platform,
+            months_in_data_by_platform,
+        )
+
+        platforms_meta = _load_cumulative_platforms_meta(session)
+        counts = count_cumulative_rows_by_platform()
+        year = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_YEAR_KEY))
+        months_by_platform = months_in_data_by_platform(year)
+
+        platforms = {}
+        for p in CANONICAL_PLATFORMS:
+            info = platforms_meta.get(p) if isinstance(platforms_meta.get(p), dict) else {}
+            platforms[p] = {
+                "reporting_month": info.get("reporting_month"),
+                "reporting_year": info.get("reporting_year"),
+                "last_filename": info.get("filename"),
+                "last_rows_imported": info.get("rows_imported"),
+                "last_updated_at": info.get("updated_at"),
+                "row_count": counts.get(p, 0),
+                "months_in_data": months_by_platform.get(p, []),
+            }
 
         month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
-        year = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_YEAR_KEY))
         filename = _get_setting_value(session, PURE_DATA_CUMULATIVE_FILENAME_KEY)
         updated_at = _get_setting_value(session, PURE_DATA_CUMULATIVE_UPDATED_AT_KEY)
         rows_last_import = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_ROWS_KEY))
@@ -3659,6 +3751,7 @@ async def pure_data_cumulative_status(
             "last_filename": filename,
             "last_rows_imported": rows_last_import,
             "last_updated_at": updated_at,
+            "platforms": platforms,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur status Pure Data cumule: {str(e)}")
@@ -3669,13 +3762,15 @@ async def import_pure_data_cumulative_excel(
     file: UploadFile = File(...),
     reporting_month: int = Form(...),
     reporting_year: int = Form(...),
+    fournisseur: str = Form(...),
     session: Session = Depends(get_session),
     user: User = Depends(require_staff),
 ):
     """
-    Import Pure Data cumule:
-    - remplace integralement le precedent import cumule
-    - enregistre le mois/annee de reference de pilotage
+    Import Pure Data cumule PAR PLATEFORME:
+    - remplace uniquement les lignes de la plateforme pour les annees du fichier
+    - conserve le mois reel de chaque ligne (fallback = reporting_month)
+    - enregistre le mois de reference par plateforme (decalage EXADIS/DCA OK)
     """
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Fichier .xlsx ou .xls requis")
@@ -3684,10 +3779,18 @@ async def import_pure_data_cumulative_excel(
     if reporting_year < 2000 or reporting_year > 2100:
         raise HTTPException(status_code=400, detail="L'annee de reference est invalide.")
 
+    from app.services.pure_data_cumulative_supabase import normalize_platform
+    platform = normalize_platform(fournisseur)
+    if not platform:
+        raise HTTPException(
+            status_code=400,
+            detail="Plateforme invalide. Utiliser ACR, DCA, EXADIS ou ALLIANCE.",
+        )
+
     tmp_path = None
     try:
         from app.services.pure_data_import import load_pure_data
-        from app.services.pure_data_cumulative_supabase import write_cumulative_rows
+        from app.services.pure_data_cumulative_supabase import write_cumulative_platform_rows
         from app.storage import _pure_data_imports
         from starlette.concurrency import run_in_threadpool
 
@@ -3695,30 +3798,57 @@ async def import_pure_data_cumulative_excel(
             tmp.write(await file.read())
             tmp_path = tmp.name
 
-        # Travail lourd (lecture Excel + insertion DB) exécuté hors de la boucle async
-        # pour ne pas bloquer /health (sinon Railway redémarre le conteneur en plein import).
         rows, columns, _mapping = await run_in_threadpool(load_pure_data, tmp_path)
         if not rows:
             raise HTTPException(status_code=400, detail="Aucune donnee exploitable dans le fichier.")
 
-        inserted = await run_in_threadpool(write_cumulative_rows, rows, reporting_month)
+        try:
+            result = await run_in_threadpool(
+                lambda: write_cumulative_platform_rows(
+                    rows,
+                    fournisseur=platform,
+                    reporting_month=reporting_month,
+                    reporting_year=reporting_year,
+                )
+            )
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
 
-        _upsert_setting(session, PURE_DATA_CUMULATIVE_MONTH_KEY, str(reporting_month))
-        _upsert_setting(session, PURE_DATA_CUMULATIVE_YEAR_KEY, str(reporting_year))
-        _upsert_setting(session, PURE_DATA_CUMULATIVE_FILENAME_KEY, file.filename)
-        _upsert_setting(session, PURE_DATA_CUMULATIVE_ROWS_KEY, str(inserted))
-        _upsert_setting(session, PURE_DATA_CUMULATIVE_UPDATED_AT_KEY, datetime.now().isoformat())
+        now_iso = datetime.now().isoformat()
+        platforms_meta = _load_cumulative_platforms_meta(session)
+        platforms_meta[platform] = {
+            "reporting_month": reporting_month,
+            "reporting_year": reporting_year,
+            "filename": file.filename,
+            "rows_imported": result["rows_inserted"],
+            "rows_deleted": result["rows_deleted"],
+            "rows_skipped": result["rows_skipped"],
+            "years": result["years"],
+            "months_in_file": result["months_in_file"],
+            "updated_at": now_iso,
+        }
+        _save_cumulative_platforms_meta(session, platforms_meta)
+        _sync_legacy_cumulative_month_keys(session, platforms_meta)
         session.commit()
 
-        # Invalider cache Pure Data cumule en memoire
         _pure_data_imports.pop("cumulative_live", None)
+
+        month_mismatch = False
+        if result["months_in_file"]:
+            month_mismatch = max(result["months_in_file"]) != reporting_month
 
         return {
             "success": True,
             "filename": file.filename,
-            "rows_inserted": inserted,
+            "fournisseur": platform,
+            "rows_inserted": result["rows_inserted"],
+            "rows_deleted": result["rows_deleted"],
+            "rows_skipped": result["rows_skipped"],
+            "years": result["years"],
+            "months_in_file": result["months_in_file"],
             "reporting_month": reporting_month,
             "reporting_year": reporting_year,
+            "month_mismatch": month_mismatch,
             "columns_detected": columns[:12],
         }
     except HTTPException:
@@ -3963,16 +4093,22 @@ async def pure_data_cumulative_client_rfa(
             it["tiers"] = _tiers_for(k, "tri")
 
         contract_level = rfa_result.get("contract_level")
-        # ── Projection fin d'année : annualisation linéaire selon le mois de référence ──
+        # ── Projection fin d'année : par plateforme (decalage EXADIS/DCA OK) ──
+        platforms_meta = _load_cumulative_platforms_meta(session)
+        platform_months = _platform_months_from_meta(platforms_meta)
         reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+        from app.services.pure_data_network_rfa import scale_recap_by_platform_months
+
+        projected_recap, projection_factor, display_month = scale_recap_by_platform_months(
+            recap_ca,
+            platform_months=platform_months,
+            fallback_month=reporting_month,
+        )
+        if display_month is not None:
+            reporting_month = display_month
+
         rfa_projected = None
-        projection_factor = None
-        if reporting_month and 1 <= reporting_month < 12:
-            projection_factor = 12.0 / reporting_month
-            projected_recap = {
-                "global": {k: round(v * projection_factor, 2) for k, v in recap_ca["global"].items()},
-                "tri": {k: round(v * projection_factor, 2) for k, v in recap_ca["tri"].items()},
-            }
+        if projected_recap is not None and projection_factor and projection_factor != 1.0:
             # calculate_rfa recalcule le niveau (Silver→Gold si CA projeté franchit le seuil)
             rfa_projected = calculate_rfa(
                 projected_recap,
@@ -3995,6 +4131,8 @@ async def pure_data_cumulative_client_rfa(
                     it["level_id"] = _proj_level.get("id")
                 for k, it in rfa_projected.get("tri", {}).items():
                     it["tiers"] = _tiers_for(k, "tri")
+        elif projection_factor == 1.0:
+            rfa_projected = rfa_result
 
         global_total = round(sum(recap_ca["global"].values()), 2)
         tri_total = round(sum(recap_ca["tri"].values()), 2)
@@ -4012,8 +4150,8 @@ async def pure_data_cumulative_client_rfa(
 
         ca_n1_full = _sum_rows_ca(rows_n1) if rows_n1 else 0.0
         ca_n_ytd_full = _sum_rows_ca(rows)
-        if projection_factor and ca_n_ytd_full:
-            ca_projected_full = round(ca_n_ytd_full * projection_factor, 2)
+        if projected_recap is not None and projection_factor:
+            ca_projected_full = round(sum(float(v or 0) for v in projected_recap["global"].values()), 2)
         elif reporting_month == 12 and ca_n_ytd_full:
             # Année complète : la projection = réalisé N
             ca_projected_full = ca_n_ytd_full
@@ -4129,6 +4267,7 @@ async def pure_data_cumulative_client_rfa(
             "rfa": rfa_result,
             "rfa_projected": rfa_projected,
             "reporting_month": reporting_month,
+            "platform_months": platform_months,
             "projection_factor": projection_factor,
             "comparison_n1": comparison_n1,
             "cotisation": cotisation,
@@ -4177,6 +4316,8 @@ def _build_network_rfa_2026_payload(
         dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
 
     reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+    platforms_meta = _load_cumulative_platforms_meta(session)
+    platform_months = _platform_months_from_meta(platforms_meta)
 
     cumulative_rows_year: List[Dict[str, Any]] = []
     if count_cumulative_rows() > 0:
@@ -4237,9 +4378,11 @@ def _build_network_rfa_2026_payload(
                 cumulative_rows_year,
                 year=year,
                 reporting_month=reporting_month,
+                platform_months=platform_months,
                 dissolved_groups=dissolved_set,
             )
             network["data_source"] = "cumulative"
+            network["platform_months"] = platform_months
 
         # Compléter avec les entités présentes uniquement en mensuel
         if monthly_rows_year:
@@ -4270,6 +4413,7 @@ def _build_network_rfa_2026_payload(
                         missing_rows,
                         year=year,
                         reporting_month=reporting_month,
+                        platform_months=platform_months,
                         dissolved_groups=dissolved_set,
                     )
                     extra["data_source"] = "monthly"
@@ -4279,6 +4423,7 @@ def _build_network_rfa_2026_payload(
                     monthly_rows_year,
                     year=year,
                     reporting_month=reporting_month,
+                    platform_months=platform_months,
                     dissolved_groups=dissolved_set,
                 )
                 network["data_source"] = "monthly"
@@ -4527,21 +4672,23 @@ async def load_pure_data_monthly(
     month: Optional[int] = None,
 ):
     """
-    Charge la comparaison Pure Data en mode mensuel (table dédiée),
-    sans impacter la table historique 2024/2025.
+    Charge la comparaison Pure Data en mode mensuel.
+    Source : cumulatif detaille (nouvel import) en priorite, sinon table mensuelle.
     """
     try:
         from app.services.pure_data_import import filter_rows, aggregate_rows, build_comparison
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_sales_source import load_evolution_sales_rows
         from app.storage import create_pure_data_import, _pure_data_imports
 
-        if count_monthly_rows() == 0:
-            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible. Importez un fichier mensuel.")
-
-        rows, columns, mapping = read_monthly_rows()
+        rows, data_source = load_evolution_sales_rows()
         if not rows:
-            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
+            raise HTTPException(
+                status_code=404,
+                detail="Aucune donnée mensuelle disponible. Importez un fichier plateforme (cumulé détaillé).",
+            )
 
+        columns = list(rows[0].keys()) if rows else []
+        mapping = {c: c for c in columns}
         current_filtered = filter_rows(rows, year_current, month)
         previous_filtered = filter_rows(rows, year_previous, month)
         current_agg = aggregate_rows(current_filtered)
@@ -4554,7 +4701,7 @@ async def load_pure_data_monthly(
 
         return {
             "pure_data_id": pure_data_id,
-            "source": "monthly",
+            "source": data_source or "monthly",
             "current": {"year": year_current, "month": month, "total_ca": current_agg["total_ca"], "row_count": len(current_filtered)},
             "previous": {"year": year_previous, "month": month, "total_ca": previous_agg["total_ca"], "row_count": len(previous_filtered)},
             "comparison": comparison,
@@ -4581,13 +4728,10 @@ async def pure_data_monthly_evolution(
     - top clients avec détail delta mois par mois
     """
     try:
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_sales_source import load_evolution_sales_rows
         from app.services.pure_data_import import filter_rows_by_fournisseur
 
-        if count_monthly_rows() == 0:
-            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
-
-        rows, _, _ = read_monthly_rows()
+        rows, data_source = load_evolution_sales_rows()
         if not rows:
             raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
 
@@ -4727,6 +4871,7 @@ async def pure_data_monthly_evolution(
             "year_current": year_current,
             "year_previous": year_previous,
             "fournisseur": fournisseur,
+            "data_source": data_source,
             "months": monthly_totals,
             "clients": clients,
             "groups": groups,
@@ -4758,13 +4903,10 @@ async def pure_data_monthly_entity_detail(
         raise HTTPException(status_code=400, detail="Fournir code_union, commercial ou groupe_client.")
 
     try:
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_sales_source import load_evolution_sales_rows
         from app.services.pure_data_import import filter_rows_by_fournisseur
 
-        if count_monthly_rows() == 0:
-            raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
-
-        rows, _, _ = read_monthly_rows()
+        rows, data_source = load_evolution_sales_rows()
         if not rows:
             raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
 
@@ -4908,6 +5050,7 @@ async def pure_data_monthly_entity_detail(
             "groupe_client": groupe_client,
             "year_current": year_current,
             "year_previous": year_previous,
+            "data_source": data_source,
             "months": months_set,
             "totals": {
                 "current": grand_current,
@@ -4940,13 +5083,14 @@ async def pure_data_monthly_month_detail(
     Si fournisseur est fourni, seules les lignes de cette plateforme sont incluses.
     """
     try:
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_sales_source import load_evolution_sales_rows
         from app.services.pure_data_import import filter_rows_by_fournisseur
 
-        if count_monthly_rows() == 0:
+        rows, data_source = load_evolution_sales_rows()
+        if not rows:
             raise HTTPException(status_code=404, detail="Aucune donnée mensuelle disponible.")
 
-        rows, _, _ = read_monthly_rows(month=month)
+        rows = [r for r in rows if r.get("month") == month]
         rows = filter_rows_by_fournisseur(rows, fournisseur)
 
         def _pct(delta, base):
@@ -4985,6 +5129,7 @@ async def pure_data_monthly_month_detail(
             "month": month,
             "year_current": year_current,
             "year_previous": year_previous,
+            "data_source": data_source,
             "totals": {
                 "current": grand_current,
                 "previous": grand_previous,
@@ -5036,7 +5181,7 @@ async def pure_data_monthly_client_evolution(
             raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
 
     try:
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_sales_source import load_evolution_sales_rows
         from app.services.pure_data_import import filter_rows_by_fournisseur
 
         def _norm_text(v: Optional[str]) -> str:
@@ -5063,12 +5208,9 @@ async def pure_data_monthly_client_evolution(
                         candidates.add(head)
             return candidates
 
-        if count_monthly_rows() == 0:
-            return {"available": False, "code_union": code_union, "groupe_client": groupe_client}
-
-        all_rows, _, _ = read_monthly_rows()
+        all_rows, data_source = load_evolution_sales_rows()
         if not all_rows:
-            return {"available": False}
+            return {"available": False, "code_union": code_union, "groupe_client": groupe_client}
 
         def _pct(delta, base):
             return (delta / base) * 100 if base else None
@@ -5257,6 +5399,7 @@ async def pure_data_monthly_client_evolution(
             "groupe_client": groupe_client,
             "year_current": year_current,
             "year_previous": year_previous,
+            "data_source": data_source,
             "totals": {"current": grand_curr, "previous": grand_prev,
                        "delta": grand_delta, "delta_pct": _pct(grand_delta, grand_prev)},
             "months": monthly,

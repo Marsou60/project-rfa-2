@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Upload, Users, X, ChevronDown, RefreshCw, CheckCircle2, Database, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { comparePureData, deletePureDataMonthlyRows, getPureDataComparison, getPureDataClientDetail, getPureDataCommercialDetail, getPureDataCumulativeStatus, getPureDataMarqueDetail, getPureDataMonthlyEntityDetail, getPureDataMonthlyEvolution, getPureDataMonthlyMonthDetail, getPureDataMonthlyPeriods, getPureDataPlatformDetail, getPureDataSheetsStatus, importPureDataCumulativeExcel, importPureDataMonthlyExcel, loadPureDataFromSupabase, loadPureDataMonthly, syncPureDataFromSheets } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
+import { SUPPLIER_KEYS, SUPPLIER_LABELS } from '../constants/suppliers'
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('fr-FR', {
@@ -471,6 +472,7 @@ function PureDataPage({ monthlyEntry = false }) {
   const [selectedEvolutionMonth, setSelectedEvolutionMonth] = useState(null)
   const [cumulativeStatus, setCumulativeStatus] = useState(null)
   const [cumulativeFile, setCumulativeFile] = useState(null)
+  const [cumulativePlatform, setCumulativePlatform] = useState('DCA')
   const [cumulativeMonth, setCumulativeMonth] = useState(new Date().getMonth() + 1)
   const [cumulativeYear, setCumulativeYear] = useState(new Date().getFullYear())
   const [cumulativeImporting, setCumulativeImporting] = useState(false)
@@ -498,8 +500,10 @@ function PureDataPage({ monthlyEntry = false }) {
     try {
       const data = await getPureDataCumulativeStatus()
       setCumulativeStatus(data || null)
-      if (data?.reporting_month) setCumulativeMonth(Number(data.reporting_month))
-      if (data?.reporting_year) setCumulativeYear(Number(data.reporting_year))
+      const platformInfo = data?.platforms?.[cumulativePlatform]
+      if (platformInfo?.reporting_month) setCumulativeMonth(Number(platformInfo.reporting_month))
+      if (platformInfo?.reporting_year) setCumulativeYear(Number(platformInfo.reporting_year))
+      else if (data?.reporting_year) setCumulativeYear(Number(data.reporting_year))
     } catch {
       setCumulativeStatus(null)
     }
@@ -591,6 +595,10 @@ function PureDataPage({ monthlyEntry = false }) {
       setError("Sélectionne un fichier cumulé à importer.")
       return
     }
+    if (!cumulativePlatform) {
+      setError("Sélectionne une plateforme.")
+      return
+    }
     setCumulativeImporting(true)
     setError(null)
     setCumulativeMessage(null)
@@ -599,8 +607,15 @@ function PureDataPage({ monthlyEntry = false }) {
         file: cumulativeFile,
         reportingMonth: Number(cumulativeMonth),
         reportingYear: Number(cumulativeYear),
+        fournisseur: cumulativePlatform,
       })
-      setCumulativeMessage(`${res.rows_inserted} lignes cumulées importées (${res.filename}).`)
+      const skipped = res.rows_skipped ? ` · ${res.rows_skipped} lignes autres plateformes ignorées` : ''
+      const mismatch = res.month_mismatch
+        ? ` · Attention : max mois fichier (${(res.months_in_file || []).join(',')}) ≠ mois déclaré (${res.reporting_month})`
+        : ''
+      setCumulativeMessage(
+        `${res.fournisseur} : ${res.rows_inserted} lignes importées (${res.rows_deleted || 0} remplacées)${skipped}${mismatch}.`
+      )
       setCumulativeFile(null)
       await refreshCumulativeStatus()
     } catch (err) {
@@ -1115,14 +1130,15 @@ function PureDataPage({ monthlyEntry = false }) {
       </div>
       )}
 
-      {/* ── Import Pure Data cumulé (dashboard espace client) ── */}
+      {/* ── Import Pure Data cumulé (dashboard espace client / RFA 2026) ── */}
       {!monthlyEntry && (
       <div className="glass-card p-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-glass-primary font-semibold">Import Pure Data cumulé (espace client)</h2>
+            <h2 className="text-glass-primary font-semibold">Import ventes détaillées (par plateforme)</h2>
             <p className="text-glass-secondary text-sm">
-              Flux séparé du mensuel : remplace entièrement le précédent import cumulé et enregistre le mois de référence.
+              Un fichier par plateforme (jan → mois courant). Remplace uniquement cette plateforme.
+              Les mois du fichier sont conservés — décalage EXADIS / DCA accepté. Alimente RFA 2026 + espace client.
             </p>
           </div>
           <button
@@ -1135,9 +1151,27 @@ function PureDataPage({ monthlyEntry = false }) {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4">
+          <div>
+            <label className="text-glass-secondary text-xs font-semibold">Plateforme</label>
+            <select
+              value={cumulativePlatform}
+              onChange={(e) => {
+                const p = e.target.value
+                setCumulativePlatform(p)
+                const info = cumulativeStatus?.platforms?.[p]
+                if (info?.reporting_month) setCumulativeMonth(Number(info.reporting_month))
+                if (info?.reporting_year) setCumulativeYear(Number(info.reporting_year))
+              }}
+              className="glass-input w-full mt-2"
+            >
+              {SUPPLIER_KEYS.map((k) => (
+                <option key={k} value={k}>{SUPPLIER_LABELS[k] || k}</option>
+              ))}
+            </select>
+          </div>
           <div className="md:col-span-2">
-            <label className="text-glass-secondary text-xs font-semibold">Fichier Excel cumulé</label>
+            <label className="text-glass-secondary text-xs font-semibold">Fichier Excel ({cumulativePlatform})</label>
             <input
               type="file"
               accept=".xlsx,.xls"
@@ -1146,7 +1180,7 @@ function PureDataPage({ monthlyEntry = false }) {
             />
           </div>
           <div>
-            <label className="text-glass-secondary text-xs font-semibold">Mois de référence</label>
+            <label className="text-glass-secondary text-xs font-semibold">Dernier mois inclus</label>
             <input
               type="number"
               min={1}
@@ -1157,7 +1191,7 @@ function PureDataPage({ monthlyEntry = false }) {
             />
           </div>
           <div>
-            <label className="text-glass-secondary text-xs font-semibold">Année de référence</label>
+            <label className="text-glass-secondary text-xs font-semibold">Année</label>
             <input
               type="number"
               min={2000}
@@ -1176,21 +1210,23 @@ function PureDataPage({ monthlyEntry = false }) {
             disabled={cumulativeImporting || !cumulativeFile}
             className="glass-btn-primary px-4 py-2 text-sm"
           >
-            {cumulativeImporting ? 'Import cumulé...' : 'Importer en mode cumulé'}
+            {cumulativeImporting
+              ? `Import ${cumulativePlatform}…`
+              : `Remplacer ${cumulativePlatform} (jan → ${monthLabel(cumulativeMonth)})`}
           </button>
         </div>
 
         {cumulativeMessage && <p className="mt-3 text-emerald-300 text-sm">{cumulativeMessage}</p>}
 
         {cumulativeStatus && (
-          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-white/70">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-xs text-white/70 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
-                <div className="text-white/40">Lignes en base</div>
+                <div className="text-white/40">Total lignes</div>
                 <div className="font-bold text-white">{Number(cumulativeStatus.row_count || 0).toLocaleString('fr-FR')}</div>
               </div>
               <div>
-                <div className="text-white/40">Période</div>
+                <div className="text-white/40">Mois le plus bas (projection)</div>
                 <div className="font-bold text-white">
                   {monthLabel(cumulativeStatus.reporting_month)} {cumulativeStatus.reporting_year || '-'}
                 </div>
@@ -1199,10 +1235,35 @@ function PureDataPage({ monthlyEntry = false }) {
                 <div className="text-white/40">Dernier fichier</div>
                 <div className="font-bold text-white truncate">{cumulativeStatus.last_filename || '-'}</div>
               </div>
-              <div>
-                <div className="text-white/40">Dernier import</div>
-                <div className="font-bold text-white">{cumulativeStatus.last_updated_at ? new Date(cumulativeStatus.last_updated_at).toLocaleString('fr-FR') : '-'}</div>
-              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              {SUPPLIER_KEYS.map((k) => {
+                const p = cumulativeStatus.platforms?.[k] || {}
+                const active = cumulativePlatform === k
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setCumulativePlatform(k)
+                      if (p.reporting_month) setCumulativeMonth(Number(p.reporting_month))
+                      if (p.reporting_year) setCumulativeYear(Number(p.reporting_year))
+                    }}
+                    className={`text-left rounded-lg border p-3 transition ${
+                      active ? 'border-teal-400/50 bg-teal-500/10' : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="font-bold text-white">{SUPPLIER_LABELS[k] || k}</div>
+                    <div className="mt-1 text-white/60">
+                      {monthLabel(p.reporting_month)} {p.reporting_year || ''}
+                    </div>
+                    <div className="text-white/40">
+                      {(p.row_count || 0).toLocaleString('fr-FR')} lignes
+                      {p.months_in_data?.length ? ` · mois ${p.months_in_data.join(',')}` : ''}
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
