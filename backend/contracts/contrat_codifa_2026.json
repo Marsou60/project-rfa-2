@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "description": "Otto'Parts / Codifa 2026 — RFA sur CA consolidé Alliance + ACR uniquement (PDF ANN-RFA-OTTOPARTS-2026).",
+  "contracts": [
+    {
+      "id": "CONTRAT_CODIFA_2026",
+      "name": "Otto'Parts / Codifa 2026",
+      "isDefault": false,
+      "useCombinedGlobalRate": true,
+      "scope": "ADHERENT",
+      "notes": "RFA 2026 Otto'Parts (groupe CODIFA). Taux calculé sur CA consolidé Alliance+ACR uniquement ; appliqué à chaque plateforme Alliance et ACR. En deçà de 400k€ consolidés = 0. DCA/EXADIS hors périmètre. Pas de tripartites dans l'annexe.",
+      "globalRules": {
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 400000, "rate": 0.06},
+            {"min": 500000, "rate": 0.07},
+            {"min": 600000, "rate": 0.08},
+            {"min": 700000, "rate": 0.09},
+            {"min": 800000, "rate": 0.10}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_ACR": {
+          "tiersRfa": [
+            {"min": 400000, "rate": 0.06},
+            {"min": 500000, "rate": 0.07},
+            {"min": 600000, "rate": 0.08},
+            {"min": 700000, "rate": 0.09},
+            {"min": 800000, "rate": 0.10}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [],
+          "tiersBonus": []
+        }
+      },
+      "triRules": {}
+    }
+  ]
+}

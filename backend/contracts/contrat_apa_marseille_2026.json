@@ -1,0 +1,117 @@
+{
+  "version": "1.0",
+  "description": "APA Marseille 2026 — taux garantis plateforme + bonus Nord+Franchise 12% Alliance/ACR si conditions. Ne remplace PAS le contrat APA 2025.",
+  "contracts": [
+    {
+      "id": "CONTRAT_APA_MARSEILLE_2026",
+      "name": "APA Marseille 2026",
+      "isDefault": false,
+      "useCombinedGlobalRate": false,
+      "scope": "ADHERENT",
+      "notes": "RFA 2026 APA Marseille. Taux garantis : Alliance/EXADIS/ACR 11% dès 450k, DCA 10,5% dès 150k. Bonus Nord+Franchise : Alliance+ACR passent à 12% si Alliance≥450k ET ACR≥450k ET CA total≥2M€ (géré par le calculateur). Tripartites livret 2026. Partenaires FUCHS/TOTAL/NPS hors moteur RFA. Cotisation Alliance offerte (ne pas déduire).",
+      "globalRules": {
+        "GLOBAL_ALLIANCE": {
+          "tiersRfa": [
+            {"min": 450000, "rate": 0.11}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_ACR": {
+          "tiersRfa": [
+            {"min": 450000, "rate": 0.11}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_EXADIS": {
+          "tiersRfa": [
+            {"min": 450000, "rate": 0.11}
+          ],
+          "tiersBonus": []
+        },
+        "GLOBAL_DCA": {
+          "tiersRfa": [
+            {"min": 150000, "rate": 0.105}
+          ],
+          "tiersBonus": []
+        }
+      },
+      "triRules": {
+        "TRI_ALLIANCE_DELPHI": {
+          "tiers": [
+            {"min": 50000, "rate": 0.08}
+          ]
+        },
+        "TRI_ALLIANCE_BREMBO": {
+          "tiers": [
+            {"min": 50000, "rate": 0.08}
+          ]
+        },
+        "TRI_SCHAEFFLER": {
+          "tiers": [
+            {"min": 50000, "rate": 0.05}
+          ]
+        },
+        "TRI_ALLIANCE_SOGEFI": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_DCA_SBS": {
+          "tiers": [
+            {"min": 50000, "rate": 0.06}
+          ]
+        },
+        "TRI_EXADIS_FREINAGE": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_EXADIS_EMBRAYAGE": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_EXADIS_DISTRIBUTION": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03}
+          ]
+        },
+        "TRI_EXADIS_FILTRATION": {
+          "tiers": [
+            {"min": 25000, "rate": 0.02}
+          ]
+        },
+        "TRI_EXADIS_ETANCHEITE": {
+          "tiers": [
+            {"min": 5000, "rate": 0.02}
+          ]
+        },
+        "TRI_EXADIS_THERMIQUE": {
+          "tiers": [
+            {"min": 5000, "rate": 0.015}
+          ]
+        },
+        "TRI_ACR_FREINAGE": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_ACR_EMBRAYAGE": {
+          "tiers": [
+            {"min": 50000, "rate": 0.04}
+          ]
+        },
+        "TRI_ACR_DISTRIBUTION": {
+          "tiers": [
+            {"min": 25000, "rate": 0.03}
+          ]
+        },
+        "TRI_ACR_FILTRE": {
+          "tiers": [
+            {"min": 25000, "rate": 0.015}
+          ]
+        }
+      }
+    }
+  ]
+}

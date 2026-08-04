@@ -3,9 +3,10 @@ Résolution du contrat applicable pour une entité.
 
 IMPORTANT — séparation des années :
 - year < 2026 (ou None) : règles / contrats historiques (RFA 2025).
-  Le contrat « Adhérents 2026 » ne doit JAMAIS s'appliquer.
+  Le contrat « Adhérents 2026 » et les contrats « … 2026 » only ne doivent JAMAIS s'appliquer.
 - year >= 2026 : contrat Adhérents 2026 pour la base / Privilege ;
-  les contrats spéciaux (Warning, APC, groupes…) restent.
+  les contrats spéciaux (Warning, APC, groupes…) restent ;
+  APA / Discount basculent vers leur version 2026 (assignments restent sur le contrat 2025).
 """
 from sqlmodel import Session, select
 from typing import Optional, List
@@ -24,6 +25,21 @@ LEGACY_BASE_CONTRACT_NAMES = {
     "PRIVILEGE",
     "Contrat Privilege 2",
     "Contrat Privilege",
+}
+
+# Contrats spéciaux dont le barème 2026 diffère du 2025.
+# Les assignments restent pointés sur le contrat 2025 (espace RFA 2025 intact) ;
+# en year>=2026 on bascule vers le contrat 2026 homonyme.
+SPECIAL_CONTRACT_YEAR_UPGRADES = {
+    "APA Marseille – Avenant Union Nord + Franchise": "APA Marseille 2026",
+    "Groupe Discount": "Groupe Discount 2026",
+}
+
+# Contrats uniquement 2026 (pas d'équivalent 2025) — exclus de la vue RFA 2025
+YEAR_2026_ONLY_CONTRACT_NAMES = {
+    "APA Marseille 2026",
+    "Groupe Discount 2026",
+    "Otto'Parts / Codifa 2026",
 }
 
 
@@ -52,6 +68,27 @@ def is_legacy_base_contract(contract: Optional[Contract]) -> bool:
     if not contract:
         return False
     return _name_upper(contract) in {n.upper() for n in LEGACY_BASE_CONTRACT_NAMES}
+
+
+def is_year_2026_only_contract(contract: Optional[Contract]) -> bool:
+    if not contract:
+        return False
+    return _name_upper(contract) in {n.upper() for n in YEAR_2026_ONLY_CONTRACT_NAMES}
+
+
+def _upgrade_target_for_2026(contract: Optional[Contract]) -> Optional[str]:
+    """Nom du contrat 2026 si un upgrade spécial est défini, sinon None."""
+    if not contract:
+        return None
+    name = (contract.name or "").strip()
+    if name in SPECIAL_CONTRACT_YEAR_UPGRADES:
+        return SPECIAL_CONTRACT_YEAR_UPGRADES[name]
+    # Comparaison case-insensitive
+    upper = name.upper()
+    for legacy, target in SPECIAL_CONTRACT_YEAR_UPGRADES.items():
+        if legacy.upper() == upper:
+            return target
+    return None
 
 
 def _find_by_name(session: Session, name: str) -> Optional[Contract]:
@@ -129,7 +166,7 @@ def apply_year_contract_policy(
     """
     # ── RFA 2025 / historique ──
     if year is None or year < 2026:
-        if is_adherent_2026_contract(contract):
+        if is_adherent_2026_contract(contract) or is_year_2026_only_contract(contract):
             legacy = _find_legacy_default(session)
             print(
                 f"[RESOLVE] year={year}: contrat 2026 '{getattr(contract, 'name', None)}' "
@@ -150,7 +187,22 @@ def apply_year_contract_policy(
             f"[RESOLVE] year={year}: base/privilege '{contract.name}' -> {ADHERENT_2026_NAME}"
         )
         return adherent_2026 or contract
-    # Contrats spéciaux (Warning, APC, groupes…) inchangés
+
+    # Upgrade spécial 2025 → 2026 (APA, Discount…) sans toucher au contrat 2025 en base
+    upgrade_name = _upgrade_target_for_2026(contract)
+    if upgrade_name:
+        upgraded = _find_by_name(session, upgrade_name)
+        if upgraded:
+            print(
+                f"[RESOLVE] year={year}: upgrade '{contract.name}' -> '{upgraded.name}'"
+            )
+            return upgraded
+        print(
+            f"[RESOLVE] year={year}: upgrade '{contract.name}' prévu vers '{upgrade_name}' "
+            f"mais contrat introuvable — conservation du 2025"
+        )
+
+    # Autres contrats spéciaux (Warning, APC, groupes…) inchangés
     print(f"[RESOLVE] year={year}: contrat spécial conservé '{contract.name}'")
     return contract
 
@@ -282,7 +334,11 @@ class BatchContractResolver:
             self._by_groupe: dict = {}
             self._default_legacy: Optional[Contract] = None
             self._adherent_2026: Optional[Contract] = None
+            self._by_name: dict = {}
             contracts_map = {c.id: c for c in all_contracts}
+            for c in all_contracts:
+                if c.scope == ContractScope.ADHERENT and c.name:
+                    self._by_name[(c.name or "").strip().upper()] = c
             for a in all_assignments:
                 c = contracts_map.get(a.contract_id)
                 if not c or not c.is_active or c.scope != ContractScope.ADHERENT:
@@ -313,14 +369,19 @@ class BatchContractResolver:
 
     def _apply_year(self, contract: Optional[Contract], year: Optional[int]) -> Optional[Contract]:
         if year is None or year < 2026:
-            if is_adherent_2026_contract(contract):
+            if is_adherent_2026_contract(contract) or is_year_2026_only_contract(contract):
                 return self._default_legacy
             return contract or self._default_legacy
         # 2026+
-        if contract is None or is_legacy_base_contract(contract) or is_adherent_2026_contract(contract):
-            if contract is None or is_legacy_base_contract(contract):
-                return self._adherent_2026 or contract or self._default_legacy
+        if contract is None or is_legacy_base_contract(contract):
+            return self._adherent_2026 or contract or self._default_legacy
+        if is_adherent_2026_contract(contract):
             return contract
+        upgrade_name = _upgrade_target_for_2026(contract)
+        if upgrade_name:
+            upgraded = self._by_name.get(upgrade_name.strip().upper())
+            if upgraded:
+                return upgraded
         return contract
 
     def resolve(

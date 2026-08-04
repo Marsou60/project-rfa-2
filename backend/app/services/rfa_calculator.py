@@ -25,6 +25,74 @@ def is_warning_contract(contract: Optional[Contract]) -> bool:
     return "WARNING" in ((contract.name or "").strip().upper())
 
 
+def is_apa_2026_contract(contract: Optional[Contract]) -> bool:
+    if not contract:
+        return False
+    name = (contract.name or "").strip().upper()
+    return name == "APA MARSEILLE 2026" or (
+        "APA MARSEILLE" in name and "2026" in name
+    )
+
+
+APA_NORD_FRANCHISE_ALLIANCE_MIN = 450000.0
+APA_NORD_FRANCHISE_ACR_MIN = 450000.0
+APA_NORD_FRANCHISE_TOTAL_MIN = 2000000.0
+APA_NORD_FRANCHISE_RATE = 0.12
+
+
+def evaluate_apa_nord_franchise(
+    recap_ca: Dict[str, Dict[str, float]],
+    contract: Optional[Contract],
+    year: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Bonus Nord+Franchise APA 2026 : Alliance + ACR passent à 12 % si
+    Alliance ≥ 450k, ACR ≥ 450k et CA total toutes plateformes ≥ 2 M€.
+    """
+    if year is None or int(year) < 2026:
+        return None
+    if not is_apa_2026_contract(contract):
+        return None
+
+    global_ca = (recap_ca or {}).get("global") or {}
+    alliance_ca = float(global_ca.get("GLOBAL_ALLIANCE") or 0.0)
+    acr_ca = float(global_ca.get("GLOBAL_ACR") or 0.0)
+    total_ca = compute_total_global_ca(recap_ca or {})
+
+    conditions = [
+        {
+            "key": "GLOBAL_ALLIANCE",
+            "label": "Alliance ≥ 450 000 €",
+            "required": APA_NORD_FRANCHISE_ALLIANCE_MIN,
+            "ca": round(alliance_ca, 2),
+            "met": alliance_ca >= APA_NORD_FRANCHISE_ALLIANCE_MIN,
+        },
+        {
+            "key": "GLOBAL_ACR",
+            "label": "ACR ≥ 450 000 €",
+            "required": APA_NORD_FRANCHISE_ACR_MIN,
+            "ca": round(acr_ca, 2),
+            "met": acr_ca >= APA_NORD_FRANCHISE_ACR_MIN,
+        },
+        {
+            "key": "TOTAL_GLOBAL",
+            "label": "CA total ≥ 2 000 000 €",
+            "required": APA_NORD_FRANCHISE_TOTAL_MIN,
+            "ca": round(total_ca, 2),
+            "met": total_ca >= APA_NORD_FRANCHISE_TOTAL_MIN,
+        },
+    ]
+    triggered = all(c["met"] for c in conditions)
+    return {
+        "key": "APA_NORD_FRANCHISE",
+        "label": "Bonus Nord+Franchise 12 % (Alliance + ACR)",
+        "rate": APA_NORD_FRANCHISE_RATE,
+        "triggered": triggered,
+        "conditions": conditions,
+        "platforms": ["GLOBAL_ALLIANCE", "GLOBAL_ACR"],
+    }
+
+
 def evaluate_warning_prime(
     recap_ca: Dict[str, Dict[str, float]],
     contract: Optional[Contract],
@@ -297,33 +365,63 @@ def calculate_rfa(
     combined_min_reached_bonus = None
     
     if use_combined_rate:
-        # Calculer le CA total des 4 fournisseurs
-        total_combined_ca = 0.0
+        # Plateformes participantes = celles qui ont un barème RFA non vide.
+        # Permet Codifa (Alliance+ACR only) sans appliquer le taux à DCA/EXADIS.
+        combined_keys: List[str] = []
         for key in GLOBAL_PLATFORMS:
+            rule = contract_rules.get(key)
+            if not rule or rule.scope != RuleScope.GLOBAL:
+                continue
+            try:
+                tiers_check = json.loads(rule.tiers_rfa or "[]") if rule.tiers_rfa else []
+            except (json.JSONDecodeError, TypeError):
+                tiers_check = []
+            if tiers_check:
+                combined_keys.append(key)
+        if not combined_keys:
+            combined_keys = list(GLOBAL_PLATFORMS)
+
+        total_combined_ca = 0.0
+        for key in combined_keys:
             if key in recap_ca.get("global", {}):
-                total_combined_ca += recap_ca["global"][key]
-        
-        # Utiliser les paliers de la premiere plateforme (GLOBAL_ACR) pour determiner le taux
-        first_rule = contract_rules.get("GLOBAL_ACR") or contract_rules.get("GLOBAL_DCA") or \
-                     contract_rules.get("GLOBAL_ALLIANCE") or contract_rules.get("GLOBAL_EXADIS")
-        
+                total_combined_ca += float(recap_ca["global"][key] or 0)
+
+        first_rule = None
+        for key in combined_keys:
+            if key in contract_rules:
+                first_rule = contract_rules[key]
+                break
+
         if first_rule and first_rule.scope == RuleScope.GLOBAL:
             tiers_rfa_json = first_rule.tiers_rfa or "[]"
             tiers_bonus_json = first_rule.tiers_bonus or "[]"
             combined_tiers_rfa = json.loads(tiers_rfa_json) if tiers_rfa_json else []
             combined_tiers_bonus = json.loads(tiers_bonus_json) if tiers_bonus_json else []
-            
-            # Calculer le taux base sur le total combine
+
             combined_result_rfa = compute_tier(total_combined_ca, combined_tiers_rfa)
             combined_result_bonus = compute_tier(total_combined_ca, combined_tiers_bonus)
-            
+
             combined_rate_rfa = combined_result_rfa["rate"]
             combined_rate_bonus = combined_result_bonus["rate"]
             combined_min_reached_rfa = combined_result_rfa["selected_min"]
             combined_min_reached_bonus = combined_result_bonus["selected_min"]
-            
-            print(f"[COMBINED MODE] CA Total: {total_combined_ca:.2f}, Taux RFA: {combined_rate_rfa*100:.2f}%, Taux Bonus: {combined_rate_bonus*100:.2f}%")
-    
+
+            print(
+                f"[COMBINED MODE] keys={combined_keys} CA Total: {total_combined_ca:.2f}, "
+                f"Taux RFA: {combined_rate_rfa*100:.2f}%, Taux Bonus: {combined_rate_bonus*100:.2f}%"
+            )
+    else:
+        combined_keys = list(GLOBAL_PLATFORMS)
+
+    # Bonus APA Nord+Franchise (12 % Alliance+ACR sous conditions)
+    apa_boost = evaluate_apa_nord_franchise(recap_ca, contract, year=year)
+    apa_boost_keys = set()
+    if apa_boost and apa_boost.get("triggered"):
+        apa_boost_keys = set(apa_boost.get("platforms") or [])
+        print(f"[APA NORD+FRANCHISE] déclenché → {apa_boost.get('rate')*100:.0f}% sur {apa_boost_keys}")
+    elif apa_boost:
+        print("[APA NORD+FRANCHISE] conditions non remplies")
+
     for key in GLOBAL_PLATFORMS:
         if key not in recap_ca.get("global", {}):
             continue
@@ -369,7 +467,8 @@ def calculate_rfa(
             has_bonus_override = True
         
         # MODE COMBINE: utiliser le taux global au lieu du taux par fournisseur
-        if use_combined_rate and combined_rate_rfa is not None:
+        # (uniquement sur les plateformes participantes du barème combiné)
+        if use_combined_rate and combined_rate_rfa is not None and key in combined_keys:
             # Appliquer le taux combine a ce fournisseur
             rfa_value = ca * combined_rate_rfa
             rfa_result = {
@@ -394,6 +493,7 @@ def calculate_rfa(
             bonus_result["has_override"] = has_bonus_override
         else:
             # MODE NORMAL ou NIVEAUX: calculer RFA par fournisseur individuellement
+            # (ou plateforme hors périmètre combiné → barème propre, souvent vide)
             rfa_result = compute_tier(ca, tiers_rfa)
             # Ajouter le seuil minimal (premier palier)
             rfa_min_threshold = tiers_rfa[0]["min"] if tiers_rfa and len(tiers_rfa) > 0 else None
@@ -406,7 +506,29 @@ def calculate_rfa(
             bonus_min_threshold = tiers_bonus[0]["min"] if tiers_bonus and len(tiers_bonus) > 0 else None
             bonus_result["min_threshold"] = bonus_min_threshold
             bonus_result["has_override"] = has_bonus_override
-        
+
+        # APA Nord+Franchise : forcer 12 % RFA sur Alliance + ACR (sans bonus)
+        if key in apa_boost_keys:
+            boost_rate = float(apa_boost.get("rate") or APA_NORD_FRANCHISE_RATE)
+            rfa_result = {
+                "ca": ca,
+                "selected_min": APA_NORD_FRANCHISE_ALLIANCE_MIN,
+                "min_threshold": APA_NORD_FRANCHISE_ALLIANCE_MIN,
+                "rate": boost_rate,
+                "triggered": True,
+                "value": ca * boost_rate,
+                "has_override": has_rfa_override,
+                "apa_nord_franchise": True,
+            }
+            bonus_result = {
+                "ca": ca,
+                "selected_min": None,
+                "min_threshold": None,
+                "rate": 0.0,
+                "triggered": False,
+                "value": 0.0,
+                "has_override": has_bonus_override,
+            }
         # Total
         total_rate = rfa_result["rate"] + bonus_result["rate"]
         total_value = rfa_result["value"] + bonus_result["value"]
@@ -493,6 +615,9 @@ def calculate_rfa(
         if warning_prime.get("triggered"):
             fixed_bonus_ht = float(warning_prime.get("amount_ht") or 0.0)
             grand_total += fixed_bonus_ht
+
+    if apa_boost is not None:
+        result["apa_nord_franchise"] = apa_boost
 
     result["fixed_bonuses"] = fixed_bonuses
     result["totals"] = {
