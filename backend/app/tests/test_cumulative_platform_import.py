@@ -116,3 +116,53 @@ def test_write_cumulative_platform_rows_keeps_months_and_isolates_platforms(tmp_
     exadis = [r for r in rows if r["fournisseur"] == "EXADIS"]
     assert len(exadis) == 1
     assert exadis[0]["month"] == 7
+
+
+def test_failed_replace_rolls_back_and_keeps_old_rows(tmp_path, monkeypatch):
+    """Si l'INSERT echoue apres le DELETE, rollback → anciennes lignes intactes."""
+    import app.services.pure_data_cumulative_supabase as cum
+    from sqlalchemy import create_engine, event
+
+    db_path = tmp_path / "test_rollback.db"
+    test_engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    monkeypatch.setattr(cum, "engine", test_engine)
+
+    seed = [
+        {
+            "mois": 1, "annee": 2026, "code_union": "A1", "raison_sociale": "Client A",
+            "groupe_client": "", "region_commerciale": "", "fournisseur": "EXADIS",
+            "marque": "TRW", "groupe_frs": "", "famille": "FREINAGE", "sous_famille": "",
+            "ca": 42, "commercial": "Bob",
+        }
+    ]
+    write_cumulative_platform_rows(seed, fournisseur="EXADIS", reporting_month=1, reporting_year=2026)
+    assert count_cumulative_rows_by_platform()["EXADIS"] == 1
+
+    boom = {"n": 0}
+
+    @event.listens_for(test_engine, "before_cursor_execute")
+    def _boom(conn, cursor, statement, parameters, context, executemany):
+        if statement.strip().upper().startswith("INSERT"):
+            boom["n"] += 1
+            if boom["n"] >= 1:
+                raise RuntimeError("insert simulated failure")
+
+    new_rows = [
+        {
+            "mois": m, "annee": 2026, "code_union": "A1", "raison_sociale": "Client A",
+            "groupe_client": "", "region_commerciale": "", "fournisseur": "EXADIS",
+            "marque": "TRW", "groupe_frs": "", "famille": "FREINAGE", "sous_famille": "",
+            "ca": 1, "commercial": "Bob",
+        }
+        for m in range(1, 4)
+    ]
+    try:
+        write_cumulative_platform_rows(new_rows, fournisseur="EXADIS", reporting_month=3, reporting_year=2026)
+        assert False, "should have raised"
+    except RuntimeError:
+        pass
+
+    rows, _, _ = read_cumulative_rows()
+    exadis = [r for r in rows if r["fournisseur"] == "EXADIS"]
+    assert len(exadis) == 1
+    assert float(exadis[0]["ca"]) == 42.0

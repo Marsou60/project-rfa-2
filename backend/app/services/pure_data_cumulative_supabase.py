@@ -140,65 +140,21 @@ def _clean_tuple(row: Dict, *, fallback_month: Optional[int], force_fournisseur:
     return tuple(vals)
 
 
-def _insert_rows(clean_tuples: List[tuple]) -> int:
-    if not clean_tuples:
-        return 0
-    col_list = ", ".join(f'"{c}"' for c in COLUMNS)
-
-    if engine.dialect.name == "postgresql":
-        from psycopg2.extras import execute_values
-        raw = engine.raw_connection()
-        try:
-            cur = raw.cursor()
-            sql = f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES %s'
-            BATCH = 1000
-            total = 0
-            for i in range(0, len(clean_tuples), BATCH):
-                batch = clean_tuples[i:i + BATCH]
-                execute_values(cur, sql, batch, page_size=len(batch))
-                total += len(batch)
-            raw.commit()
-            return total
-        finally:
-            raw.close()
-
+def _delete_sql_and_params(platform: str, years: List[int]):
+    """Construit le DELETE scope plateforme × annees."""
     from sqlalchemy import text
-    placeholders = ", ".join(f":{c}" for c in COLUMNS)
-    insert_sql = f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES ({placeholders})'
-    with engine.begin() as conn:
-        BATCH = 500
-        total = 0
-        for i in range(0, len(clean_tuples), BATCH):
-            batch = [
-                {c: v for c, v in zip(COLUMNS, t)}
-                for t in clean_tuples[i:i + BATCH]
-            ]
-            conn.execute(text(insert_sql), batch)
-            total += len(batch)
-    return total
 
-
-def _delete_platform_years(fournisseur: str, years: List[int]) -> int:
-    """Supprime les lignes d'une plateforme pour les annees donnees."""
-    _ensure_table()
-    platform = normalize_platform(fournisseur)
-    if not platform:
-        return 0
     clean_years = sorted({int(y) for y in years if y is not None})
-    from sqlalchemy import text
-
     if not clean_years:
-        with engine.begin() as conn:
-            res = conn.execute(
-                text(
-                    f'''
-                    DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
-                    WHERE UPPER(TRIM("fournisseur")) = :frs
-                    '''
-                ),
-                {"frs": platform},
-            )
-            return int(res.rowcount or 0)
+        return (
+            text(
+                f'''
+                DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
+                WHERE UPPER(TRIM("fournisseur")) = :frs
+                '''
+            ),
+            {"frs": platform},
+        )
 
     params = {"frs": platform}
     year_placeholders = []
@@ -213,9 +169,83 @@ def _delete_platform_years(fournisseur: str, years: List[int]) -> int:
           AND "annee" IN ({", ".join(year_placeholders)})
         '''
     )
+    return sql, params
+
+
+def _replace_platform_rows_atomic(
+    platform: str,
+    years: List[int],
+    clean_tuples: List[tuple],
+) -> Tuple[int, int]:
+    """
+    DELETE + INSERT dans UNE seule transaction.
+    Si l'insert echoue → rollback → anciennes lignes conservees.
+    Retourne (deleted, inserted).
+    """
+    _ensure_table()
+    delete_sql, delete_params = _delete_sql_and_params(platform, years)
+    col_list = ", ".join(f'"{c}"' for c in COLUMNS)
+
+    if engine.dialect.name == "postgresql":
+        from psycopg2.extras import execute_values
+        raw = engine.raw_connection()
+        try:
+            cur = raw.cursor()
+            # Bind delete via sqlalchemy text params → expand manually for psycopg2
+            # Re-execute delete with named params converted
+            if years:
+                year_list = sorted({int(y) for y in years if y is not None})
+                cur.execute(
+                    f'''
+                    DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
+                    WHERE UPPER(TRIM("fournisseur")) = %s
+                      AND "annee" IN %s
+                    ''',
+                    (platform, tuple(year_list)),
+                )
+            else:
+                cur.execute(
+                    f'''
+                    DELETE FROM "{PURE_DATA_CUMULATIVE_TABLE}"
+                    WHERE UPPER(TRIM("fournisseur")) = %s
+                    ''',
+                    (platform,),
+                )
+            deleted = int(cur.rowcount or 0)
+
+            sql = f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES %s'
+            BATCH = 1000
+            inserted = 0
+            for i in range(0, len(clean_tuples), BATCH):
+                batch = clean_tuples[i:i + BATCH]
+                execute_values(cur, sql, batch, page_size=len(batch))
+                inserted += len(batch)
+            raw.commit()
+            return deleted, inserted
+        except Exception:
+            raw.rollback()
+            raise
+        finally:
+            raw.close()
+
+    from sqlalchemy import text
+    placeholders = ", ".join(f":{c}" for c in COLUMNS)
+    insert_sql = text(
+        f'INSERT INTO "{PURE_DATA_CUMULATIVE_TABLE}" ({col_list}) VALUES ({placeholders})'
+    )
     with engine.begin() as conn:
-        res = conn.execute(sql, params)
-        return int(res.rowcount or 0)
+        res = conn.execute(delete_sql, delete_params)
+        deleted = int(res.rowcount or 0)
+        inserted = 0
+        BATCH = 500
+        for i in range(0, len(clean_tuples), BATCH):
+            batch = [
+                {c: v for c, v in zip(COLUMNS, t)}
+                for t in clean_tuples[i:i + BATCH]
+            ]
+            conn.execute(insert_sql, batch)
+            inserted += len(batch)
+        return deleted, inserted
 
 
 def filter_rows_for_platform(rows: List[Dict], fournisseur: str) -> Tuple[List[Dict], int]:
@@ -255,6 +285,9 @@ def write_cumulative_platform_rows(
     """
     Remplace les donnees d'UNE plateforme (annees presentes dans le fichier).
     Conserve le mois de chaque ligne ; si absent → reporting_month.
+
+    Atomique : prepare d'abord, puis DELETE+INSERT en une transaction.
+    Echec → rollback, anciennes donnees conservees.
     """
     platform = normalize_platform(fournisseur)
     if not platform:
@@ -288,13 +321,15 @@ def write_cumulative_platform_rows(
     if not years and reporting_year:
         years.add(int(reporting_year))
 
-    _ensure_table()
-    deleted = _delete_platform_years(platform, sorted(years))
+    # Preparer TOUT avant d'ecrire en base
     clean = [
         _clean_tuple(row, fallback_month=reporting_month, force_fournisseur=platform)
         for row in kept
     ]
-    inserted = _insert_rows(clean)
+    if not clean:
+        raise ValueError(f"Aucune ligne exploitable pour {platform} apres nettoyage.")
+
+    deleted, inserted = _replace_platform_rows_atomic(platform, sorted(years), clean)
 
     return {
         "rows_inserted": inserted,
@@ -333,6 +368,9 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
                 total += len(batch)
             raw.commit()
             return total
+        except Exception:
+            raw.rollback()
+            raise
         finally:
             raw.close()
 
