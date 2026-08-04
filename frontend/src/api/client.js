@@ -895,6 +895,8 @@ export const getNetworkDashboard = async ({
   fournisseur,
   commercial,
   region,
+  alertPct = 15,
+  alertCaMin = 5000,
 } = {}) => {
   const response = await api.get('/pure-data/cumulative/network-dashboard', {
     params: {
@@ -903,6 +905,8 @@ export const getNetworkDashboard = async ({
       fournisseur: fournisseur || undefined,
       commercial: commercial || undefined,
       region: region || undefined,
+      alert_pct: alertPct,
+      alert_ca_min: alertCaMin,
     },
   })
   return response.data

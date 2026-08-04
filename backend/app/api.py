@@ -3764,12 +3764,14 @@ async def pure_data_network_dashboard(
     fournisseur: Optional[str] = None,
     commercial: Optional[str] = None,
     region: Optional[str] = None,
+    alert_pct: float = 15.0,
+    alert_ca_min: float = 5000.0,
     session: Session = Depends(get_session),
     user: User = Depends(require_staff),
 ):
     """
     Dashboard Accueil / Pilotage Union :
-    KPI réseau, évolution mois, plateformes, tops marques/familles/clients.
+    KPI, alertes, cross-plateformes, classements par dimension.
     """
     try:
         from app.services.pure_data_network_dashboard import build_network_dashboard
@@ -3798,6 +3800,8 @@ async def pure_data_network_dashboard(
             objectif=objectif_f,
             ca_n1_realise=ca25_f,
             platform_months=platform_months,
+            alert_pct=alert_pct,
+            alert_ca_min=alert_ca_min,
         )
     except HTTPException:
         raise
