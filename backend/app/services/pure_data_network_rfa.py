@@ -120,7 +120,10 @@ def _entity_row_from_rfa(
     rfa_proj: Optional[Dict[str, Any]],
     ca_proj: Optional[float],
     nb_comptes: int = 1,
+    cotisation_setting: Optional[Any] = None,
 ) -> Dict[str, Any]:
+    from app.services.cotisation_2026 import resolve_cotisation_2026_for_entity
+
     totals_ytd = rfa_ytd.get("totals") or {}
     totals_proj = (rfa_proj or {}).get("totals") or {}
     meta_ytd = _contract_meta(contract, rfa_ytd)
@@ -158,6 +161,19 @@ def _entity_row_from_rfa(
             })
 
     rfa_proj_val = round(float(totals_proj.get("grand_total", 0) or 0), 2) if rfa_proj else None
+    rfa_ytd_val = round(float(totals_ytd.get("grand_total", 0) or 0), 2)
+
+    # Cotisation : barème sur niveau d'atterrissage (proj) si dispo, sinon YTD
+    level_for_cotis = meta_proj.get("level_id") or meta_ytd.get("level_id")
+    cotisation = resolve_cotisation_2026_for_entity(
+        entity_key=code,
+        level_based=level_based,
+        level_id=level_for_cotis,
+        contract_name=contract_name,
+        setting=cotisation_setting,
+    )
+    deducted = float(cotisation.get("deducted") or 0)
+
     row = {
         "entity_type": entity_type,
         "code": code,
@@ -173,12 +189,15 @@ def _entity_row_from_rfa(
         "nb_comptes": nb_comptes,
         "ca_ytd": round(ca_ytd, 2),
         "ca_proj": round(ca_proj, 2) if ca_proj is not None else None,
-        "rfa_ytd": round(float(totals_ytd.get("grand_total", 0) or 0), 2),
+        "rfa_ytd": rfa_ytd_val,
         "rfa_ytd_global": round(float(totals_ytd.get("global_total", 0) or 0), 2),
         "rfa_ytd_tri": round(float(totals_ytd.get("tri_total", 0) or 0), 2),
         "rfa_proj": rfa_proj_val,
         "rfa_proj_global": round(float(totals_proj.get("global_total", 0) or 0), 2) if rfa_proj else None,
         "rfa_proj_tri": round(float(totals_proj.get("tri_total", 0) or 0), 2) if rfa_proj else None,
+        "rfa_ytd_net": round(max(rfa_ytd_val - deducted, 0), 2),
+        "rfa_proj_net": round(max((rfa_proj_val or 0) - deducted, 0), 2) if rfa_proj_val is not None else None,
+        "cotisation": cotisation,
         # Comparaison 2025 (remplie ensuite si import Excel dispo)
         "ca_2025": None,
         "rfa_2025": None,
@@ -265,6 +284,22 @@ def compute_network_rfa_2026(
 
     independents_meta, groups_meta = _partition_entities(rows_year, dissolved)
 
+    # Cotisations 2026 (Facturer / Offrir) — ne pas mélanger avec legacy 2025
+    cotisation_by_key: Dict[str, Any] = {}
+    try:
+        from sqlmodel import Session, select
+        from app.database import engine
+        from app.models import CotisationSetting
+
+        with Session(engine) as session:
+            rows_cot = session.exec(
+                select(CotisationSetting).where(CotisationSetting.year == int(year))
+            ).all()
+            for c in rows_cot:
+                cotisation_by_key[_norm_text(c.entity_key)] = c
+    except Exception as exc:
+        print(f"[NETWORK RFA] cotisations 2026 non chargées: {exc}")
+
     independents_rows: List[Dict[str, Any]] = []
     groups_rows: List[Dict[str, Any]] = []
 
@@ -319,6 +354,7 @@ def compute_network_rfa_2026(
             rfa_proj=rfa_proj,
             ca_proj=ca_proj,
             nb_comptes=1,
+            cotisation_setting=cotisation_by_key.get(_norm_text(code)),
         ))
         _accumulate(ytd, rfa_ytd)
         if rfa_proj:
@@ -354,6 +390,7 @@ def compute_network_rfa_2026(
             rfa_proj=rfa_proj,
             ca_proj=ca_proj,
             nb_comptes=len(set(meta["codes"])),
+            cotisation_setting=cotisation_by_key.get(_norm_text(groupe)),
         ))
         _accumulate(ytd, rfa_ytd)
         if rfa_proj:
@@ -361,6 +398,42 @@ def compute_network_rfa_2026(
 
     independents_rows.sort(key=lambda r: r["rfa_ytd"], reverse=True)
     groups_rows.sort(key=lambda r: r["rfa_ytd"], reverse=True)
+
+    # Synthèse cotisations 2026
+    cotisation_summary = {
+        "total_amount": 0.0,
+        "total_facture": 0.0,
+        "total_offerte": 0.0,
+        "nb_facture": 0,
+        "nb_offerte": 0,
+        "nb_zero": 0,
+        "nb_entities": 0,
+    }
+    for e in independents_rows + groups_rows:
+        c = e.get("cotisation") or {}
+        amt = float(c.get("amount") or 0)
+        cotisation_summary["nb_entities"] += 1
+        cotisation_summary["total_amount"] = round(cotisation_summary["total_amount"] + amt, 2)
+        if amt <= 0:
+            cotisation_summary["nb_zero"] += 1
+        elif c.get("is_offerte"):
+            cotisation_summary["total_offerte"] = round(cotisation_summary["total_offerte"] + amt, 2)
+            cotisation_summary["nb_offerte"] += 1
+        else:
+            cotisation_summary["total_facture"] = round(cotisation_summary["total_facture"] + amt, 2)
+            cotisation_summary["nb_facture"] += 1
+
+    ytd_net = round(
+        float(ytd["grand_total"]) - cotisation_summary["total_facture"], 2
+    )
+    proj_net = None
+    if projection_factor:
+        proj_net = round(
+            float(projected["grand_total"]) - cotisation_summary["total_facture"], 2
+        )
+    ytd["grand_total_net"] = max(ytd_net, 0)
+    if projection_factor:
+        projected["grand_total_net"] = max(proj_net or 0, 0)
 
     return {
         "available": True,
@@ -371,6 +444,7 @@ def compute_network_rfa_2026(
         "projected": projected if projection_factor else None,
         "independents": independents_rows,
         "groups": groups_rows,
+        "cotisations": cotisation_summary,
         "counts": {
             "independents": len(independents_rows),
             "groups": len(groups_rows),

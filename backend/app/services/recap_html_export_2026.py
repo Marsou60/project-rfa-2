@@ -243,15 +243,30 @@ tr.entity.selected {{ background: var(--accent-soft); }}
 .footnote {{
   margin-top: 18px; font-size: 11px; color: var(--muted); line-height: 1.5;
 }}
+.tabs {{
+  display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+}}
+.tab {{
+  border: 1px solid var(--line); background: #f8fafc; color: var(--ink-soft);
+  border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+}}
+.tab.active {{ background: var(--ink); color: #fff; border-color: var(--ink); }}
+.view {{ display: none; }}
+.view.active {{ display: block; }}
+.hide-amounts .cot-amt, .hide-amounts .cot-col-amt {{ visibility: hidden; }}
+.tag.offerte {{ background: #dcfce7; color: #15803d; }}
+.tag.facture {{ background: #fee2e2; color: #b91c1c; }}
+.tag.zero {{ background: #f1f5f9; color: #64748b; }}
 @media (max-width: 980px) {{
   .kpi-grid {{ grid-template-columns: 1fr 1fr; }}
   .layout {{ grid-template-columns: 1fr; }}
 }}
 @media print {{
   body {{ background: #fff; }}
-  .actions, .toolbar, .btn {{ display: none !important; }}
+  .actions, .toolbar, .btn, .tabs {{ display: none !important; }}
   .kpi, .panel {{ box-shadow: none; }}
   .layout {{ grid-template-columns: 1fr; }}
+  .view {{ display: block !important; }}
   @page {{ size: A4 landscape; margin: 10mm; }}
 }}
 </style>
@@ -275,6 +290,13 @@ tr.entity.selected {{ background: var(--accent-soft); }}
       <button class="btn" type="button" id="btn-mode-proj">Vue projection</button>
     </div>
   </header>
+
+  <nav class="tabs" id="main-tabs">
+    <button type="button" class="tab active" data-view="rfa">Réseau RFA</button>
+    <button type="button" class="tab" data-view="cotisations">Cotisations 2026</button>
+  </nav>
+
+  <div id="view-rfa" class="view active">
 
   <section class="kpi-grid">
     <article class="kpi ytd active" data-focus="ytd" id="kpi-ytd">
@@ -349,6 +371,70 @@ tr.entity.selected {{ background: var(--accent-soft); }}
     Pour Adhérents 2026, le niveau d’atterrissage (Classique / Silver / Gold) est recalculé sur le CA projeté fin d’année — pas une simple extrapolation de la RFA.
     RFA 2025 = montant Vue RFA Excel pour la même entité. Contrats spéciaux : pas de jargon Silver/Gold, seul le nom du contrat s’affiche.
   </p>
+  </div><!-- /view-rfa -->
+
+  <div id="view-cotisations" class="view">
+    <section class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+      <article class="kpi">
+        <div class="label">Total théorique</div>
+        <div class="value cot-amt" id="cot-kpi-total">—</div>
+        <div class="hint">Somme des barèmes 2026</div>
+      </article>
+      <article class="kpi n1">
+        <div class="label">À facturer / déduire</div>
+        <div class="value cot-amt" id="cot-kpi-facture">—</div>
+        <div class="hint" id="cot-kpi-facture-n">—</div>
+      </article>
+      <article class="kpi ytd">
+        <div class="label">Offertes (geste)</div>
+        <div class="value cot-amt" id="cot-kpi-offerte">—</div>
+        <div class="hint" id="cot-kpi-offerte-n">—</div>
+      </article>
+      <article class="kpi proj">
+        <div class="label">RFA proj. nette</div>
+        <div class="value" id="cot-kpi-rfa-net">—</div>
+        <div class="hint">Après cotisations facturées</div>
+      </article>
+    </section>
+
+    <section class="panel" id="cot-panel">
+      <div class="toolbar">
+        <h2 style="margin:0;flex:1">Détail cotisations 2026</h2>
+        <button class="btn" type="button" id="btn-hide-cot">Masquer montants par client</button>
+        <div class="chips" id="cot-filter-chips">
+          <button type="button" class="chip active" data-cot-filter="all">Tous</button>
+          <button type="button" class="chip" data-cot-filter="facture">Facturées</button>
+          <button type="button" class="chip" data-cot-filter="offerte">Offertes</button>
+          <button type="button" class="chip" data-cot-filter="special">Spéciaux</button>
+          <button type="button" class="chip" data-cot-filter="level">Adhérents 2026</button>
+        </div>
+      </div>
+      <p class="mode-note">
+        Classique 500 € · Silver 1 000 € · Gold 1 800 € · contrats spécifiques selon fiche (500 / 1 000 / 1 800 €).
+        Offrir / Facturer se gère dans l’application (espace client / liste adhérents) — ce fichier reflète l’état en base au moment de l’export.
+      </p>
+      <div style="overflow:auto; max-height: 640px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Entité</th>
+              <th>Barème</th>
+              <th>Statut</th>
+              <th class="num cot-col-amt">Montant</th>
+              <th class="num">RFA proj.</th>
+              <th class="num">RFA nette</th>
+            </tr>
+          </thead>
+          <tbody id="cot-tbody"></tbody>
+        </table>
+      </div>
+      <p class="footnote" style="margin-top:12px">
+        Total facturé / déduit : <strong class="cot-amt" id="cot-foot-facture">—</strong>
+        · Total offert : <strong class="cot-amt" id="cot-foot-offerte">—</strong>
+        · Total théorique : <strong class="cot-amt" id="cot-foot-total">—</strong>
+      </p>
+    </section>
+  </div><!-- /view-cotisations -->
 </div>
 
 <script id="payload" type="application/json">{data_json}</script>
@@ -365,6 +451,8 @@ tr.entity.selected {{ background: var(--accent-soft); }}
   let sortDir = 'desc';
   let selectedId = null;
   let query = '';
+  let hideCotAmounts = true; // par défaut masqué (souvent offertes)
+  let cotFilter = 'all';
 
   const euro = (v) => {{
     if (v == null || Number.isNaN(Number(v))) return '—';
@@ -614,9 +702,105 @@ tr.entity.selected {{ background: var(--accent-soft); }}
     }});
   }});
 
+  function setView(name) {{
+    document.querySelectorAll('#main-tabs .tab').forEach(t => {{
+      t.classList.toggle('active', t.getAttribute('data-view') === name);
+    }});
+    document.getElementById('view-rfa').classList.toggle('active', name === 'rfa');
+    document.getElementById('view-cotisations').classList.toggle('active', name === 'cotisations');
+  }}
+
+  function cotStatus(c) {{
+    const amt = Number((c || {{}}).amount || 0);
+    if (amt <= 0) return {{ key: 'zero', label: '—' }};
+    if (c.is_offerte) return {{ key: 'offerte', label: 'Offerte' }};
+    return {{ key: 'facture', label: 'Facturée' }};
+  }}
+
+  function renderCotisations() {{
+    const summary = DATA.cotisations || {{}};
+    const total = Number(summary.total_amount || 0);
+    const facture = Number(summary.total_facture || 0);
+    const offerte = Number(summary.total_offerte || 0);
+    document.getElementById('cot-kpi-total').textContent = euro(total);
+    document.getElementById('cot-kpi-facture').textContent = euro(facture);
+    document.getElementById('cot-kpi-offerte').textContent = euro(offerte);
+    document.getElementById('cot-kpi-facture-n').textContent = (summary.nb_facture || 0) + ' entité(s)';
+    document.getElementById('cot-kpi-offerte-n').textContent = (summary.nb_offerte || 0) + ' entité(s)';
+    const projNet = ((DATA.projected || {{}}).grand_total_net);
+    const proj = Number(((DATA.projected || {{}}).grand_total) ?? 0);
+    document.getElementById('cot-kpi-rfa-net').textContent = euro(projNet != null ? projNet : Math.max(proj - facture, 0));
+    document.getElementById('cot-foot-facture').textContent = euro(facture);
+    document.getElementById('cot-foot-offerte').textContent = euro(offerte);
+    document.getElementById('cot-foot-total').textContent = euro(total);
+
+    const panel = document.getElementById('cot-panel');
+    panel.classList.toggle('hide-amounts', hideCotAmounts);
+    document.getElementById('btn-hide-cot').textContent = hideCotAmounts
+      ? 'Afficher montants par client'
+      : 'Masquer montants par client';
+
+    let list = entities.slice().filter(e => Number((e.cotisation || {{}}).amount || 0) > 0 || true);
+    if (cotFilter === 'facture') list = list.filter(e => (e.cotisation || {{}}).is_facture);
+    if (cotFilter === 'offerte') list = list.filter(e => (e.cotisation || {{}}).is_offerte);
+    if (cotFilter === 'special') list = list.filter(e => (e.cotisation || {{}}).source === 'special');
+    if (cotFilter === 'level') list = list.filter(e => (e.cotisation || {{}}).source === 'level');
+    list = list.filter(e => Number((e.cotisation || {{}}).amount || 0) > 0);
+    list.sort((a, b) => Number((b.cotisation || {{}}).amount || 0) - Number((a.cotisation || {{}}).amount || 0));
+
+    const tbody = document.getElementById('cot-tbody');
+    tbody.innerHTML = list.map(e => {{
+      const c = e.cotisation || {{}};
+      const st = cotStatus(c);
+      const tag = e._type === 'group'
+        ? '<span class="tag grp">Groupe</span>'
+        : '<span class="tag ind">Indép.</span>';
+      const rfa = e.rfa_proj ?? e.rfa_ytd;
+      const net = e.rfa_proj_net ?? e.rfa_ytd_net ?? rfa;
+      return `<tr>
+        <td>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${{tag}}
+            <strong>${{escapeHtml(e.nom || e.code)}}</strong>
+            ${{levelBadge(e)}}
+          </div>
+          <div class="muted">${{escapeHtml(e.code)}}</div>
+        </td>
+        <td>
+          <div>${{escapeHtml(c.label || '—')}}</div>
+          <div class="muted">${{escapeHtml(e.type_contrat || '')}}</div>
+        </td>
+        <td><span class="tag ${{st.key}}">${{st.label}}</span></td>
+        <td class="num cot-col-amt"><strong>${{euro(c.amount)}}</strong></td>
+        <td class="num">${{euro(rfa)}}</td>
+        <td class="num"><strong>${{euro(net)}}</strong></td>
+      </tr>`;
+    }}).join('') || `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Aucune cotisation</td></tr>`;
+  }}
+
+  document.getElementById('main-tabs').addEventListener('click', (ev) => {{
+    const tab = ev.target.closest('.tab');
+    if (!tab) return;
+    setView(tab.getAttribute('data-view'));
+    if (tab.getAttribute('data-view') === 'cotisations') renderCotisations();
+  }});
+  document.getElementById('btn-hide-cot').addEventListener('click', () => {{
+    hideCotAmounts = !hideCotAmounts;
+    renderCotisations();
+  }});
+  document.querySelectorAll('#cot-filter-chips .chip').forEach(chip => {{
+    chip.addEventListener('click', () => {{
+      document.querySelectorAll('#cot-filter-chips .chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      cotFilter = chip.getAttribute('data-cot-filter');
+      renderCotisations();
+    }});
+  }});
+
   renderLevelsBar();
   renderChart();
   setMode('proj');
+  renderCotisations();
 }})();
 </script>
 </body>

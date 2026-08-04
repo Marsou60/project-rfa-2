@@ -446,25 +446,35 @@ export const downloadContractPdf = async (mode, entityId, groupeClient = null, o
 
 // ── Cotisation Union (stockée en DB — partagée browser / Tauri / prod) ───────────
 
-export const getCotisations = async (entityType = null) => {
-  const params = entityType ? { entity_type: entityType } : {}
+export const getCotisations = async (entityType = null, year = null) => {
+  const params = {}
+  if (entityType) params.entity_type = entityType
+  if (year != null) params.year = year
   const response = await api.get('/cotisations', { params })
-  return response.data // [{entity_key, entity_type, amount, facturee, deduite}, ...]
+  return response.data // [{entity_key, entity_type, amount, facturee, deduite, year}, ...]
 }
 
 export const upsertCotisation = async (entityType, entityKey, data) => {
   const key = String(entityKey || '').trim().toUpperCase()
+  const body = {
+    amount: data.amount,
+    facturee: Boolean(data.facturee),
+    deduite: Boolean(data.deduite),
+  }
+  if (data.year != null) body.year = data.year
   const response = await api.put(
     `/cotisations/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`,
-    { amount: data.amount, facturee: Boolean(data.facturee), deduite: Boolean(data.deduite) },
+    body,
   )
   return response.data
 }
 
-export const deleteCotisation = async (entityType, entityKey) => {
+export const deleteCotisation = async (entityType, entityKey, year = null) => {
   const key = String(entityKey || '').trim().toUpperCase()
+  const params = year != null ? { year } : {}
   const response = await api.delete(
     `/cotisations/${encodeURIComponent(entityType)}/${encodeURIComponent(key)}`,
+    { params },
   )
   return response.data
 }

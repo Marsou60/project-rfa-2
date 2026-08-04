@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
-import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026 } from '../api/client'
+import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026, upsertCotisation } from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -36,10 +36,16 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
 
   const refreshCotisationMap = useCallback(async () => {
     try {
-      const list = await getCotisations(mode)
+      // Espace client Pure Data = RFA 2026 → cotisations year=2026 (séparées du legacy 2025)
+      const list = await getCotisations(mode, 2026)
       const map = {}
       for (const item of list || []) {
-        map[item.entity_key] = { amount: item.amount, facturee: item.facturee, deduite: item.deduite }
+        map[item.entity_key] = {
+          amount: item.amount,
+          facturee: item.facturee,
+          deduite: item.deduite,
+          year: 2026,
+        }
       }
       setCotisationMap(map)
     } catch {
@@ -383,6 +389,29 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
     [cotisationMap, mode, entity],
   )
 
+  const setCotisation2026Status = useCallback(async ({ facturee, deduite, amount }) => {
+    if (!entity) return
+    const key = (mode === 'group'
+      ? (entity.groupe_client || entity.id || '')
+      : (entity.code_union || entity.id || '')
+    ).toString().trim().toUpperCase()
+    if (!key) return
+    const amt = Number(amount ?? cotisationInfo.amount) || 0
+    if (amt <= 0) return
+    try {
+      await upsertCotisation(mode === 'group' ? 'group' : 'client', key, {
+        amount: amt,
+        facturee: Boolean(facturee),
+        deduite: Boolean(deduite),
+        year: 2026,
+      })
+      await refreshCotisationMap()
+    } catch (err) {
+      console.error('Cotisation 2026:', err)
+      setError(err?.response?.data?.detail || err.message || 'Erreur cotisation')
+    }
+  }, [entity, mode, cotisationInfo.amount, refreshCotisationMap])
+
   const cotisationMonthly = useMemo(
     () => (cotisationInfo.amount > 0 ? cotisationInfo.amount / 12 : 0),
     [cotisationInfo.amount],
@@ -705,26 +734,35 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
           {cotisationInfo.amount > 0 && cotisationInfo.isOfferte && (
             <div className="rounded-xl border-2 px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-emerald-50 border-emerald-300 text-emerald-900">
               <div>
-                <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union</div>
+                <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union 2026</div>
                 <div className="text-lg font-black">{formatAmount(cotisationInfo.amount)}</div>
                 <div className="text-xs mt-0.5 opacity-90">
                   {formatMonthlyAmount(cotisationMonthly)} × 12 mois = {formatAmount(cotisationInfo.amount)}
                 </div>
                 <p className="text-sm mt-1">
                   <span className="font-semibold text-emerald-800">Geste commercial</span> — cotisation Union offerte. La RFA
-                  affichée reste intégrale. Cette cotisation s&apos;adapte à votre activité (achats totaux et RFA versée), dans la
-                  limite de 3 000 € par an, en ligne avec les standards du marché.
+                  affichée reste intégrale.
                 </p>
               </div>
-              <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-emerald-200 text-emerald-900">
-                Offerte
-              </span>
+              <div className="flex flex-col items-end gap-2">
+                <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-emerald-200 text-emerald-900">
+                  Offerte
+                </span>
+                {!isAdherent && (
+                  <button
+                    type="button"
+                    onClick={() => setCotisation2026Status({ facturee: true, deduite: true, amount: cotisationInfo.amount })}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+                  >
+                    Facturer à la place
+                  </button>
+                )}
+              </div>
             </div>
           )}
           {entity && cotisationInfo.amount === 0 && !isAdherent && (
             <p className="text-xs text-gray-500 -mt-2">
-              Aucune cotisation enregistrée dans la liste adhérents pour cet adhérent — activez-la là-bas pour l&apos;afficher ici
-              et dans l&apos;export PDF.
+              Aucune cotisation 2026 enregistrée pour cet adhérent — lancez le seed cotisations ou activez-la manuellement.
             </p>
           )}
 
@@ -1147,20 +1185,29 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
           {cotisationInfo.amount > 0 && cotisationInfo.isFacture && (
             <div className="rounded-xl border-2 px-4 py-3 flex flex-wrap items-center justify-between gap-3 bg-orange-50 border-orange-300 text-orange-950">
               <div>
-                <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union</div>
+                <div className="text-xs font-bold uppercase tracking-wide opacity-80">Cotisation Union 2026</div>
                 <div className="text-lg font-black">{formatAmount(cotisationInfo.amount)}</div>
                 <div className="text-xs mt-0.5 opacity-90">
                   {formatMonthlyAmount(cotisationMonthly)} × 12 mois = {formatAmount(cotisationInfo.amount)}
                 </div>
                 <p className="text-sm mt-1">
-                  <span className="font-semibold text-orange-800">Facturée</span> — détail affiché dans l&apos;export PDF. Cette
-                  cotisation s&apos;adapte à votre activité (achats totaux et RFA versée), dans la limite de 3 000 € par an, en ligne
-                  avec les standards du marché.
+                  <span className="font-semibold text-orange-800">Facturée</span> — déduite du montant RFA 2026.
                 </p>
               </div>
-              <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-orange-200 text-orange-900">
-                Facturée
-              </span>
+              <div className="flex flex-col items-end gap-2">
+                <span className="shrink-0 px-3 py-1.5 rounded-full text-sm font-bold bg-orange-200 text-orange-900">
+                  Facturée
+                </span>
+                {!isAdherent && (
+                  <button
+                    type="button"
+                    onClick={() => setCotisation2026Status({ facturee: false, deduite: false, amount: cotisationInfo.amount })}
+                    className="text-xs font-bold px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow"
+                  >
+                    Offrir (ne pas déduire)
+                  </button>
+                )}
+              </div>
             </div>
           )}
             </>

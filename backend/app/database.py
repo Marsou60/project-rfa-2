@@ -259,6 +259,7 @@ def init_db():
 
     run_migrations()
     _ensure_pg_level_baremes_column()
+    _ensure_cotisation_year_column()
     seed_admin_user()
     seed_dev_test_user()
 
@@ -275,6 +276,29 @@ def _ensure_pg_level_baremes_column():
             ))
     except Exception as e:
         print(f"[INIT_DB] level_baremes PG migration warning: {e}")
+
+
+def _ensure_cotisation_year_column():
+    """Ajoute cotisationsetting.year pour séparer RFA 2025 / 2026."""
+    try:
+        from sqlalchemy import text
+        if engine.dialect.name == "postgresql":
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE cotisationsetting ADD COLUMN IF NOT EXISTS year INTEGER"
+                ))
+        else:
+            # SQLite
+            with engine.begin() as conn:
+                cols = conn.execute(text("PRAGMA table_info(cotisationsetting)")).fetchall()
+                names = {c[1] for c in cols}
+                if "year" not in names:
+                    conn.execute(text(
+                        "ALTER TABLE cotisationsetting ADD COLUMN year INTEGER"
+                    ))
+                    print("[MIGRATION] Colonne cotisationsetting.year ajoutée")
+    except Exception as e:
+        print(f"[INIT_DB] cotisation year migration warning: {e}")
 
 
 def get_session():

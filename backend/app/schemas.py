@@ -47,6 +47,7 @@ class CotisationSettingBody(BaseModel):
     amount: float
     facturee: bool = True
     deduite: bool = True
+    year: Optional[int] = None  # None = legacy 2025 ; 2026 = RFA 2026
 
 
 class BonusSettingBody(BaseModel):

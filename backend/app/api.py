@@ -1949,13 +1949,25 @@ async def export_pilotage_sheet_only(
 
 # ==================== ENDPOINTS COTISATION (DB — partagé browser/Tauri/prod) ====================
 
+def _cotisation_year_filter(year: Optional[int]):
+    """
+    year=2026 → cotisations 2026 uniquement.
+    year=2025 ou None → legacy (year IS NULL ou year=2025) pour ne pas mélanger avec 2026.
+    """
+    if year is not None and int(year) >= 2026:
+        return CotisationSetting.year == int(year)
+    # Legacy 2025
+    return (CotisationSetting.year.is_(None)) | (CotisationSetting.year == 2025)
+
+
 @router.get("/cotisations")
 async def list_cotisations(
     entity_type: Optional[str] = Query(None, description="'client' ou 'group' — filtre optionnel"),
+    year: Optional[int] = Query(None, description="Année RFA (2025 legacy / 2026). Défaut = legacy 2025."),
     session: Session = Depends(get_session),
 ):
-    """Retourne toutes les cotisations enregistrées, filtrées par entity_type si précisé."""
-    stmt = select(CotisationSetting)
+    """Retourne les cotisations enregistrées, filtrées par entity_type / year."""
+    stmt = select(CotisationSetting).where(_cotisation_year_filter(year))
     if entity_type:
         stmt = stmt.where(CotisationSetting.entity_type == entity_type)
     return session.exec(stmt).all()
@@ -1972,12 +1984,29 @@ async def upsert_cotisation(
     key = (entity_key or "").strip().upper()
     if not key:
         raise HTTPException(status_code=400, detail="entity_key requis")
-    existing = session.exec(
-        select(CotisationSetting).where(
-            CotisationSetting.entity_key == key,
-            CotisationSetting.entity_type == entity_type,
-        )
-    ).first()
+    year = int(body.year) if body.year is not None else None
+    if year is not None and year >= 2026:
+        existing = session.exec(
+            select(CotisationSetting).where(
+                CotisationSetting.entity_key == key,
+                CotisationSetting.entity_type == entity_type,
+                CotisationSetting.year == year,
+            )
+        ).first()
+    else:
+        # Legacy : cibler la ligne year NULL ou 2025
+        rows = session.exec(
+            select(CotisationSetting).where(
+                CotisationSetting.entity_key == key,
+                CotisationSetting.entity_type == entity_type,
+            )
+        ).all()
+        existing = None
+        for r in rows:
+            ry = getattr(r, "year", None)
+            if ry is None or ry == 2025:
+                existing = r
+                break
     if body.amount <= 0:
         if existing:
             session.delete(existing)
@@ -1988,6 +2017,8 @@ async def upsert_cotisation(
         existing.amount = body.amount
         existing.facturee = body.facturee
         existing.deduite = body.deduite
+        if year is not None:
+            existing.year = year
         existing.updated_at = now
         session.add(existing)
     else:
@@ -1997,6 +2028,7 @@ async def upsert_cotisation(
             amount=body.amount,
             facturee=body.facturee,
             deduite=body.deduite,
+            year=year if year is not None else None,
             updated_at=now,
         ))
     session.commit()
@@ -2007,16 +2039,30 @@ async def upsert_cotisation(
 async def delete_cotisation(
     entity_type: str,
     entity_key: str,
+    year: Optional[int] = Query(None),
     session: Session = Depends(get_session),
 ):
     """Supprime la cotisation d'un adhérent/groupe."""
     key = (entity_key or "").strip().upper()
-    existing = session.exec(
-        select(CotisationSetting).where(
-            CotisationSetting.entity_key == key,
-            CotisationSetting.entity_type == entity_type,
-        )
-    ).first()
+    stmt = select(CotisationSetting).where(
+        CotisationSetting.entity_key == key,
+        CotisationSetting.entity_type == entity_type,
+    )
+    if year is not None and int(year) >= 2026:
+        stmt = stmt.where(CotisationSetting.year == int(year))
+    else:
+        rows = session.exec(stmt).all()
+        existing = None
+        for r in rows:
+            ry = getattr(r, "year", None)
+            if ry is None or ry == 2025:
+                existing = r
+                break
+        if existing:
+            session.delete(existing)
+            session.commit()
+        return {"ok": True}
+    existing = session.exec(stmt).first()
     if existing:
         session.delete(existing)
         session.commit()
