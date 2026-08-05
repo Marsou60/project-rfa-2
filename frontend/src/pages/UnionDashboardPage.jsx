@@ -636,24 +636,31 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
             <div className="ud-panel" style={{ borderTop: '4px solid #e0a400' }}>
               <h3>Décrochages récents (silencieux) <span className="ud-acount o">{alertes.clients_recent?.length || 0}</span></h3>
               <p className="psub">
-                Cumul encore correct, mais les 2 derniers mois
+                Cumul encore correct (ou baisse récente nettement plus forte), sur les 2 derniers mois
                 {alertes.recent_months?.length
                   ? ` (${alertes.recent_months.map((m) => MONTH_FR[m]).join(' + ')})`
                   : ''}{' '}
-                décrochent ≥ {alertPct}% vs {data.year_previous} — signal avant la baisse cumulée
+                ≥ {alertPct}% vs {data.year_previous}
+                {alertes.mens_platforms?.length
+                  ? ` · plateformes mensualisées : ${alertes.mens_platforms.join(', ')}`
+                  : ''}
               </p>
               <AlertTable
                 rows={alertes.clients_recent}
                 columns={[
-                  { t: 'Client', render: (r) => <><div className="name">{r.key}</div><div className="subcode">{r.code_union}</div></> },
+                  { t: 'Client', render: (r) => (
+                    <>
+                      <div className="name">{r.key}{r.silent === false ? ' · accélération' : ''}</div>
+                      <div className="subcode">{r.code_union}</div>
+                    </>
+                  ) },
                   { t: '2 derniers mois', render: (r) => fmtCompact(r.recent_current) },
                   { t: `vs ${data.year_previous}`, render: (r) => fmtCompact(r.recent_previous) },
                   { t: 'Écart récent', render: (r) => <span className="neg">{fmtCompact(r.recent_delta)}</span> },
                   { t: 'Récent', render: (r) => <TrendBadge pct={r.recent_pct} /> },
                   { t: 'Cumul', render: (r) => <TrendBadge pct={r.delta_pct} /> },
                 ]}
-              />
-            </div>
+              />            </div>
             <div className="ud-grid2">
               <div className="ud-panel">
                 <h3>Clients à risque <span className="ud-acount r">{alertes.clients_risque?.length || 0}</span></h3>

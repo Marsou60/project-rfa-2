@@ -447,17 +447,22 @@ def build_network_dashboard(
     cli_boom.sort(key=lambda x: -x["delta"])
     cli_new.sort(key=lambda x: -x["current"])
 
-    # Décrochages récents : cumul encore OK, mais les 2 derniers mois plongent
+    # Décrochages récents : chute sur les 2 derniers mois calendaires
+    # (fenêtre = max mois des plateformes mensualisées — ignore les dumps mono-mois type ACR YTD)
     cli_recent: List[Dict[str, Any]] = []
     recent_months: List[int] = []
     mens_platforms = {p for p, ms in plat_months_cur.items() if len(ms) >= 2}
-    if len(months_current) >= 2 and mens_platforms:
-        recent_months = list(months_current[-2:])
+    mens_months = sorted({m for p in mens_platforms for m in plat_months_cur.get(p, ())})
+    if len(mens_months) >= 2:
+        max_m = max(mens_months)
+        recent_months = [m for m in (max_m - 1, max_m) if m >= 1]
         last_m = set(recent_months)
         recent_agg: Dict[str, Dict[str, Any]] = {}
+        # Si aucune plateforme multi-mois, fallback toutes plateformes (mieux que liste vide)
+        plats_for_recent = mens_platforms or set(plat_months_cur.keys())
         for r in rows:
             p = normalize_platform(r.get("fournisseur"))
-            if p not in mens_platforms:
+            if p not in plats_for_recent:
                 continue
             code = _norm(r.get("code_union")).upper()
             if not code:
@@ -498,28 +503,32 @@ def build_network_dashboard(
         for code, o in recent_agg.items():
             if o["rp"] < min_recent:
                 continue
+            if o["cc"] <= 0:
+                continue
             rpct = _pct(o["rc"] - o["rp"], o["rp"])
             cpct = _pct(o["cc"] - o["cp"], o["cp"]) if o["cp"] else None
-            # Signal silencieux : récent ≤ -seuil, mais cumul pas encore en alerte cumul
-            if (
-                rpct is not None
-                and rpct <= -thr
-                and o["cc"] > 0
-                and (cpct is None or cpct > -thr)
-            ):
-                cli_recent.append({
-                    "key": o["name"],
-                    "code_union": code,
-                    "raison_sociale": o["name"],
-                    "recent_current": round(o["rc"], 2),
-                    "recent_previous": round(o["rp"], 2),
-                    "recent_delta": round(o["rc"] - o["rp"], 2),
-                    "recent_pct": rpct,
-                    "current": round(o["cc"], 2),
-                    "previous": round(o["cp"], 2),
-                    "delta_pct": cpct,
-                })
-        cli_recent.sort(key=lambda x: x["recent_delta"])
+            if rpct is None or rpct > -thr:
+                continue
+            # Silencieux = cumul pas encore en alerte, OU récent nettement pire que le cumul
+            silent = cpct is None or cpct > -thr
+            accelerating = cpct is not None and rpct < (cpct - 10)
+            if not (silent or accelerating):
+                continue
+            cli_recent.append({
+                "key": o["name"],
+                "code_union": code,
+                "raison_sociale": o["name"],
+                "recent_current": round(o["rc"], 2),
+                "recent_previous": round(o["rp"], 2),
+                "recent_delta": round(o["rc"] - o["rp"], 2),
+                "recent_pct": rpct,
+                "current": round(o["cc"], 2),
+                "previous": round(o["cp"], 2),
+                "delta_pct": cpct,
+                "silent": silent,
+            })
+        # Vrais silencieux d'abord, puis plus gros écarts récents
+        cli_recent.sort(key=lambda x: (0 if x.get("silent") else 1, x["recent_delta"]))
 
     mar_risque = []
     mar_perdues = []
@@ -578,6 +587,7 @@ def build_network_dashboard(
         "ca_opportunites": ca_oppo,
         "ca_recent": ca_recent,
         "recent_months": recent_months,
+        "mens_platforms": sorted(mens_platforms),
         "n_crit": n_crit,
         "clients_risque": cli_risque[:25],
         "clients_perdus": cli_perdus[:25],
