@@ -5,13 +5,14 @@ IMPORTANT — séparation des années :
 - year < 2026 (ou None) : règles / contrats historiques (RFA 2025).
   Le contrat « Adhérents 2026 » et les contrats « … 2026 » only ne doivent JAMAIS s'appliquer.
 - year >= 2026 :
-  - BASE / Privilege → Adhérents 2026 (contrat standard unique)
-  - contrats spéciaux (~20 : Warning, APC, DPA, groupes, BBH, …) → **conservés**
+  - BASE / Privilege → Adhérents 2026
+  - la liste des contrats spéciaux 2026 (Warning, APC, DPA, groupes, …) → **conservés**
   - APA / Discount : upgrade auto vers leur version 2026
-  - APA 2026 / Discount 2026 / Codifa 2026 → conservés
+  - anciens spéciaux 2025 sortis de cette liste (ex. Contrat BBH, Destock…)
+    → Adhérents 2026 (barème marque × famille, ACR LUK, etc.)
 """
 from sqlmodel import Session, select
-from typing import Optional, List
+from typing import Optional, List, Set
 from app.database import engine
 from app.models import Contract, ContractAssignment, TargetType, ContractScope
 
@@ -42,6 +43,37 @@ YEAR_2026_ONLY_CONTRACT_NAMES = {
     "APA Marseille 2026",
     "Groupe Discount 2026",
     "Otto'Parts / Codifa 2026",
+}
+
+# Contrats spéciaux CONSERVÉS en RFA 2026 (revue direction / annexes).
+# Matching case-insensitive exact OU « le nom DB commence par » (avenants).
+# Tout autre spécial 2025 (ex. Contrat BBH, Destock Villetaneuse) → Adhérents 2026.
+SPECIAL_CONTRACTS_KEPT_IN_2026 = {
+    "Contrat APC",
+    "Contrat Warning",
+    "DPA Montreuil",
+    "DPA Sevran",
+    "Expert Pièce Auto",
+    "GDRP",
+    "Groupe Auto Mourad",
+    "Groupe Center Pièces Auto",
+    "Groupe Center",
+    "Groupe JUMBO PNEU",
+    "Groupe JUMBO",
+    "Groupe SMP",
+    "Kit Auto 92",
+    "Lifting Pièces Auto",
+    "MMPA Créteil",
+    "Pièces Méca Vitry",
+    "PPA Plaisir",
+    "Repar'auto Service",
+    "Techno Pièces Franconville",
+    "Service Auto Tremblay",
+    # upgrades / 2026-only (aussi dans YEAR_2026_ONLY / UPGRADES)
+    "APA Marseille",
+    "Groupe Discount",
+    "Otto'Parts / Codifa 2026",
+    "Otto'Parts / Codifa",
 }
 
 
@@ -76,6 +108,30 @@ def is_year_2026_only_contract(contract: Optional[Contract]) -> bool:
     if not contract:
         return False
     return _name_upper(contract) in {n.upper() for n in YEAR_2026_ONLY_CONTRACT_NAMES}
+
+
+def _kept_special_names_upper() -> Set[str]:
+    return {n.strip().upper() for n in SPECIAL_CONTRACTS_KEPT_IN_2026}
+
+
+def is_special_kept_in_2026(contract: Optional[Contract]) -> bool:
+    """True si le contrat fait partie des spéciaux conservés en RFA 2026."""
+    if not contract:
+        return False
+    if is_year_2026_only_contract(contract):
+        return True
+    if _upgrade_target_for_2026(contract):
+        return True
+    name = _name_upper(contract)
+    if not name:
+        return False
+    for kept in _kept_special_names_upper():
+        if name == kept or name.startswith(kept + " ") or name.startswith(kept + "–") or name.startswith(kept + "-"):
+            return True
+        # DB souvent « Groupe SMP – Contrat Alliance »
+        if kept.startswith("GROUPE ") and name.startswith(kept):
+            return True
+    return False
 
 
 def _upgrade_target_for_2026(contract: Optional[Contract]) -> Optional[str]:
@@ -205,10 +261,19 @@ def apply_year_contract_policy(
             f"[RESOLVE] year={year}: upgrade '{contract.name}' prévu vers '{upgrade_name}' "
             f"mais contrat introuvable — conservation du 2025"
         )
+        return contract
 
-    # Contrats spéciaux (Warning, APC, DPA, BBH, groupes, …) : conservés en 2026
-    print(f"[RESOLVE] year={year}: contrat spécial conservé '{contract.name}'")
-    return contract
+    # Spéciaux encore actifs en 2026 (Warning, APC, DPA, …)
+    if is_special_kept_in_2026(contract):
+        print(f"[RESOLVE] year={year}: contrat spécial conservé '{contract.name}'")
+        return contract
+
+    # Anciens spéciaux 2025 sortis de la liste (BBH, Destock, …) → Adhérents 2026
+    print(
+        f"[RESOLVE] year={year}: ancien spécial '{contract.name}' -> {ADHERENT_2026_NAME} "
+        f"(passé sur le contrat standard 2026)"
+    )
+    return adherent_2026 or contract
 
 
 def _resolve_raw_assignment(
@@ -376,7 +441,7 @@ class BatchContractResolver:
             if is_adherent_2026_contract(contract) or is_year_2026_only_contract(contract):
                 return self._default_legacy
             return contract or self._default_legacy
-        # 2026+ : Adhérents 2026 pour base/privilege ; spéciaux conservés
+        # 2026+
         if contract is None or is_legacy_base_contract(contract):
             return self._adherent_2026 or contract or self._default_legacy
         if is_adherent_2026_contract(contract):
@@ -388,7 +453,11 @@ class BatchContractResolver:
             upgraded = self._by_name.get(upgrade_name.strip().upper())
             if upgraded:
                 return upgraded
-        return contract
+            return contract
+        if is_special_kept_in_2026(contract):
+            return contract
+        # Anciens spéciaux (BBH, …) → Adhérents 2026
+        return self._adherent_2026 or contract or self._default_legacy
 
     def resolve(
         self,
