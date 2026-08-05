@@ -52,17 +52,17 @@ def test_year_2026_maps_base_to_adherent_2026(monkeypatch):
     assert out is modern
 
 
-def test_year_2026_maps_bbh_and_warning_to_adherent_2026(monkeypatch):
-    """Spéciaux 2025 ne suivent plus en RFA 2026 → même contrat Adhérents 2026."""
+def test_year_2026_keeps_special_contracts(monkeypatch):
+    """Warning et autres spéciaux (~20) restent en RFA 2026."""
     modern = SimpleNamespace(name="Adhérents 2026", level_baremes='[{"id":"CLASSIQUE"}]')
     monkeypatch.setattr(
         "app.services.contract_resolver._find_adherent_2026",
         lambda session: modern,
     )
-    for name in ("Contrat BBH", "Contrat Warning", "APC Auto Pièces", "Groupe Center"):
+    for name in ("Contrat Warning", "Contrat BBH", "APC Auto Pièces", "Groupe Center"):
         special = SimpleNamespace(name=name, level_baremes=None)
         out = apply_year_contract_policy(special, 2026, _FakeSession())
-        assert out is modern, name
+        assert out is special, name
 
 
 def test_year_2026_keeps_true_2026_specials(monkeypatch):
@@ -75,10 +75,3 @@ def test_year_2026_keeps_true_2026_specials(monkeypatch):
         special = SimpleNamespace(name=name, level_baremes=None)
         out = apply_year_contract_policy(special, 2026, _FakeSession())
         assert out is special, name
-
-
-def test_year_2025_still_keeps_bbh(monkeypatch):
-    """RFA 2025 inchangée : BBH reste BBH."""
-    bbh = SimpleNamespace(name="Contrat BBH", level_baremes=None)
-    out = apply_year_contract_policy(bbh, 2025, _FakeSession())
-    assert out is bbh
