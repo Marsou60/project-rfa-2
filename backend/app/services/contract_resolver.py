@@ -4,9 +4,11 @@ Résolution du contrat applicable pour une entité.
 IMPORTANT — séparation des années :
 - year < 2026 (ou None) : règles / contrats historiques (RFA 2025).
   Le contrat « Adhérents 2026 » et les contrats « … 2026 » only ne doivent JAMAIS s'appliquer.
-- year >= 2026 : contrat Adhérents 2026 pour la base / Privilege ;
-  les contrats spéciaux (Warning, APC, groupes…) restent ;
-  APA / Discount basculent vers leur version 2026 (assignments restent sur le contrat 2025).
+- year >= 2026 : **Adhérents 2026 pour tous**, sauf :
+  - les vrais spéciaux 2026 (APA Marseille 2026, Groupe Discount 2026, Codifa 2026)
+  - les upgrades 2025→2026 (assignment encore sur le contrat 2025, bascule auto)
+  Les contrats spéciaux 2025 (BBH, Warning, APC, …) ne suivent PLUS en RFA 2026 :
+  ils basculent sur Adhérents 2026 (même barème pour tous les adhérents « standard 2026 »).
 """
 from sqlmodel import Session, select
 from typing import Optional, List
@@ -36,6 +38,7 @@ SPECIAL_CONTRACT_YEAR_UPGRADES = {
 }
 
 # Contrats uniquement 2026 (pas d'équivalent 2025) — exclus de la vue RFA 2025
+# Ce sont les SEULS spéciaux conservés en RFA 2026 (hors Adhérents 2026).
 YEAR_2026_ONLY_CONTRACT_NAMES = {
     "APA Marseille 2026",
     "Groupe Discount 2026",
@@ -182,6 +185,9 @@ def apply_year_contract_policy(
         return adherent_2026
     if is_adherent_2026_contract(contract):
         return contract
+    if is_year_2026_only_contract(contract):
+        # Vrais spéciaux 2026 (APA / Discount / Codifa) — conservés
+        return contract
     if is_legacy_base_contract(contract):
         print(
             f"[RESOLVE] year={year}: base/privilege '{contract.name}' -> {ADHERENT_2026_NAME}"
@@ -199,12 +205,16 @@ def apply_year_contract_policy(
             return upgraded
         print(
             f"[RESOLVE] year={year}: upgrade '{contract.name}' prévu vers '{upgrade_name}' "
-            f"mais contrat introuvable — conservation du 2025"
+            f"mais contrat introuvable — fallback {ADHERENT_2026_NAME}"
         )
+        return adherent_2026 or contract
 
-    # Autres contrats spéciaux (Warning, APC, groupes…) inchangés
-    print(f"[RESOLVE] year={year}: contrat spécial conservé '{contract.name}'")
-    return contract
+    # Spéciaux 2025 (BBH, Warning, APC, …) → Adhérents 2026 (même contrat pour tous)
+    print(
+        f"[RESOLVE] year={year}: spécial 2025 '{contract.name}' -> {ADHERENT_2026_NAME} "
+        f"(RFA 2026 unifiée)"
+    )
+    return adherent_2026 or contract
 
 
 def _resolve_raw_assignment(
@@ -372,17 +382,21 @@ class BatchContractResolver:
             if is_adherent_2026_contract(contract) or is_year_2026_only_contract(contract):
                 return self._default_legacy
             return contract or self._default_legacy
-        # 2026+
+        # 2026+ : Adhérents 2026 pour tous sauf vrais spéciaux 2026 / upgrades
         if contract is None or is_legacy_base_contract(contract):
             return self._adherent_2026 or contract or self._default_legacy
         if is_adherent_2026_contract(contract):
+            return contract
+        if is_year_2026_only_contract(contract):
             return contract
         upgrade_name = _upgrade_target_for_2026(contract)
         if upgrade_name:
             upgraded = self._by_name.get(upgrade_name.strip().upper())
             if upgraded:
                 return upgraded
-        return contract
+            return self._adherent_2026 or contract or self._default_legacy
+        # Spéciaux 2025 (BBH, Warning, …) → Adhérents 2026
+        return self._adherent_2026 or contract or self._default_legacy
 
     def resolve(
         self,
