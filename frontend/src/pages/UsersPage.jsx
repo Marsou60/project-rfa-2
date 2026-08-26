@@ -136,12 +136,19 @@ function UsersPage() {
       )}
 
       {(showForm || editingUser) && (
-        <UserForm
-          user={editingUser}
-          availableEntities={availableEntities}
-          onSubmit={editingUser ? handleUpdate : handleCreate}
-          onCancel={() => { setShowForm(false); setEditingUser(null) }}
-        />
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-10 sm:pt-16"
+          onClick={() => { setShowForm(false); setEditingUser(null) }}
+        >
+          <div className="w-full max-w-2xl pb-16" onClick={(e) => e.stopPropagation()}>
+            <UserForm
+              user={editingUser}
+              availableEntities={availableEntities}
+              onSubmit={editingUser ? handleUpdate : handleCreate}
+              onCancel={() => { setShowForm(false); setEditingUser(null) }}
+            />
+          </div>
+        </div>
       )}
 
       {/* Liste */}
@@ -469,7 +476,7 @@ function UserForm({ user, availableEntities, onSubmit, onCancel }) {
                 list="clients-list"
               />
               <datalist id="clients-list">
-                {availableEntities.clients.map((c) => (
+                {(availableEntities.clients || []).map((c) => (
                   <option key={c.id} value={c.id}>{c.label}</option>
                 ))}
               </datalist>
@@ -487,7 +494,7 @@ function UserForm({ user, availableEntities, onSubmit, onCancel }) {
                 list="groups-list"
               />
               <datalist id="groups-list">
-                {availableEntities.groups.map((g) => (
+                {(availableEntities.groups || []).map((g) => (
                   <option key={g.id} value={g.id}>{g.label}</option>
                 ))}
               </datalist>
