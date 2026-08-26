@@ -296,6 +296,9 @@ class LoginResponse(BaseModel):
     linked_code_union: Optional[str] = None
     linked_groupe: Optional[str] = None
     avatar_url: Optional[str] = None
+    # Périmètre Pure Data (mobile / pilotage) — optionnel, non breaking
+    network_full_access: bool = True
+    commercial_scope: Optional[str] = None
     token: str  # Simple token = base64(user_id:timestamp)
 
 
@@ -332,3 +335,5 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     last_login: Optional[datetime]
+    network_full_access: bool = True
+    commercial_scope: Optional[str] = None

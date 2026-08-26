@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-RFA Excel Import - Application for importing Excel data and displaying RFA (Remise de Fin d'Année / Year-End Rebate) figures per client (Code Union). A monorepo with a Python FastAPI backend and React/Vite/Tauri frontend.
+RFA Excel Import - Application for importing Excel data and displaying RFA (Remise de Fin d'Année / Year-End Rebate) figures per client (Code Union). A monorepo with a Python FastAPI backend, React/Vite/Tauri frontend, and Expo mobile app (`mobile/`) for **consultation only** (Android/iOS stores).
 
 ## Commands
 
@@ -43,37 +43,32 @@ npm run tauri:dev      # Development
 npm run tauri:build    # Production build
 ```
 
+### Mobile Expo (from `mobile/` directory)
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-env.ps1
+# Copy .env.example → .env ; set EXPO_PUBLIC_API_URL (Railway, no /api)
+npm start              # QR → Expo Go
+npm run android        # emulator / device
+```
+
+See `mobile/README.md`. Consultation only; same Railway API as web.
+
 ## Architecture
 
 ### Tech Stack
 - **Backend**: Python 3.11+, FastAPI, SQLModel, pandas, xhtml2pdf
 - **Frontend**: React 18, Vite, Tailwind CSS, Axios
 - **Desktop**: Tauri 2.9 (Rust)
+- **Mobile**: Expo (React Native) — consultation Android/iOS
 - **Database**: SQLite (local) / PostgreSQL via Supabase (production)
 
 ### Project Structure
 
 ```
-backend/
-├── app/
-│   ├── main.py          # FastAPI app entry point
-│   ├── api.py           # All API routes
-│   ├── models.py        # SQLModel database models
-│   ├── schemas.py       # Pydantic request/response schemas
-│   ├── database.py      # DB config (SQLite/PostgreSQL auto-detection)
-│   ├── storage.py       # In-memory import data storage
-│   ├── core/            # Business logic (normalization, rules)
-│   └── services/        # Feature services (RFA calc, PDF export, etc.)
-├── contracts/           # JSON contract templates
-
-frontend/
-├── src/
-│   ├── App.jsx          # Main router with role-based routing
-│   ├── api/             # Axios client with token interceptors
-│   ├── pages/           # Feature pages (Admin, Commercial, Client views)
-│   ├── components/      # Reusable UI components
-│   └── context/         # AuthContext, SupplierFilterContext
-└── src-tauri/           # Tauri/Rust desktop configuration
+backend/     # FastAPI — métier (RFA, contrats, Pure Data)
+frontend/    # Web + Tauri (admin, imports, exports)
+mobile/      # Expo stores — consultation (Union vs Adhérent)
 ```
 
 ### Key Patterns
@@ -105,8 +100,9 @@ frontend/
 
 ### Deployment
 - **Frontend**: Vercel (auto-deploy from main)
-- **Backend**: Railway (Docker)
+- **Backend**: Railway (Docker) — shared by web, Tauri, and mobile
 - **Desktop**: Tauri builds via GitHub releases with auto-update
+- **Mobile**: Expo / EAS → Google Play + App Store (same Railway API; no second backend)
 
 ## Environment Variables
 
@@ -118,3 +114,6 @@ frontend/
 
 ### Frontend
 - `VITE_API_URL`: Backend API URL
+
+### Mobile
+- `EXPO_PUBLIC_API_URL`: Same Railway base URL as `VITE_API_URL` (no `/api` suffix)

@@ -2,6 +2,8 @@
 .env
 .env.*
 *.env
+!.env.example
+!mobile/.env.example
 
 # ── Clés Google / Comptes de service ─────────────────────────
 *.json
@@ -35,6 +37,16 @@ htmlcov/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+# ── Mobile (Expo) ─────────────────────────────────────────────
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+!mobile/package.json
+!mobile/package-lock.json
+!mobile/tsconfig.json
+!mobile/app.json
+!mobile/eas.json
 
 # ── Tauri ─────────────────────────────────────────────────────
 frontend/src-tauri/target/

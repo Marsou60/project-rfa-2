@@ -30,6 +30,7 @@ def _filter_rows(
     fournisseur: Optional[str] = None,
     commercial: Optional[str] = None,
     region: Optional[str] = None,
+    marque: Optional[str] = None,
 ) -> List[Dict]:
     out = rows
     plat = normalize_platform(fournisseur) if fournisseur else None
@@ -41,6 +42,9 @@ def _filter_rows(
     if region:
         target = region.strip().upper()
         out = [r for r in out if _norm(r.get("region_commerciale")).upper() == target]
+    if marque:
+        target = marque.strip().upper()
+        out = [r for r in out if _norm(r.get("marque")).upper() == target]
     return out
 
 
@@ -73,10 +77,15 @@ EMPTY_DIM = "Non renseigné"
 
 
 def _dim(value: Optional[str]) -> str:
+    """
+    Clé d'agrégation stable : strip + espaces + Title Case.
+    Évite les doublons Pure Data du type MARTIAL / Martial / martial.
+    """
     s = _norm(value)
     if not s or s in ("—", "-", "N/A", "NULL", "None"):
         return EMPTY_DIM
-    return s
+    parts = s.split()
+    return " ".join(p[:1].upper() + p[1:].lower() if p else "" for p in parts)
 
 
 def _rank_items(
@@ -123,11 +132,13 @@ def build_network_dashboard(
     fournisseur: Optional[str] = None,
     commercial: Optional[str] = None,
     region: Optional[str] = None,
+    marque: Optional[str] = None,
     objectif: Optional[float] = None,
     ca_n1_realise: Optional[float] = None,
     platform_months: Optional[Dict[str, int]] = None,
     alert_pct: float = 15.0,
     alert_ca_min: float = 5000.0,
+    full_lists: bool = False,
 ) -> Dict[str, Any]:
     rows, data_source = load_evolution_sales_rows()
     rows = _filter_rows(
@@ -135,6 +146,7 @@ def build_network_dashboard(
         fournisseur=fournisseur,
         commercial=commercial,
         region=region,
+        marque=marque,
     )
 
     if not rows:
@@ -378,14 +390,16 @@ def build_network_dashboard(
             if star is None or (p["delta_pct"] or -999) > (star.get("delta_pct") or -999):
                 star = p
 
+    # full_lists=True : aucun plafond (mobile / vues « tout voir »)
+    rank_limit = None if full_lists else 40
     top_marques = _rank_items(mq_cur, mq_prev, limit=8)
     top_familles = _rank_items(fa_cur, fa_prev, limit=8)
-    marques = _rank_items(mq_cur, mq_prev, limit=40)
-    familles = _rank_items(fa_cur, fa_prev, limit=40)
-    sous_familles = _rank_items(sf_cur, sf_prev, limit=40)
-    groupes = _rank_items(grp_cur, grp_prev, limit=40)
-    commerciaux = _rank_items(comm_cur, comm_prev, limit=40)
-    regions = _rank_items(reg_cur, reg_prev, limit=40)
+    marques = _rank_items(mq_cur, mq_prev, limit=rank_limit)
+    familles = _rank_items(fa_cur, fa_prev, limit=rank_limit)
+    sous_familles = _rank_items(sf_cur, sf_prev, limit=rank_limit)
+    groupes = _rank_items(grp_cur, grp_prev, limit=rank_limit)
+    commerciaux = _rank_items(comm_cur, comm_prev, limit=rank_limit)
+    regions = _rank_items(reg_cur, reg_prev, limit=rank_limit)
 
     clients_all = []
     for code in set(cli_cur) | set(cli_prev):
@@ -409,7 +423,7 @@ def build_network_dashboard(
     clients_all.sort(key=lambda x: x["current"], reverse=True)
     top_up = sorted(clients_all, key=lambda x: x["delta"], reverse=True)[:8]
     top_down = sorted(clients_all, key=lambda x: x["delta"])[:8]
-    clients = [c for c in clients_all if c["current"] > 0][:50]
+    clients = [c for c in clients_all if c["current"] > 0][: None if full_lists else 50]
 
     # --- Alertes ---
     thr = float(alert_pct or 15.0)
@@ -580,6 +594,8 @@ def build_network_dashboard(
         + len(mar_perdues)
     )
 
+    alert_cap = None if full_lists else 25
+    alert_cap_recent = None if full_lists else 30
     alertes = {
         "cfg": {"pct": thr, "ca_min": ca_min},
         "ca_risque": ca_risque,
@@ -589,15 +605,15 @@ def build_network_dashboard(
         "recent_months": recent_months,
         "mens_platforms": sorted(mens_platforms),
         "n_crit": n_crit,
-        "clients_risque": cli_risque[:25],
-        "clients_perdus": cli_perdus[:25],
-        "clients_recent": cli_recent[:30],
-        "clients_boom": cli_boom[:25],
-        "clients_new": cli_new[:25],
-        "marques_risque": mar_risque[:25],
-        "marques_perdues": mar_perdues[:25],
-        "marques_boom": mar_boom[:25],
-        "marques_acheteurs": mar_acheteurs[:25],
+        "clients_risque": cli_risque[:alert_cap],
+        "clients_perdus": cli_perdus[:alert_cap],
+        "clients_recent": cli_recent[:alert_cap_recent],
+        "clients_boom": cli_boom[:alert_cap],
+        "clients_new": cli_new[:alert_cap],
+        "marques_risque": mar_risque[:alert_cap],
+        "marques_perdues": mar_perdues[:alert_cap],
+        "marques_boom": mar_boom[:alert_cap],
+        "marques_acheteurs": mar_acheteurs[:alert_cap],
     }
 
     # --- Cross plateformes ---
@@ -647,8 +663,8 @@ def build_network_dashboard(
         "avg_platforms": round(avg_p, 2),
         "relations": relations,
         "distribution": distribution,
-        "mono_targets": mono_list[:15],
-        "loyal_clients": loyal_list[:15],
+        "mono_targets": mono_list[: None if full_lists else 15],
+        "loyal_clients": loyal_list[: None if full_lists else 15],
     }
 
     n_clients_ytd = len(codes_cur) or len(codes_cur | codes_prev)
@@ -671,6 +687,7 @@ def build_network_dashboard(
             "fournisseur": fournisseur,
             "commercial": commercial,
             "region": region,
+            "marque": marque,
         },
         "kpis": {
             "ca_ytd": ca_ytd,

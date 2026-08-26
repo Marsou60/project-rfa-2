@@ -2963,7 +2963,8 @@ async def login(request: LoginRequest, session: Session = Depends(get_session)):
             linked_code_union=user.linked_code_union,
             linked_groupe=user.linked_groupe,
             avatar_url=user.avatar_url,
-            token=token
+            token=token,
+            **_user_scope_fields(user),
         )
     except HTTPException:
         raise
@@ -2979,6 +2980,15 @@ def _user_role_str(user) -> str:
     if r is None:
         return "ADHERENT"
     return getattr(r, "value", None) or str(r)
+
+
+def _user_scope_fields(user) -> dict:
+    from app.services.commercial_scope import has_network_full_access, resolve_commercial_scope
+
+    return {
+        "network_full_access": has_network_full_access(user),
+        "commercial_scope": resolve_commercial_scope(user),
+    }
 
 
 @router.get("/auth/me", response_model=UserResponse)
@@ -2997,7 +3007,8 @@ async def get_me(user: User = Depends(get_current_user)):
         avatar_url=user.avatar_url,
         is_active=user.is_active,
         created_at=user.created_at,
-        last_login=user.last_login
+        last_login=user.last_login,
+        **_user_scope_fields(user),
     )
 
 
@@ -3764,17 +3775,28 @@ async def pure_data_network_dashboard(
     fournisseur: Optional[str] = None,
     commercial: Optional[str] = None,
     region: Optional[str] = None,
+    marque: Optional[str] = None,
     alert_pct: float = 15.0,
     alert_ca_min: float = 5000.0,
+    full: bool = False,
     session: Session = Depends(get_session),
     user: User = Depends(require_staff),
 ):
     """
     Dashboard Accueil / Pilotage Union :
     KPI, alertes, cross-plateformes, classements par dimension.
+    Filtres optionnels non breaking : fournisseur, commercial, region, marque.
+    full=true : listes sans plafond (tous les adhérents, toutes les marques…).
+    COMMERCIAL hors Vanessa : filtre commercial forcé sur leur portefeuille.
     """
     try:
         from app.services.pure_data_network_dashboard import build_network_dashboard
+        from app.services.commercial_scope import resolve_commercial_scope
+
+        # Sécurité : un commercial ne peut pas élargir son filtre
+        forced = resolve_commercial_scope(user)
+        if forced:
+            commercial = forced
 
         platforms_meta = _load_cumulative_platforms_meta(session)
         platform_months = _platform_months_from_meta(platforms_meta)
@@ -3797,11 +3819,13 @@ async def pure_data_network_dashboard(
             fournisseur=fournisseur,
             commercial=commercial,
             region=region,
+            marque=marque,
             objectif=objectif_f,
             ca_n1_realise=ca25_f,
             platform_months=platform_months,
             alert_pct=alert_pct,
             alert_ca_min=alert_ca_min,
+            full_lists=full,
         )
     except HTTPException:
         raise
@@ -3948,6 +3972,11 @@ async def pure_data_cumulative_client_dashboard(
     elif not code_union and not groupe_client:
         raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
 
+    from app.services.commercial_scope import enforce_commercial_entity_access
+    enforce_commercial_entity_access(
+        user, code_union=code_union, groupe_client=groupe_client
+    )
+
     try:
         from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
         from app.services.pure_data_cumulative_service import build_cumulative_dashboard
@@ -4041,6 +4070,11 @@ async def pure_data_cumulative_client_rfa(
             raise HTTPException(status_code=403, detail="Aucun client lié à ce compte.")
     elif not code_union and not groupe_client:
         raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
+
+    from app.services.commercial_scope import enforce_commercial_entity_access
+    enforce_commercial_entity_access(
+        user, code_union=code_union, groupe_client=groupe_client
+    )
 
     try:
         from app.services.pure_data_cumulative_service import _norm_text

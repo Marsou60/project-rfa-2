@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "RFA Union",
+    "slug": "rfa-union",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1F3A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.groupement.rfa.mobile"
+    },
+    "android": {
+      "package": "com.groupement.rfa.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B1F3A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "41be2ac9-a741-4b13-9760-016d06e7e49c"
+      }
+    },
+    "owner": "martialunion"
+  }
+}
