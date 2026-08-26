@@ -2,6 +2,18 @@ import { useState, useEffect, useRef } from 'react'
 import { Users, Plus, Pencil, Trash2, X, Camera, Crown, Briefcase, Loader2 } from 'lucide-react'
 import { getUsers, createUser, updateUser, deleteUser, getEntities, uploadAvatar, getImageUrl } from '../api/client'
 
+function apiErrorMessage(err, fallback) {
+  const detail = err?.response?.data?.detail
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => item?.msg || item?.message || (typeof item === 'string' ? item : null))
+      .filter(Boolean)
+      .join(' · ') || fallback
+  }
+  return err?.message || fallback
+}
+
 function UsersPage() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -22,7 +34,7 @@ function UsersPage() {
       setUsers(data)
       setError(null)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors du chargement')
+      setError(apiErrorMessage(err, 'Erreur lors du chargement'))
     } finally {
       setLoading(false)
     }
@@ -49,7 +61,7 @@ function UsersPage() {
       setShowForm(false)
       loadUsers()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de la création')
+      setError(apiErrorMessage(err, 'Erreur lors de la création'))
       throw err
     }
   }
@@ -60,7 +72,7 @@ function UsersPage() {
       setEditingUser(null)
       loadUsers()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de la mise à jour')
+      setError(apiErrorMessage(err, 'Erreur lors de la mise à jour'))
       throw err
     }
   }
@@ -71,7 +83,7 @@ function UsersPage() {
       await deleteUser(userId)
       loadUsers()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de la suppression')
+      setError(apiErrorMessage(err, 'Erreur lors de la suppression'))
     }
   }
 
@@ -80,7 +92,7 @@ function UsersPage() {
       await updateUser(user.id, { is_active: !user.is_active })
       loadUsers()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de la mise à jour')
+      setError(apiErrorMessage(err, 'Erreur lors de la mise à jour'))
     }
   }
 
@@ -274,7 +286,7 @@ function UserForm({ user, availableEntities, onSubmit, onCancel }) {
       const result = await uploadAvatar(file)
       setFormData({ ...formData, avatar_url: result.url })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de l\'upload')
+      setError(apiErrorMessage(err, 'Erreur lors de l\'upload'))
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -287,13 +299,13 @@ function UserForm({ user, availableEntities, onSubmit, onCancel }) {
     setLoading(true)
 
     try {
-      const dataToSend = { ...formData }
+      const dataToSend = { ...formData, username: formData.username.trim() }
       if (user && !formData.password) {
         delete dataToSend.password
       }
       await onSubmit(dataToSend)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur')
+      setError(apiErrorMessage(err, 'Erreur'))
     } finally {
       setLoading(false)
     }
@@ -367,14 +379,16 @@ function UserForm({ user, availableEntities, onSubmit, onCancel }) {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-glass-secondary mb-2">Nom d'utilisateur</label>
+            <label className="block text-sm font-medium text-glass-secondary mb-2">
+              Identifiant de connexion
+            </label>
             <input
               type="text"
               value={formData.username}
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               className="glass-input"
               required
-              disabled={!!user}
+              autoComplete="off"
             />
           </div>
           <div>

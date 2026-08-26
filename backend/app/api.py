@@ -2991,6 +2991,22 @@ def _user_scope_fields(user) -> dict:
     }
 
 
+def _to_user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        role=_user_role_str(user),
+        linked_code_union=user.linked_code_union,
+        linked_groupe=user.linked_groupe,
+        avatar_url=user.avatar_url,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        last_login=user.last_login,
+        **_user_scope_fields(user),
+    )
+
+
 @router.get("/auth/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)):
     """Récupère l'utilisateur courant."""
@@ -3025,21 +3041,7 @@ async def list_users(admin: User = Depends(require_admin), session: Session = De
     """Liste tous les utilisateurs (admin only)."""
     statement = select(User).order_by(User.role, User.username)
     users = session.exec(statement).all()
-    return [
-        UserResponse(
-            id=u.id,
-            username=u.username,
-            display_name=u.display_name,
-            role=_user_role_str(u),
-            linked_code_union=u.linked_code_union,
-            linked_groupe=u.linked_groupe,
-            avatar_url=u.avatar_url,
-            is_active=u.is_active,
-            created_at=u.created_at,
-            last_login=u.last_login
-        )
-        for u in users
-    ]
+    return [_to_user_response(u) for u in users]
 
 
 @router.post("/users", response_model=UserResponse)
@@ -3074,18 +3076,7 @@ async def create_user(
     session.commit()
     session.refresh(user)
     
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        display_name=user.display_name,
-        role=_user_role_str(user),
-        linked_code_union=user.linked_code_union,
-        linked_groupe=user.linked_groupe,
-        avatar_url=user.avatar_url,
-        is_active=user.is_active,
-        created_at=user.created_at,
-        last_login=user.last_login
-    )
+    return _to_user_response(user)
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
@@ -3099,7 +3090,17 @@ async def update_user(
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
-    
+
+    if user_data.username is not None:
+        new_username = user_data.username.strip()
+        if not new_username:
+            raise HTTPException(status_code=400, detail="L'identifiant ne peut pas être vide")
+        if new_username != user.username:
+            existing = session.exec(select(User).where(User.username == new_username)).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="Ce nom d'utilisateur existe déjà")
+            user.username = new_username
+
     if user_data.display_name is not None:
         user.display_name = user_data.display_name
     if user_data.password:
@@ -3122,18 +3123,7 @@ async def update_user(
     session.commit()
     session.refresh(user)
     
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        display_name=user.display_name,
-        role=_user_role_str(user),
-        linked_code_union=user.linked_code_union,
-        linked_groupe=user.linked_groupe,
-        avatar_url=user.avatar_url,
-        is_active=user.is_active,
-        created_at=user.created_at,
-        last_login=user.last_login
-    )
+    return _to_user_response(user)
 
 
 @router.delete("/users/{user_id}")

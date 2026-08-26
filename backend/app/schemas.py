@@ -314,6 +314,7 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     """Mise à jour d'utilisateur."""
+    username: Optional[str] = None
     display_name: Optional[str] = None
     password: Optional[str] = None  # Si fourni, met à jour le mot de passe
     role: Optional[str] = None
