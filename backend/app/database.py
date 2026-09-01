@@ -261,6 +261,7 @@ def init_db():
     _ensure_pg_level_baremes_column()
     _ensure_cotisation_year_column()
     _ensure_impayes_tables()
+    _ensure_nathalie_adherents_table()
     seed_admin_user()
     seed_dev_test_user()
 
@@ -309,6 +310,15 @@ def _ensure_impayes_tables():
         ensure_tables()
     except Exception as e:
         print(f"[INIT_DB] impayes tables warning: {e}")
+
+
+def _ensure_nathalie_adherents_table():
+    """Crée la table annuaire Nathalie (Supabase / SQLite) si absente."""
+    try:
+        from app.services.nathalie_adherents import ensure_tables
+        ensure_tables()
+    except Exception as e:
+        print(f"[INIT_DB] nathalie_adherents table warning: {e}")
 
 
 def get_session():

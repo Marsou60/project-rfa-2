@@ -1,7 +1,9 @@
 """
 Service Nathalie — Ouverture de comptes adhérents.
-Lit/Écrit les données dans Google Sheets (LISTE CLIENT 2) + Drive (Dossiers clients).
-Envoi des demandes d'ouverture par email via l'API Gmail (avec pièces jointes depuis Drive).
+
+- Annuaire adhérents : table Supabase `nathalie_adherents` (plus LISTE CLIENT 2).
+- Contacts fournisseurs + tâches : Google Sheets (CONTACT FOURNISSEURS, TACHE CLIENTS).
+- Pièces : Google Drive. Envoi ouvertures : Gmail.
 """
 from __future__ import annotations
 
@@ -10,6 +12,8 @@ import os
 import re
 from typing import List, Dict, Optional, Any, Tuple
 from fastapi import UploadFile
+
+from app.services import nathalie_adherents
 
 # ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -32,6 +36,8 @@ DRIVE_FOLDERS = {
     "DISCOUNT":    "1tPB595WC7alCuhtVGaJDbyrwZjWoWLYN",
     "LYONNAIS":    "1d57aZjaFRw8RSDbosWNWgCLM3IFQd0PE",
     "STARCOM":     "1cljTqnufHf6PC6xJ7kGn6jIYRkPa0MZF",
+    "CENTER":      "1JA1g_h4dwbJ4KEAG1sAXF9S1uOxRWaDx",
+    "CODIFA":      "1JA1g_h4dwbJ4KEAG1sAXF9S1uOxRWaDx",
 }
 
 # Colonnes de LISTE CLIENT 2 (0-indexed) - Pour lecture ET écriture
@@ -317,24 +323,8 @@ def _build_supplier_col_map(headers: List[str]) -> Dict[str, int]:
 # ── Logique Métier : Création Client ───────────────────────────────────────────
 
 def get_next_code_union() -> str:
-    """Trouve le dernier code Mxxxx et retourne le suivant."""
-    rows = _read_sheet(SHEET_CLIENTS, "B") # On lit juste les codes union
-    if not rows or len(rows) < 2:
-        return "M0001"
-    
-    last_code = "M0000"
-    for row in rows[1:]: # Skip header
-        code = _safe(row, COL["code_union"])
-        if code.startswith("M") and code[1:].isdigit():
-            # Garder le max
-            try:
-                if int(code[1:]) > int(last_code[1:]):
-                    last_code = code
-            except ValueError:
-                continue
-    
-    next_num = int(last_code[1:]) + 1
-    return f"M{next_num:04d}"
+    """Trouve le dernier code Mxxxx (indépendants) et retourne le suivant."""
+    return nathalie_adherents.next_code_union("M")
 
 
 def create_drive_folder(parent_id: str, name: str) -> str:
@@ -365,6 +355,312 @@ def upload_file_to_drive(parent_id: str, file: UploadFile) -> str:
     return uploaded.get("webViewLink")
 
 
+_DOC_KIND_PATTERNS = {
+    "rib": (
+        r"\brib\b",
+        r"\biban\b",
+        r"relev[eé]\s*d['’ ]?identit",
+        r"identit[eé]\s*bancaire",
+        r"domiciliation",
+    ),
+    "kbis": (
+        r"kbis",
+        r"k[\s\-]?bis",
+        r"extrait",
+        r"immatriculation",
+        r"infogreffe",
+        r"\binpi\b",
+        r"rcs",
+    ),
+    "piece_identite": (
+        r"\bcni\b",
+        r"identit",
+        r"passeport",
+        r"passport",
+        r"permis",
+        r"carte\s*id",
+    ),
+}
+
+
+def classify_drive_filename(name: str) -> Optional[str]:
+    """Classe un fichier Drive : rib | kbis | piece_identite, sinon None."""
+    raw = (name or "").lower()
+    for old, new in (("é", "e"), ("è", "e"), ("ê", "e"), ("à", "a"), ("’", "'"), ("'", " ")):
+        raw = raw.replace(old, new)
+    for kind, patterns in _DOC_KIND_PATTERNS.items():
+        if any(re.search(p, raw) for p in patterns):
+            return kind
+    return None
+
+
+def score_drive_folder_name(folder_name: str, code_union: str, nom_client: str = "") -> int:
+    """Plus le dossier ressemble à « M0160 : Magasin », plus le score est élevé."""
+    name = (folder_name or "").strip().upper()
+    code = (code_union or "").strip().upper()
+    if not name or not code:
+        return 0
+    if name.startswith(f"{code} :") or name.startswith(f"{code}:"):
+        return 100
+    if name.startswith(f"{code} ") or name == code:
+        return 80
+    if re.search(rf"\b{re.escape(code)}\b", name):
+        score = 50
+        nom = (nom_client or "").strip().upper()
+        if nom and nom[:8] in name:
+            score += 20
+        return score
+    return 0
+
+
+def _list_drive_files(drive, **kwargs) -> List[Dict[str, Any]]:
+    params = {
+        "pageSize": kwargs.pop("pageSize", 50),
+        "fields": kwargs.pop("fields", "files(id,name,mimeType,webViewLink,parents)"),
+        **kwargs,
+    }
+    try:
+        return drive.files().list(
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            **params,
+        ).execute().get("files") or []
+    except Exception:
+        return drive.files().list(**params).execute().get("files") or []
+
+
+def _search_drive_folders(drive, code_union: str) -> List[Dict[str, Any]]:
+    safe = (code_union or "").replace("'", "\\'")
+    if not safe:
+        return []
+    q = (
+        "mimeType='application/vnd.google-apps.folder' "
+        f"and trashed=false and name contains '{safe}'"
+    )
+    return _list_drive_files(drive, q=q, pageSize=25)
+
+
+def _list_folder_children(drive, folder_id: str) -> List[Dict[str, Any]]:
+    safe = folder_id.replace("'", "\\'")
+    q = f"'{safe}' in parents and trashed=false"
+    return _list_drive_files(
+        drive,
+        q=q,
+        pageSize=80,
+        fields="files(id,name,mimeType,webViewLink,modifiedTime)",
+    )
+
+
+def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, Any]:
+    """
+    Retrouve le dossier Drive d'un adhérent existant et vérifie RIB / Kbis.
+    Ne crée rien. Met à jour les liens en base si des pièces sont trouvées.
+    """
+    client = get_client_by_code(code_union)
+    if not client:
+        raise ValueError(f"Client {code_union} introuvable")
+    code = (client.get("code_union") or code_union).strip().upper()
+    empty = {
+        "code_union": code,
+        "folder_found": False,
+        "folder_id": None,
+        "folder_name": None,
+        "drive_link": None,
+        "rib": None,
+        "kbis": None,
+        "piece_identite": None,
+        "files": [],
+        "has_rib": False,
+        "has_kbis": False,
+        "docs_ok": False,
+    }
+
+    def _fail(exc: Exception) -> Dict[str, Any]:
+        msg = str(exc)
+        if "invalid_grant" in msg.lower():
+            empty["error"] = "Connexion Google Drive expirée. Il faut renouveler DRIVE_REFRESH_TOKEN."
+        else:
+            empty["error"] = msg
+        return empty
+
+    try:
+        drive = _get_drive_client()
+        folder = None
+        folder_id = client.get("drive_folder_id")
+        if folder_id:
+            try:
+                folder = drive.files().get(
+                    fileId=folder_id,
+                    fields="id,name,webViewLink,mimeType,trashed",
+                    supportsAllDrives=True,
+                ).execute()
+                if folder.get("trashed") or folder.get("mimeType") != "application/vnd.google-apps.folder":
+                    folder = None
+            except Exception:
+                try:
+                    folder = drive.files().get(fileId=folder_id, fields="id,name,webViewLink,mimeType").execute()
+                except Exception:
+                    folder = None
+
+        if not folder:
+            candidates = _search_drive_folders(drive, code)
+            ranked = sorted(
+                candidates,
+                key=lambda f: score_drive_folder_name(f.get("name") or "", code, client.get("nom_client") or ""),
+                reverse=True,
+            )
+            folder = next(
+                (f for f in ranked if score_drive_folder_name(f.get("name") or "", code, client.get("nom_client") or "") > 0),
+                None,
+            )
+
+        if not folder:
+            if persist:
+                nathalie_adherents.patch_drive_docs(code, {
+                    "drive_checked_at": nathalie_adherents._now(),
+                })
+            empty["error"] = f"Aucun dossier Drive trouvé pour {code}"
+            empty["drive_checked"] = True
+            return empty
+
+        children = _list_folder_children(drive, folder["id"])
+        classified: Dict[str, Dict[str, Any]] = {}
+        files_out = []
+        for item in children:
+            kind = classify_drive_filename(item.get("name") or "")
+            info = {
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "mime": item.get("mimeType"),
+                "link": item.get("webViewLink"),
+                "kind": kind,
+            }
+            files_out.append(info)
+            if kind and kind not in classified:
+                classified[kind] = info
+
+        rib = classified.get("rib")
+        kbis = classified.get("kbis")
+        piece = classified.get("piece_identite")
+        result = {
+            "code_union": code,
+            "folder_found": True,
+            "folder_id": folder.get("id"),
+            "folder_name": folder.get("name"),
+            "drive_link": folder.get("webViewLink") or f"https://drive.google.com/drive/folders/{folder.get('id')}",
+            "rib": rib,
+            "kbis": kbis,
+            "piece_identite": piece,
+            "files": files_out,
+            "has_rib": bool(rib),
+            "has_kbis": bool(kbis),
+            "docs_ok": bool(rib and kbis),
+        }
+        if persist:
+            nathalie_adherents.patch_drive_docs(code, {
+                "drive_folder_id": result["folder_id"],
+                "drive_link": result["drive_link"],
+                "rib_url": (rib or {}).get("link"),
+                "kbis_url": (kbis or {}).get("link"),
+                "piece_identite_url": (piece or {}).get("link"),
+                "drive_checked_at": nathalie_adherents._now(),
+            })
+        return result
+    except Exception as exc:
+        return _fail(exc)
+
+
+_FOLDER_CODE_RE = re.compile(r"^([A-Z]\d{3,5})\b", re.IGNORECASE)
+
+
+def extract_code_from_folder_name(name: str) -> Optional[str]:
+    match = _FOLDER_CODE_RE.match((name or "").strip())
+    return match.group(1).upper() if match else None
+
+
+def _list_child_folders(drive, parent_id: str) -> List[Dict[str, Any]]:
+    safe = parent_id.replace("'", "\\'")
+    q = (
+        f"'{safe}' in parents and mimeType='application/vnd.google-apps.folder' "
+        "and trashed=false"
+    )
+    return _list_drive_files(drive, q=q, pageSize=1000)
+
+
+def sync_drive_dossiers() -> Dict[str, Any]:
+    """
+    Parcourt les dossiers Drive par groupe, rattache chaque code Union,
+    et note RIB / Kbis manquants. Alimente la file « dossiers en cours ».
+    """
+    drive = _get_drive_client()
+    parent_ids = list(dict.fromkeys([DRIVE_ROOT_ID, *DRIVE_FOLDERS.values()]))
+    folders_by_code: Dict[str, Dict[str, Any]] = {}
+    folders_seen = 0
+    for parent_id in parent_ids:
+        for folder in _list_child_folders(drive, parent_id):
+            folders_seen += 1
+            code = extract_code_from_folder_name(folder.get("name") or "")
+            if not code:
+                continue
+            prev = folders_by_code.get(code)
+            score = score_drive_folder_name(folder.get("name") or "", code)
+            if not prev or score > score_drive_folder_name(prev.get("name") or "", code):
+                folders_by_code[code] = folder
+
+    checked = 0
+    matched = 0
+    en_cours = 0
+    complets = 0
+    now = nathalie_adherents._now()
+    for client in nathalie_adherents.list_clients():
+        code = (client.get("code_union") or "").upper()
+        if not code:
+            continue
+        folder = folders_by_code.get(code)
+        if folder:
+            matched += 1
+            children = _list_folder_children(drive, folder["id"])
+            classified: Dict[str, Dict[str, Any]] = {}
+            for item in children:
+                kind = classify_drive_filename(item.get("name") or "")
+                if kind and kind not in classified:
+                    classified[kind] = {
+                        "link": item.get("webViewLink"),
+                        "name": item.get("name"),
+                    }
+            rib = classified.get("rib")
+            kbis = classified.get("kbis")
+            piece = classified.get("piece_identite")
+            nathalie_adherents.patch_drive_docs(code, {
+                "drive_folder_id": folder.get("id"),
+                "drive_link": folder.get("webViewLink") or f"https://drive.google.com/drive/folders/{folder.get('id')}",
+                "rib_url": (rib or {}).get("link"),
+                "kbis_url": (kbis or {}).get("link"),
+                "piece_identite_url": (piece or {}).get("link"),
+                "drive_checked_at": now,
+            })
+            if rib and kbis:
+                complets += 1
+            else:
+                en_cours += 1
+        else:
+            nathalie_adherents.patch_drive_docs(code, {"drive_checked_at": now})
+            en_cours += 1
+        checked += 1
+
+    return {
+        "folders_seen": folders_seen,
+        "folders_matched": matched,
+        "checked": checked,
+        "en_cours": en_cours,
+        "complets": complets,
+    }
+
+
+def _has_upload(file: Optional[UploadFile]) -> bool:
+    return bool(file and getattr(file, "filename", None))
+
+
 async def create_client_full(
     data: Dict[str, Any],
     files: Dict[str, UploadFile]
@@ -372,68 +668,64 @@ async def create_client_full(
     """
     Orchestre la création complète :
     1. Générer Code Union
-    2. Créer dossier Drive (selon groupe)
-    3. Upload pièces jointes
-    4. Ajouter ligne dans Sheet
+    2. Créer dossier Drive (selon groupe) + upload pièces (best-effort)
+    3. Enregistrer l'adhérent dans Supabase
     """
-    # 1. Code Union
+    nom = (data.get("nom_client") or "").strip()
+    if not nom:
+        raise ValueError("nom_client requis")
+
+    from app.services.nathalie_entreprise import resolve_siret_for_storage
+    siret = resolve_siret_for_storage(data.get("siret"))
+    if not siret:
+        raise ValueError(
+            "SIRET (14 chiffres) requis pour enregistrer l’adhérent. "
+            "Le RCS sert uniquement à retrouver l’entreprise."
+        )
+    data["siret"] = siret
+
     code_union = get_next_code_union()
     data["code_union"] = code_union
-    
-    # 2. Dossier Drive
-    groupe_key = _normalize_group_key(data.get("groupe", ""))
-    parent_folder_id = DRIVE_FOLDERS.get(groupe_key, DRIVE_FOLDERS["MAGASIN"]) # Fallback magasin
-    
-    folder_name = f"{code_union} : {data.get('nom_client', 'Nouveau Client')}"
-    folder_id = create_drive_folder(parent_folder_id, folder_name)
-    
-    # 3. Upload fichiers
-    links = {}
-    for key, file in files.items():
-        if file:
-            link = upload_file_to_drive(folder_id, file)
-            links[key] = link
-            
-    # 4. Préparer la ligne Sheet
-    # On construit une liste de la taille max des colonnes
-    max_idx = max(COL.values())
-    row = [""] * (max_idx + 1)
-    
-    # Mapping champs form -> colonnes Sheet
-    # ID CLIENT généré ? On met code_union pour l'instant ou vide
-    row[COL["code_union"]] = code_union
-    row[COL["nom_client"]] = data.get("nom_client", "")
-    row[COL["groupe"]] = data.get("groupe", "")
-    row[COL["adresse"]] = data.get("adresse", "")
-    row[COL["code_postal"]] = data.get("code_postal", "")
-    row[COL["ville"]] = data.get("ville", "")
-    row[COL["telephone"]] = data.get("telephone", "")
-    row[COL["mail"]] = data.get("mail", "") # Contact principal
-    row[COL["siret"]] = data.get("siret", "")
-    row[COL["agent_union"]] = data.get("agent_union", "")
-    row[COL["contrat_union"]] = data.get("contrat_type", "")
-    row[COL["note_generale"]] = data.get("notes", "")
-    
-    # Liens Drive
-    row[COL["rib"]] = links.get("rib", "")
-    row[COL["kbis"]] = links.get("kbis", "")
-    row[COL["piece_identite"]] = links.get("piece_identite", "")
-    
-    # Append to Sheet
-    sheets = _get_sheets_client()
-    sheets.spreadsheets().values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_CLIENTS}!A1",
-        valueInputOption="USER_ENTERED",
-        body={"values": [row]}
-    ).execute()
-    
-    return {
+    folder_name = f"{code_union} : {nom}"
+    folder_id = None
+    drive_link = None
+    drive_warning = None
+    links: Dict[str, str] = {}
+
+    try:
+        groupe_key = _normalize_group_key(data.get("groupe", ""))
+        parent_folder_id = DRIVE_FOLDERS.get(groupe_key, DRIVE_FOLDERS["MAGASIN"])
+        folder_id = create_drive_folder(parent_folder_id, folder_name)
+        drive_link = f"https://drive.google.com/drive/folders/{folder_id}"
+        for key, file in (files or {}).items():
+            if _has_upload(file):
+                links[key] = upload_file_to_drive(folder_id, file)
+    except Exception as exc:
+        drive_warning = str(exc)
+
+    nathalie_adherents.upsert_client({
+        **data,
+        "code_union": code_union,
+        "nom_client": nom,
+        "contact_magasin": data.get("contact_magasin") or data.get("contact"),
+        "rib": links.get("rib"),
+        "kbis": links.get("kbis"),
+        "piece_identite": links.get("piece_identite"),
+        "drive_folder_id": folder_id,
+        "drive_link": drive_link,
+        "drive_checked_at": nathalie_adherents._now(),
+        "source": "manuel",
+    }, keep_docs=False)
+
+    result = {
         "success": True,
         "code_union": code_union,
         "folder_name": folder_name,
-        "drive_link": f"https://drive.google.com/drive/folders/{folder_id}"
+        "drive_link": drive_link,
     }
+    if drive_warning:
+        result["drive_warning"] = drive_warning
+    return result
 
 
 def _normalize_group_key(groupe_input: str) -> str:
@@ -446,6 +738,8 @@ def _normalize_group_key(groupe_input: str) -> str:
     if "DISCOUNT" in s: return "DISCOUNT"
     if "LYONNAIS" in s: return "LYONNAIS"
     if "STARCOM" in s: return "STARCOM"
+    if "CENTER" in s: return "CENTER"
+    if "CODIFA" in s: return "CODIFA"
     return "MAGASIN" # Par défaut indépendant
 
 
@@ -515,17 +809,8 @@ def _row_to_task(row: List[str]) -> Dict[str, Any]:
 # ── API publique du service ───────────────────────────────────────────────────
 
 def get_clients(with_ouverture_only: bool = False) -> List[Dict[str, Any]]:
-    """
-    Retourne la liste des clients depuis LISTE CLIENT 2.
-    Si with_ouverture_only=True, ne retourne que ceux avec OUVERTURE CHEZ renseigné.
-    """
-    rows = _read_sheet(SHEET_CLIENTS)
-    if not rows:
-        return []
-    clients = [_row_to_client(row) for row in rows[1:] if _safe(row, COL["code_union"])]
-    if with_ouverture_only:
-        clients = [c for c in clients if c["ouverture_chez"]]
-    return clients
+    """Liste des adhérents Union (table nathalie_adherents)."""
+    return nathalie_adherents.list_clients(with_ouverture_only=with_ouverture_only)
 
 
 def get_suppliers() -> List[Dict[str, Any]]:
@@ -561,12 +846,8 @@ def get_tasks(code_union: Optional[str] = None) -> List[Dict[str, Any]]:
 
 
 def get_client_by_code(code_union: str) -> Optional[Dict[str, Any]]:
-    """Retourne un client précis par code union."""
-    clients = get_clients()
-    for c in clients:
-        if c["code_union"] == code_union:
-            return c
-    return None
+    """Retourne un adhérent précis par code union."""
+    return nathalie_adherents.get_by_code(code_union)
 
 
 # ── Génération d'email fournisseur ────────────────────────────────────────────

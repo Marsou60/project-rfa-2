@@ -5999,10 +5999,40 @@ async def genie_export_excel(import_id: str, session: Session = Depends(get_sess
 #  NATHALIE — Ouverture de comptes
 # ═══════════════════════════════════════════════════════════════════
 
+@router.get("/nathalie/entreprise/search")
+async def nathalie_entreprise_search(q: str = Query("", min_length=0)):
+    """Recherche Annuaire des entreprises (SIRET, SIREN ou nom)."""
+    from app.services.nathalie_entreprise import search_entreprises
+
+    try:
+        return search_entreprises(q)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/nathalie/kbis-extract")
+async def nathalie_kbis_extract(kbis: UploadFile = File(...)):
+    """Lit un Kbis (PDF ou photo), extrait le SIRET, préremplit via l'annuaire."""
+    from app.services.nathalie_entreprise import extract_from_kbis
+
+    filename = kbis.filename or "kbis.pdf"
+    lower = filename.lower()
+    if not lower.endswith((".pdf", ".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff")):
+        raise HTTPException(status_code=400, detail="Le Kbis doit être un PDF ou une image.")
+    data = await kbis.read()
+    try:
+        return extract_from_kbis(data, filename)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lecture du Kbis impossible : {e}")
+
 @router.get("/nathalie/clients")
 async def nathalie_clients(ouverture_only: bool = False):
     """
-    Liste des clients depuis LISTE CLIENT 2.
+    Liste des adhérents Union (table nathalie_adherents).
     ouverture_only=true : uniquement ceux avec OUVERTURE CHEZ renseigné.
     """
     try:
@@ -6011,7 +6041,7 @@ async def nathalie_clients(ouverture_only: bool = False):
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lecture Sheet : {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur lecture adhérents : {str(e)}")
 
 
 @router.get("/nathalie/suppliers")
@@ -6113,17 +6143,46 @@ async def nathalie_send_emails(body: Dict[str, Any] = Body(...)):
 
 @router.get("/nathalie/client/{code_union}")
 async def nathalie_client_detail(code_union: str):
-    """Détail complet d'un client + tâches associées."""
+    """Détail complet d'un adhérent + tâches associées (Sheets, best-effort)."""
     try:
         client = nathalie_service.get_client_by_code(code_union)
         if not client:
             raise HTTPException(status_code=404, detail=f"Client {code_union} introuvable")
-        tasks = nathalie_service.get_tasks(code_union=code_union)
+        try:
+            tasks = nathalie_service.get_tasks(code_union=code_union)
+        except Exception:
+            tasks = []
         return {"client": client, "tasks": tasks}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/nathalie/drive-sync")
+async def nathalie_drive_sync():
+    """Scan Drive : rattache les dossiers existants et alimente la file des incomplets."""
+    try:
+        return nathalie_service.sync_drive_dossiers()
+    except Exception as e:
+        msg = str(e)
+        if "invalid_grant" in msg.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Connexion Google Drive expirée. Il faut renouveler le jeton Drive.",
+            )
+        raise HTTPException(status_code=500, detail=f"Erreur scan Drive : {msg}")
+
+
+@router.get("/nathalie/client/{code_union}/drive")
+async def nathalie_client_drive(code_union: str, persist: bool = True):
+    """Retrouve le dossier Drive existant et vérifie RIB / Kbis."""
+    try:
+        return nathalie_service.inspect_client_drive(code_union, persist=persist)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur Drive : {str(e)}")
 
 
 @router.post("/nathalie/create-client")
@@ -6137,6 +6196,8 @@ async def nathalie_create_client(
     telephone: str = Form(""),
     mail: str = Form(""),
     siret: str = Form(""),
+    tva: str = Form(""),
+    contact_magasin: str = Form(""),
     agent_union: str = Form(""),
     contrat_type: str = Form(""),
     notes: str = Form(""),
@@ -6146,11 +6207,10 @@ async def nathalie_create_client(
     piece_identite: UploadFile = File(None),
 ):
     """
-    Crée un client complet :
+    Crée un adhérent :
     1. Génère Code Union
-    2. Crée dossier Drive
-    3. Upload fichiers
-    4. Ajoute ligne Sheet
+    2. Crée dossier Drive (best-effort)
+    3. Enregistre dans la table nathalie_adherents
     """
     data = {
         "nom_client": nom_client,
@@ -6161,6 +6221,8 @@ async def nathalie_create_client(
         "telephone": telephone,
         "mail": mail,
         "siret": siret,
+        "tva": tva,
+        "contact_magasin": contact_magasin,
         "agent_union": agent_union,
         "contrat_type": contrat_type,
         "notes": notes,

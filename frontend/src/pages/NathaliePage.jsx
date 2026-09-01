@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   UserPlus, Clock, CheckCircle2, AlertCircle, ChevronRight,
   Building2, Phone, Mail, MapPin, FileText, Send, ArrowLeft,
   Sparkles, Search, RefreshCw, Loader2, Eye, X, Copy, Check,
-  FileCheck, FileMinus, ExternalLink, UploadCloud,
+  FileCheck, FileMinus, ExternalLink, UploadCloud, ScanSearch,
 } from 'lucide-react'
 import {
   nathalieGetClients,
@@ -12,6 +12,10 @@ import {
   nathalieGetClientDetail,
   nathalieCreateClient,
   nathalieSendEmails,
+  nathalieSearchEntreprise,
+  nathalieExtractKbis,
+  nathalieInspectDrive,
+  nathalieSyncDrive,
 } from '../api/client'
 
 /* ── Fournisseurs connus (pour les cases à cocher) ─────────── */
@@ -19,7 +23,7 @@ const KNOWN_SUPPLIERS = ['ACR', 'ALLIANCE', 'DCA', 'EXADIS', 'PURFLUX']
 
 /* ── Groupes (pour le routage Drive) ───────────────────────── */
 const GROUPES = [
-  'INDEPENDANT',
+  'INDEPENDANT UNION',
   'GROUPE JUMBO',
   'GROUPE EMERIC',
   'GROUPE APA MARSEILLE',
@@ -27,17 +31,28 @@ const GROUPES = [
   'GROUPE DISCOUNT',
   'GROUPE LES LYONNAIS',
   'GROUPE STARCOM',
+  'GROUPE CENTER',
+  'GROUPE CODIFA',
 ]
 
 const STATUS_STYLE = {
-  'docs_ok':      { bg: 'bg-emerald-500/20', text: 'text-emerald-300', label: 'Docs complets' },
-  'docs_partial': { bg: 'bg-amber-500/20',   text: 'text-amber-300',   label: 'Docs incomplets' },
-  'no_ouverture': { bg: 'bg-slate-500/20',   text: 'text-slate-400',   label: 'Sans fournisseur' },
+  'docs_ok':      { bg: 'bg-emerald-500/20', text: 'text-emerald-300', label: 'Complet' },
+  'docs_partial': { bg: 'bg-amber-500/20',   text: 'text-amber-300',   label: 'Incomplet' },
+  'a_scanner':    { bg: 'bg-slate-500/20',   text: 'text-slate-400',   label: 'À scanner' },
+}
+
+function isDossierComplet(client) {
+  return Boolean(client.has_rib ?? client.rib) && Boolean(client.has_kbis ?? client.kbis)
+}
+
+function isDriveChecked(client) {
+  return Boolean(client.drive_checked || client.drive_checked_at || client.drive_folder_id)
 }
 
 function clientStatus(client) {
-  if (!client.ouverture_chez) return 'no_ouverture'
-  return client.docs_complets ? 'docs_ok' : 'docs_partial'
+  if (isDossierComplet(client)) return 'docs_ok'
+  if (!isDriveChecked(client)) return 'a_scanner'
+  return 'docs_partial'
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -54,18 +69,22 @@ export default function NathaliePage() {
   const [generatedEmails, setGeneratedEmails] = useState([])
   const [generating, setGenerating] = useState(false)
 
+  const [scanning, setScanning] = useState(false)
+
   const loadData = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [c, s] = await Promise.all([
-        nathalieGetClients(false),
-        nathalieGetSuppliers(),
-      ])
+      const c = await nathalieGetClients(false)
       setClients(c.clients || [])
-      setSuppliers(s.suppliers || [])
+      try {
+        const s = await nathalieGetSuppliers()
+        setSuppliers(s.suppliers || [])
+      } catch {
+        setSuppliers([])
+      }
     } catch (e) {
-      setError(e?.response?.data?.detail || 'Impossible de charger les données depuis Google Sheets.')
+      setError(e?.response?.data?.detail || 'Impossible de charger l’annuaire adhérents.')
     } finally {
       setLoading(false)
     }
@@ -129,16 +148,33 @@ export default function NathaliePage() {
       c.nom_client?.toLowerCase().includes(s) ||
       c.code_union?.toLowerCase().includes(s) ||
       c.ville?.toLowerCase().includes(s) ||
+      c.groupe?.toLowerCase().includes(s) ||
       c.ouverture_chez?.toLowerCase().includes(s)
     )
   })
 
+  const scanDrive = async () => {
+    setScanning(true)
+    setError(null)
+    try {
+      await nathalieSyncDrive()
+      await loadData()
+      setView('dossiers')
+    } catch (e) {
+      setError(e?.response?.data?.detail || 'Impossible de scanner Drive.')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   const stats = {
     total: clients.length,
-    avecFournisseur: clients.filter(c => c.ouverture_chez).length,
-    docsOk: clients.filter(c => c.ouverture_chez && c.docs_complets).length,
-    docsKo: clients.filter(c => c.ouverture_chez && !c.docs_complets).length,
+    enCours: clients.filter(c => isDriveChecked(c) && !isDossierComplet(c)).length,
+    complets: clients.filter(c => isDossierComplet(c)).length,
+    aScanner: clients.filter(c => !isDriveChecked(c)).length,
   }
+
+  const dossiersEnCours = filteredClients.filter(c => isDriveChecked(c) && !isDossierComplet(c))
 
   return (
     <div className="min-h-screen space-y-6 pb-16">
@@ -159,8 +195,10 @@ export default function NathaliePage() {
         <AccueilView
           stats={stats}
           loading={loading}
+          scanning={scanning}
           onVoirDossiers={() => setView('dossiers')}
           onNouveau={() => setView('nouveau')}
+          onScanDrive={scanDrive}
         />
       )}
 
@@ -174,12 +212,15 @@ export default function NathaliePage() {
 
       {view === 'dossiers' && (
         <DossiersView
-          clients={filteredClients}
+          clients={dossiersEnCours}
           loading={loading}
+          scanning={scanning}
+          aScanner={stats.aScanner}
           search={search}
           setSearch={setSearch}
           onBack={() => setView('accueil')}
           onSelectClient={openClient}
+          onScanDrive={scanDrive}
         />
       )}
 
@@ -192,7 +233,7 @@ export default function NathaliePage() {
           setSelectedSuppliers={setSelectedSuppliers}
           generating={generating}
           onGenerate={handleGenerateEmails}
-          onBack={() => setView('dossiers')}
+          onBack={() => { loadData(); setView('dossiers') }}
         />
       )}
 
@@ -222,14 +263,14 @@ function NathalieHeader({ onRefresh, loading }) {
             </div>
             <div className="hidden md:flex items-center gap-2 bg-white/10 rounded-full px-3 py-1 ml-2">
               <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
-              <span className="text-white/80 text-xs font-medium">Google Sheets connecté</span>
+              <span className="text-white/80 text-xs font-medium">Base Union (Supabase)</span>
             </div>
           </div>
           <button
             onClick={onRefresh}
             disabled={loading}
             className="glass-btn-icon"
-            title="Actualiser depuis Sheets"
+            title="Actualiser l’annuaire"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -241,22 +282,18 @@ function NathalieHeader({ onRefresh, loading }) {
 }
 
 /* ── Accueil ─────────────────────────────────────────────────── */
-function AccueilView({ stats, loading, onVoirDossiers, onNouveau }) {
+function AccueilView({ stats, loading, scanning, onVoirDossiers, onNouveau, onScanDrive }) {
   return (
     <div className="space-y-5">
-      {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Adhérents total', value: stats.total, color: 'text-blue-300', icon: '👥' },
-          { label: 'À ouvrir', value: stats.avecFournisseur, color: 'text-amber-300', icon: '📋' },
-          { label: 'Docs complets', value: stats.docsOk, color: 'text-emerald-300', icon: '✅' },
-          { label: 'Docs manquants', value: stats.docsKo, color: 'text-red-300', icon: '⚠️' },
+          { label: 'En cours', value: stats.enCours, color: 'text-amber-300' },
+          { label: 'Complets', value: stats.complets, color: 'text-emerald-300' },
+          { label: 'À scanner', value: stats.aScanner, color: 'text-slate-300' },
+          { label: 'Annuaire', value: stats.total, color: 'text-blue-300' },
         ].map(k => (
           <div key={k.label} className="glass-card p-4 flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-blue-300/50 font-medium">{k.label}</span>
-              <span className="text-lg">{k.icon}</span>
-            </div>
+            <span className="text-xs text-blue-300/50 font-medium">{k.label}</span>
             <div className={`text-2xl font-black ${k.color}`}>
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : k.value}
             </div>
@@ -264,9 +301,7 @@ function AccueilView({ stats, loading, onVoirDossiers, onNouveau }) {
         ))}
       </div>
 
-      {/* Actions */}
       <div className="grid md:grid-cols-2 gap-4">
-        {/* Nouveau Dossier */}
         <button
           onClick={onNouveau}
           className="glass-card p-6 text-left hover:scale-[1.02] hover:shadow-2xl hover:shadow-emerald-500/20 transition-all duration-300 group"
@@ -279,11 +314,10 @@ function AccueilView({ stats, loading, onVoirDossiers, onNouveau }) {
           </div>
           <h3 className="text-lg font-bold text-white mb-1">Nouveau dossier</h3>
           <p className="text-blue-300/60 text-sm">
-            Créer un adhérent : formulaire guidé, upload de pièces, création automatique du dossier Drive et ligne Sheet.
+            Créer un adhérent : Kbis ou recherche INSEE, pièces, dossier Drive, base Union.
           </p>
         </button>
 
-        {/* Liste Dossiers */}
         <button
           onClick={onVoirDossiers}
           className="glass-card p-6 text-left hover:scale-[1.02] hover:shadow-2xl hover:shadow-teal-500/20 transition-all duration-300 group"
@@ -296,24 +330,71 @@ function AccueilView({ stats, loading, onVoirDossiers, onNouveau }) {
           </div>
           <h3 className="text-lg font-bold text-white mb-1">Dossiers en cours</h3>
           <p className="text-blue-300/60 text-sm">
-            Suivre les dossiers, voir les statuts documents, générer les emails fournisseurs.
+            File des magasins dont le RIB ou le Kbis manque encore dans Drive.
+            {typeof stats.enCours === 'number' ? ` ${stats.enCours} en attente.` : ''}
           </p>
         </button>
       </div>
+
+      {stats.aScanner > 0 && (
+        <button
+          type="button"
+          onClick={onScanDrive}
+          disabled={scanning}
+          className="w-full glass-card p-4 flex items-center justify-between text-left hover:bg-white/5"
+        >
+          <div>
+            <div className="text-white font-semibold">Scanner les dossiers Drive</div>
+            <div className="text-xs text-blue-300/60 mt-1">
+              {stats.aScanner} fiches pas encore comparées à Drive — ça alimente la file des incomplets.
+            </div>
+          </div>
+          {scanning ? <Loader2 className="w-5 h-5 animate-spin text-emerald-300" /> : <RefreshCw className="w-5 h-5 text-emerald-300" />}
+        </button>
+      )}
     </div>
   )
 }
 
+function isSiret14(value) {
+  return String(value || '').replace(/\D/g, '').length === 14
+}
+
+function applyEntrepriseToForm(current, row) {
+  if (!row) return current
+  const siret = isSiret14(row.siret) ? String(row.siret).replace(/\D/g, '') : current.siret
+  const next = {
+    ...current,
+    nom_client: row.nom_client || current.nom_client,
+    siret,
+    tva: row.tva || current.tva,
+    adresse: row.adresse || current.adresse,
+    code_postal: row.code_postal || current.code_postal,
+    ville: row.ville || current.ville,
+    contact_magasin: row.contact_magasin || current.contact_magasin,
+  }
+  if (row.raison_sociale && row.raison_sociale !== row.nom_client) {
+    const line = `Raison sociale : ${row.raison_sociale}`
+    if (!(next.notes || '').includes(line)) {
+      next.notes = next.notes ? `${next.notes}\n${line}` : line
+    }
+  }
+  return next
+}
+
 /* ── Nouveau Dossier ───────────────────────────────────────────── */
 function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
-  const [step, setStep] = useState(0)
   const [submitting, setSubmitted] = useState(false)
   const [result, setResult] = useState(null)
-  
+  const skipSiretLookup = useRef(false)
+  const skipQuerySearch = useRef(false)
+
   const [form, setForm] = useState({
     nom_client: '',
-    groupe: 'INDEPENDANT',
+    groupe: 'INDEPENDANT UNION',
     siret: '',
+    tva: '',
+    contact_magasin: '',
     adresse: '',
     code_postal: '',
     ville: '',
@@ -323,30 +404,121 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
     contrat_type: '',
     notes: '',
   })
-  
+
   const [files, setFiles] = useState({
     rib: null,
     kbis: null,
     piece_identite: null,
   })
+  const [query, setQuery] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [readingKbis, setReadingKbis] = useState(false)
+  const [autofill, setAutofill] = useState(null)
+  const [lookupError, setLookupError] = useState(null)
 
-  const handleFileChange = (key, e) => {
-    if (e.target.files?.[0]) {
-      setFiles(f => ({ ...f, [key]: e.target.files[0] }))
+  const applyRow = (row, source, extra = {}) => {
+    skipSiretLookup.current = true
+    skipQuerySearch.current = true
+    setForm(current => applyEntrepriseToForm(current, row))
+    setAutofill({
+      source,
+      siret: isSiret14(row.siret) ? String(row.siret).replace(/\D/g, '') : null,
+      via: extra.via || source,
+      rcs: extra.rcs || row.siren || null,
+      nom: extra.nom || null,
+      label: row.label || row.nom_client,
+    })
+    setSuggestions([])
+    setQuery(row.nom_client || '')
+    setLookupError(null)
+  }
+
+  const readKbis = async (file) => {
+    if (!file) return
+    setFiles(f => ({ ...f, kbis: file }))
+    setReadingKbis(true)
+    setLookupError(null)
+    try {
+      const data = await nathalieExtractKbis(file)
+      if (data.entreprise && isSiret14(data.entreprise.siret)) {
+        applyRow(data.entreprise, data.method === 'ocr' ? 'kbis-ocr' : 'kbis', {
+          via: data.resolved_via,
+          rcs: data.siren,
+          nom: (data.noms_kbis || [])[0],
+        })
+      } else if ((data.suggestions || []).length) {
+        setSuggestions(data.suggestions)
+      }
+      if (data.warning) setLookupError(data.warning)
+    } catch (e) {
+      setLookupError(e?.response?.data?.detail || 'Impossible de lire ce Kbis.')
+    } finally {
+      setReadingKbis(false)
     }
   }
+
+  const handleFileChange = (key, e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (key === 'kbis') readKbis(file)
+    else setFiles(f => ({ ...f, [key]: file }))
+  }
+
+  useEffect(() => {
+    const q = query.trim()
+    if (skipQuerySearch.current) {
+      skipQuerySearch.current = false
+      return undefined
+    }
+    if (q.length < 3) {
+      setSuggestions([])
+      return undefined
+    }
+    const handle = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const data = await nathalieSearchEntreprise(q)
+        setSuggestions(data.results || [])
+      } catch {
+        setSuggestions([])
+      } finally {
+        setSearching(false)
+      }
+    }, 280)
+    return () => clearTimeout(handle)
+  }, [query])
+
+  useEffect(() => {
+    const digits = (form.siret || '').replace(/\D/g, '')
+    if (skipSiretLookup.current) {
+      skipSiretLookup.current = false
+      return undefined
+    }
+    if (digits.length !== 14) return undefined
+    const handle = setTimeout(async () => {
+      try {
+        const data = await nathalieSearchEntreprise(digits)
+        const row = (data.results || [])[0]
+        if (row) applyRow(row, 'siret')
+      } catch {
+        /* saisie manuelle toujours possible */
+      }
+    }, 400)
+    return () => clearTimeout(handle)
+  }, [form.siret])
 
   const handleSubmit = async () => {
     if (!form.nom_client) return
     setSubmitted(true)
-    
+
     try {
       const formData = new FormData()
       Object.entries(form).forEach(([k, v]) => formData.append(k, v))
       if (files.rib) formData.append('rib', files.rib)
       if (files.kbis) formData.append('kbis', files.kbis)
       if (files.piece_identite) formData.append('piece_identite', files.piece_identite)
-      
+
       const res = await nathalieCreateClient(formData)
       setResult(res)
     } catch (e) {
@@ -375,14 +547,21 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
           </div>
           <div className="flex justify-between items-center">
             <span className="text-blue-300/50 text-sm">Dossier Drive</span>
-            <a href={result.drive_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-sm font-medium">
-              Ouvrir <ExternalLink className="w-3 h-3" />
-            </a>
+            {result.drive_link ? (
+              <a href={result.drive_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-sm font-medium">
+                Ouvrir <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <span className="text-amber-300 text-sm">Non créé</span>
+            )}
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-blue-300/50 text-sm">Ligne Sheet</span>
-            <span className="text-white/60 text-sm">Ajoutée ✓</span>
+            <span className="text-blue-300/50 text-sm">Base Union</span>
+            <span className="text-white/60 text-sm">Enregistré ✓</span>
           </div>
+          {result.drive_warning && (
+            <p className="text-xs text-amber-300/80 pt-1">Drive : {result.drive_warning}</p>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mt-6">
@@ -412,7 +591,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
         <Loader2 className="w-16 h-16 text-emerald-400 animate-spin" />
         <div>
           <h3 className="text-xl font-bold text-white">Création en cours...</h3>
-          <p className="text-blue-300/60 mt-2">Nathalie crée le dossier Drive, uploade les fichiers et met à jour le Sheet.</p>
+          <p className="text-blue-300/60 mt-2">Nathalie génère le code Union, crée le dossier Drive et enregistre l’adhérent.</p>
         </div>
       </div>
     )
@@ -426,6 +605,100 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
       </div>
 
       <div className="glass-card p-8 space-y-8">
+        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-5 space-y-4">
+          <div>
+            <h3 className="font-bold text-white flex items-center gap-2">
+              <ScanSearch className="w-5 h-5 text-emerald-400" />
+              Préremplir la fiche
+            </h3>
+            <p className="text-sm text-blue-300/60 mt-1">
+              Déposez le Kbis : on cherche avec le RCS ou la dénomination, puis on enregistre le SIRET (14 chiffres).
+            </p>
+          </div>
+
+          <label
+            className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center cursor-pointer transition-colors ${
+              files.kbis
+                ? 'border-emerald-500/50 bg-emerald-500/10'
+                : 'border-white/15 hover:border-emerald-400/40 bg-white/5'
+            }`}
+          >
+            <input
+              type="file"
+              accept=".pdf,image/*"
+              className="hidden"
+              onChange={e => { if (e.target.files?.[0]) readKbis(e.target.files[0]) }}
+            />
+            {readingKbis ? (
+              <span className="flex items-center gap-2 text-emerald-300 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" /> Lecture du Kbis…
+              </span>
+            ) : files.kbis ? (
+              <span className="text-emerald-300 text-sm font-medium">Kbis : {files.kbis.name}</span>
+            ) : (
+              <>
+                <UploadCloud className="w-6 h-6 text-emerald-400" />
+                <span className="text-white text-sm font-semibold">Déposer le Kbis (PDF ou photo)</span>
+                <span className="text-blue-300/50 text-xs">INPI, scan, ou photo lisible</span>
+              </>
+            )}
+          </label>
+
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className="input-field pl-10"
+              placeholder="Ou chercher : nom, SIRET, ville…"
+            />
+            {searching && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-emerald-300" />
+            )}
+            {suggestions.length > 0 && (
+              <ul className="absolute z-20 mt-2 w-full max-h-64 overflow-auto rounded-xl border border-white/10 bg-slate-900/95 shadow-xl">
+                {suggestions.map(row => (
+                  <li key={row.siret || row.label}>
+                    <button
+                      type="button"
+                      onClick={() => applyRow(row, 'annuaire')}
+                      className="w-full text-left px-4 py-3 hover:bg-white/10 border-b border-white/5 last:border-0"
+                    >
+                      <div className="text-white text-sm font-semibold">{row.nom_client}</div>
+                      <div className="text-xs text-blue-300/60 mt-0.5">
+                        {row.siret} · {[row.adresse, row.code_postal, row.ville].filter(Boolean).join(' ')}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {autofill && (
+            <div className="flex items-start gap-2 text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>
+                {autofill.siret
+                  ? `SIRET ${autofill.siret} — c’est ce numéro qui sera stocké${
+                      autofill.via === 'rcs' && autofill.rcs
+                        ? ` (recherché via RCS ${autofill.rcs})`
+                        : autofill.via === 'nom'
+                          ? ' (recherché via la dénomination du Kbis)'
+                          : ''
+                    }.`
+                  : 'Fiche préremplie. Vérifiez le SIRET avant d’enregistrer.'}
+              </span>
+            </div>
+          )}
+          {lookupError && (
+            <div className="flex items-start gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{lookupError}</span>
+            </div>
+          )}
+        </div>
+
         {/* Info Base */}
         <div className="grid md:grid-cols-2 gap-5">
           <div className="md:col-span-2">
@@ -440,8 +713,16 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
             </select>
           </div>
           <div>
-            <label className="label-field">SIRET</label>
+            <label className="label-field">SIRET (stocké, 14 chiffres)</label>
             <input value={form.siret} onChange={e => setForm({...form, siret: e.target.value})} className="input-field" placeholder="14 chiffres" />
+          </div>
+          <div>
+            <label className="label-field">Contact magasin</label>
+            <input value={form.contact_magasin} onChange={e => setForm({...form, contact_magasin: e.target.value})} className="input-field" placeholder="Nom du contact" />
+          </div>
+          <div>
+            <label className="label-field">N° TVA</label>
+            <input value={form.tva} onChange={e => setForm({...form, tva: e.target.value})} className="input-field" placeholder="FR…" />
           </div>
         </div>
 
@@ -500,7 +781,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
         <div className="pt-6">
           <button
             onClick={handleSubmit}
-            disabled={!form.nom_client}
+            disabled={!form.nom_client || (form.siret || '').replace(/\D/g, '').length !== 14}
             className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-lg shadow-lg hover:shadow-emerald-500/20 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
             Créer le dossier complet
@@ -512,12 +793,26 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
 }
 
 /* ── Dossiers ─────────────────────────────────────────────────── */
-function DossiersView({ clients, loading, search, setSearch, onBack, onSelectClient }) {
+function DossiersView({ clients, loading, scanning, aScanner, search, setSearch, onBack, onSelectClient, onScanDrive }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={onBack} className="glass-btn-icon"><ArrowLeft className="w-4 h-4" /></button>
-        <h2 className="text-lg font-bold text-white flex-1">Dossiers adhérents</h2>
+        <div className="flex-1 min-w-[180px]">
+          <h2 className="text-lg font-bold text-white">Dossiers en cours</h2>
+          <p className="text-xs text-blue-300/50">
+            {clients.length} dossiers incomplets — RIB ou Kbis manquant
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onScanDrive}
+          disabled={scanning}
+          className="flex items-center gap-2 text-xs px-3 py-2 rounded-xl bg-white/10 border border-white/15 text-white/80 hover:bg-white/15"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
+          Scanner Drive
+        </button>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
           <input
@@ -529,17 +824,23 @@ function DossiersView({ clients, loading, search, setSearch, onBack, onSelectCli
         </div>
       </div>
 
-      {loading ? (
+      {aScanner > 0 && (
+        <div className="text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+          {aScanner} fiches pas encore comparées à Drive. Lancez un scan pour remplir cette file.
+        </div>
+      )}
+
+      {loading || scanning ? (
         <div className="flex items-center justify-center py-20 text-blue-300/60 gap-3">
           <Loader2 className="w-5 h-5 animate-spin" />
-          Chargement depuis Google Sheets…
+          {scanning ? 'Scan Drive en cours…' : 'Chargement…'}
         </div>
       ) : (
         <div className="glass-card overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/10">
-                {['Code Union', 'Nom client', 'Ville', 'Ouverture chez', 'Docs', 'Agent'].map(h => (
+                {['Code Union', 'Nom client', 'Groupe', 'Ville', 'Manque', 'Drive'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-blue-300/50 font-semibold text-xs uppercase tracking-wider">{h}</th>
                 ))}
                 <th className="px-4 py-3" />
@@ -547,10 +848,17 @@ function DossiersView({ clients, loading, search, setSearch, onBack, onSelectCli
             </thead>
             <tbody>
               {clients.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-10 text-white/30">Aucun résultat</td></tr>
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-white/30">
+                    {aScanner > 0 ? 'Aucun incomplet connu pour l’instant — scannez Drive.' : 'Aucun dossier incomplet. Tout est à jour.'}
+                  </td>
+                </tr>
               )}
               {clients.map((c, i) => {
-                const st = STATUS_STYLE[clientStatus(c)]
+                const missing = c.missing_docs?.length ? c.missing_docs : [
+                  ...(c.has_rib || c.rib ? [] : ['RIB']),
+                  ...(c.has_kbis || c.kbis ? [] : ['Kbis']),
+                ]
                 return (
                   <tr
                     key={c.code_union + i}
@@ -558,21 +866,31 @@ function DossiersView({ clients, loading, search, setSearch, onBack, onSelectCli
                     onClick={() => onSelectClient(c)}
                   >
                     <td className="px-4 py-3 font-mono text-xs text-blue-300/70">{c.code_union}</td>
-                    <td className="px-4 py-3 font-semibold text-white max-w-[180px] truncate">{c.nom_client}</td>
+                    <td className="px-4 py-3 font-semibold text-white max-w-[220px] truncate">{c.nom_client}</td>
+                    <td className="px-4 py-3 text-white/50 text-xs max-w-[140px] truncate">{c.groupe || '—'}</td>
                     <td className="px-4 py-3 text-white/50 text-xs">{c.ville}</td>
                     <td className="px-4 py-3">
-                      {c.ouverture_chez ? (
-                        <div className="flex gap-1 flex-wrap">
-                          {c.ouverture_chez.split(/[,;/\s]+/).filter(Boolean).map(s => (
-                            <span key={s} className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-semibold">{s.trim()}</span>
-                          ))}
-                        </div>
-                      ) : <span className="text-white/20 text-xs">—</span>}
+                      <div className="flex gap-1 flex-wrap">
+                        {missing.map(doc => (
+                          <span key={doc} className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">{doc}</span>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${st.bg} ${st.text}`}>{st.label}</span>
+                      {c.drive_link ? (
+                        <a
+                          href={c.drive_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          Ouvrir <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-white/20 text-xs">—</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-white/40 text-xs">{c.agent_union}</td>
                     <td className="px-4 py-3">
                       <ChevronRight className="w-4 h-4 text-white/30" />
                     </td>
@@ -589,13 +907,33 @@ function DossiersView({ clients, loading, search, setSearch, onBack, onSelectCli
 
 /* ── Client detail ────────────────────────────────────────────── */
 function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSelectedSuppliers, generating, onGenerate, onBack }) {
+  const [drive, setDrive] = useState(null)
+  const [driveLoading, setDriveLoading] = useState(true)
+  const [driveError, setDriveError] = useState(null)
+
+  const inspectDrive = async () => {
+    if (!client?.code_union) return
+    setDriveLoading(true)
+    setDriveError(null)
+    try {
+      const data = await nathalieInspectDrive(client.code_union)
+      setDrive(data)
+      if (data?.error && !data.folder_found) setDriveError(data.error)
+    } catch (e) {
+      setDriveError(e?.response?.data?.detail || 'Impossible de lire le Drive.')
+    } finally {
+      setDriveLoading(false)
+    }
+  }
+
+  useEffect(() => { inspectDrive() }, [client.code_union])
   const toggleSupplier = (name) => {
     setSelectedSuppliers(prev =>
       prev.includes(name) ? prev.filter(s => s !== name) : [...prev, name]
     )
   }
 
-  // Liste des fournisseurs disponibles (connus + ceux dans le Sheet)
+  // Fournisseurs connus + ceux de CONTACT FOURNISSEURS
   const allSupplierNames = [
     ...new Set([
       ...KNOWN_SUPPLIERS,
@@ -628,6 +966,8 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
           <div className="space-y-2 text-sm">
             {[
               ['SIRET', client.siret],
+              ['TVA', client.tva],
+              ['Contact', client.contact_magasin],
               ['Adresse', [client.adresse, client.code_postal, client.ville].filter(Boolean).join(', ')],
               ['Téléphone', client.telephone],
               ['Email', client.mail],
@@ -649,35 +989,81 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
 
         {/* Documents */}
         <div className="glass-card p-5 space-y-4">
-          <h3 className="font-bold text-white flex items-center gap-2">
-            <FileText className="w-4 h-4 text-emerald-400" /> Documents
-          </h3>
-          <div className="space-y-2">
-            {docsFields.map(({ key, label, icon }) => {
-              const val = client[key]
-              return (
-                <div key={key} className={`flex items-center justify-between p-3 rounded-xl ${val ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
-                  <div className="flex items-center gap-2">
-                    <span className={val ? 'text-emerald-400' : 'text-red-400'}>{icon}</span>
-                    <span className={`text-sm font-medium ${val ? 'text-emerald-300' : 'text-red-300'}`}>{label}</span>
-                  </div>
-                  {val ? (
-                    val.startsWith('http') ? (
-                      <a href={val} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
-                        onClick={e => e.stopPropagation()}>
-                        <ExternalLink className="w-3 h-3" /> Voir
-                      </a>
-                    ) : (
-                      <span className="text-xs text-emerald-400">✓ Présent</span>
-                    )
-                  ) : (
-                    <span className="text-xs text-red-400">Manquant</span>
-                  )}
-                </div>
-              )
-            })}
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-bold text-white flex items-center gap-2">
+              <FileText className="w-4 h-4 text-emerald-400" /> Documents Drive
+            </h3>
+            <button
+              type="button"
+              onClick={inspectDrive}
+              disabled={driveLoading}
+              className="text-xs text-emerald-300/80 hover:text-emerald-200 flex items-center gap-1"
+            >
+              <RefreshCw className={`w-3 h-3 ${driveLoading ? 'animate-spin' : ''}`} />
+              Vérifier
+            </button>
           </div>
+
+          {driveLoading && !drive ? (
+            <div className="flex items-center gap-2 text-sm text-blue-300/60 py-4">
+              <Loader2 className="w-4 h-4 animate-spin" /> Lecture du dossier Drive…
+            </div>
+          ) : (
+            <>
+              <div className={`rounded-xl px-3 py-2 text-xs ${
+                drive?.folder_found
+                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+                  : 'bg-amber-500/10 border border-amber-500/20 text-amber-300'
+              }`}>
+                {drive?.folder_found ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Dossier trouvé : {drive.folder_name}</span>
+                    {drive.drive_link && (
+                      <a href={drive.drive_link} target="_blank" rel="noreferrer" className="flex items-center gap-1 shrink-0">
+                        Ouvrir <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <span>{driveError || 'Aucun dossier Drive pour ce code Union.'}</span>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {docsFields.map(({ key, label, icon }) => {
+                  const fromDrive = drive?.[key]
+                  const fromDb = client[key]
+                  const present = Boolean(fromDrive || fromDb)
+                  const link = fromDrive?.link || (typeof fromDb === 'string' && fromDb.startsWith('http') ? fromDb : null)
+                  const fileName = fromDrive?.name
+                  return (
+                    <div key={key} className={`flex items-center justify-between p-3 rounded-xl ${present ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={present ? 'text-emerald-400' : 'text-red-400'}>{icon}</span>
+                        <div className="min-w-0">
+                          <div className={`text-sm font-medium ${present ? 'text-emerald-300' : 'text-red-300'}`}>{label}</div>
+                          {fileName && <div className="text-[11px] text-white/40 truncate">{fileName}</div>}
+                        </div>
+                      </div>
+                      {present ? (
+                        link ? (
+                          <a href={link} target="_blank" rel="noreferrer"
+                            className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 shrink-0"
+                            onClick={e => e.stopPropagation()}>
+                            <ExternalLink className="w-3 h-3" /> Voir
+                          </a>
+                        ) : (
+                          <span className="text-xs text-emerald-400">✓ Présent</span>
+                        )
+                      ) : (
+                        <span className="text-xs text-red-400">Manquant</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
 

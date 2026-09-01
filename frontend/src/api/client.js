@@ -1065,6 +1065,30 @@ export const nathalieGetClientDetail = async (codeUnion) => {
   return response.data
 }
 
+export const nathalieInspectDrive = async (codeUnion) => {
+  const response = await api.get(`/nathalie/client/${encodeURIComponent(codeUnion)}/drive`)
+  return response.data
+}
+
+export const nathalieSyncDrive = async () => {
+  const response = await api.post('/nathalie/drive-sync', null, { timeout: 180000 })
+  return response.data
+}
+
+export const nathalieSearchEntreprise = async (q) => {
+  const response = await api.get('/nathalie/entreprise/search', { params: { q } })
+  return response.data
+}
+
+export const nathalieExtractKbis = async (file) => {
+  const formData = new FormData()
+  formData.append('kbis', file)
+  const response = await api.post('/nathalie/kbis-extract', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data
+}
+
 export const nathalieCreateClient = async (formData) => {
   // formData doit être un objet FormData avec les champs + fichiers
   const response = await api.post('/nathalie/create-client', formData, {
