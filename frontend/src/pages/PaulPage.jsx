@@ -9,9 +9,20 @@ import {
   RefreshCw,
   Save,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react'
 
 const SECTIONS = [
+  {
+    id: 'impayes',
+    label: 'Impayés adhérents',
+    icon: <AlertTriangle className="w-4 h-4" />,
+    emoji: '⚠️',
+    description: 'Remontées plateformes et partenaires, statuts (en cours, contentieux, régularisé) et suivi par adhérent.',
+    color: 'from-rose-500 to-orange-600',
+    glow: 'hover:shadow-rose-500/30',
+    needsImport: false,
+  },
   {
     id: 'union-space',
     label: 'Tableau de bord DAF',

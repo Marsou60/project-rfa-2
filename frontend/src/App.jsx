@@ -39,6 +39,7 @@ import LoginPage from './pages/LoginPage'
 import UnionDashboardPage from './pages/UnionDashboardPage'
 import NathaliePage from './pages/NathaliePage'
 import PaulPage from './pages/PaulPage'
+import ImpayesPage from './pages/ImpayesPage'
 import PureDataMonthlyImportPage from './pages/PureDataMonthlyImportPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AppUpdaterEffect } from './components/AppUpdater'
@@ -184,7 +185,7 @@ function AppContent() {
   // Pages accessibles uniquement aux admins
   const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'paul', 'union-space', 'pure-data-platform-import', 'pure-data-monthly-import']
   // Pages accessibles aux commerciaux (Nicolas + Nathalie)
-  const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'pure-data-monthly', 'nathalie']
+  const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'pure-data-monthly', 'nathalie', 'impayes']
 
   // Adhérent : redirige vers espace client seulement si les données sont prêtes
   // (sans données, on laisse afficher le message de bienvenue)
@@ -255,7 +256,7 @@ function AppContent() {
                     <button
                       onClick={() => setOpenMenu(openMenu === 'nicolas' ? null : 'nicolas')}
                       className={`glass-nav-item text-sm flex items-center gap-1.5 ${
-                        ['client-space', 'genie', 'pure-data', 'pure-data-monthly'].includes(effectivePage) ? 'active' : ''
+                        ['client-space', 'genie', 'pure-data', 'pure-data-monthly', 'impayes'].includes(effectivePage) ? 'active' : ''
                       }`}
                     >
                       <span className="text-base leading-none">📊</span>
@@ -272,6 +273,16 @@ function AppContent() {
                           <div>
                             <div className="font-semibold">Espace client</div>
                             <div className="text-[10px] text-white/40">Fiche détaillée adhérent</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage('impayes'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'impayes' ? 'active' : ''}`}
+                        >
+                          <span className="text-base">⚠️</span>
+                          <div>
+                            <div className="font-semibold">Impayés adhérents</div>
+                            <div className="text-[10px] text-white/40">Suivi statuts & partenaires</div>
                           </div>
                         </button>
                         <button
@@ -336,7 +347,7 @@ function AppContent() {
                     <button
                       onClick={() => setOpenMenu(openMenu === 'nicolas' ? null : 'nicolas')}
                       className={`glass-nav-item text-sm flex items-center gap-1.5 ${
-                        ['nicolas', 'client-space', 'genie', 'pure-data', 'pure-data-monthly'].includes(effectivePage) ? 'active' : ''
+                        ['nicolas', 'client-space', 'genie', 'pure-data', 'pure-data-monthly', 'impayes'].includes(effectivePage) ? 'active' : ''
                       }`}
                     >
                       <span className="text-base leading-none">📊</span>
@@ -353,6 +364,16 @@ function AppContent() {
                           <div>
                             <div className="font-semibold">Espace client</div>
                             <div className="text-[10px] text-white/40">Fiche détaillée adhérent</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => { setCurrentPage('impayes'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'impayes' ? 'active' : ''}`}
+                        >
+                          <span className="text-base">⚠️</span>
+                          <div>
+                            <div className="font-semibold">Impayés adhérents</div>
+                            <div className="text-[10px] text-white/40">Suivi statuts & partenaires</div>
                           </div>
                         </button>
                         <button
@@ -399,7 +420,7 @@ function AppContent() {
                     <button
                       onClick={() => setOpenMenu(openMenu === 'paul' ? null : 'paul')}
                       className={`glass-nav-item text-sm flex items-center gap-1.5 ${
-                        ['paul', 'union-space', 'recap', 'margin-simulator', 'clients'].includes(effectivePage) ? 'active' : ''
+                        ['paul', 'union-space', 'recap', 'margin-simulator', 'clients', 'impayes'].includes(effectivePage) ? 'active' : ''
                       }`}
                     >
                       <span className="text-base leading-none">💼</span>
@@ -419,6 +440,16 @@ function AppContent() {
                           </div>
                         </button>
                         <div className="border-t border-white/10 my-1" />
+                        <button
+                          onClick={() => { setCurrentPage('impayes'); setOpenMenu(null) }}
+                          className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'impayes' ? 'active' : ''}`}
+                        >
+                          <span className="text-base">⚠️</span>
+                          <div>
+                            <div className="font-semibold">Impayés adhérents</div>
+                            <div className="text-[10px] text-white/40">Contentieux, encours, régularisés</div>
+                          </div>
+                        </button>
                         <button
                           onClick={() => { setCurrentPage(currentImportId ? 'union-space' : 'upload'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'union-space' ? 'active' : ''} ${!currentImportId ? 'opacity-40' : ''}`}
@@ -674,6 +705,9 @@ function AppContent() {
         {effectivePage === 'nathalie' && (isAdmin || isCommercial) && (
           <NathaliePage />
         )}
+        {effectivePage === 'impayes' && (isAdmin || isCommercial) && (
+          <ImpayesPage canWrite={isAdmin || isCommercial} />
+        )}
         {effectivePage === 'upload' && isAdmin && (
           <UploadPage onUploadSuccess={handleUploadSuccess} />
         )}
@@ -687,6 +721,7 @@ function AppContent() {
             linkedGroupe={user?.linkedGroupe}
             isAdherent={isAdherent}
             isAdmin={isAdmin}
+            onNavigate={(page) => { setCurrentPage(page); setOpenMenu(null) }}
           />
         )}
         {effectivePage === 'recap' && currentImportId && isAdmin && (

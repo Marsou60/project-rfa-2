@@ -1075,6 +1075,57 @@ export const nathalieCreateClient = async (formData) => {
   return response.data
 }
 
+// ==================== IMPAYÉS ADHÉRENTS ====================
+
+export const getImpayesSummary = async (codeUnion = null) => {
+  const response = await api.get('/impayes/summary', {
+    params: codeUnion ? { code_union: codeUnion } : {},
+  })
+  return response.data
+}
+
+export const getImpayesFlags = async (codes = null) => {
+  const params = {}
+  if (codes && codes.length) params.codes = Array.isArray(codes) ? codes.join(',') : codes
+  const response = await api.get('/impayes/flags', { params })
+  return response.data
+}
+
+export const getImpayes = async (filters = {}) => {
+  const response = await api.get('/impayes', { params: filters })
+  return response.data
+}
+
+export const getImpayesByAdherent = async (codeUnion) => {
+  const response = await api.get(`/impayes/by-adherent/${encodeURIComponent(codeUnion)}`)
+  return response.data
+}
+
+export const getImpaye = async (id) => {
+  const response = await api.get(`/impayes/${id}`)
+  return response.data
+}
+
+export const createImpaye = async (body) => {
+  const response = await api.post('/impayes', body)
+  return response.data
+}
+
+export const updateImpaye = async (id, body) => {
+  const response = await api.patch(`/impayes/${id}`, body)
+  return response.data
+}
+
+export const changeImpayeStatut = async (id, statut, commentaire = null) => {
+  const response = await api.post(`/impayes/${id}/statut`, { statut, commentaire })
+  return response.data
+}
+
+export const addImpayeNote = async (id, commentaire) => {
+  const response = await api.post(`/impayes/${id}/notes`, { commentaire })
+  return response.data
+}
+
 // ==================== PURE DATA ====================
 
 export const getPureDataCommercialDetail = async ({ pureDataId, commercial, yearCurrent, yearPrevious, month, fournisseur }) => {

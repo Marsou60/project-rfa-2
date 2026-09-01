@@ -62,7 +62,7 @@ from app.schemas import (
 )
 from app.database import get_session, hash_password, verify_password, UPLOADS_DIR, AVATARS_DIR, LOGOS_DIR, SUPPLIER_LOGOS_DIR
 from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, RuleScope, TargetType, OverrideTierType, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting, BonusSetting
-from app.services import nathalie_service
+from app.services import nathalie_service, impayes_service
 
 router = APIRouter()
 
@@ -6180,5 +6180,175 @@ async def nathalie_create_client(
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur création client : {str(e)}")
+
+
+# ==================== IMPAYÉS ADHÉRENTS ====================
+
+def _impayes_actor(user: User) -> str:
+    return (user.display_name or user.username or "utilisateur").strip()
+
+
+def _assert_impaye_adherent_scope(user: User, code_union: Optional[str]) -> None:
+    if user.role != UserRole.ADHERENT:
+        return
+    linked = (user.linked_code_union or "").strip().upper()
+    if not linked or not code_union or code_union.strip().upper() != linked:
+        raise HTTPException(status_code=403, detail="Accès limité à votre dossier")
+
+
+@router.get("/impayes/summary")
+async def impayes_summary(
+    code_union: Optional[str] = None,
+    user: User = Depends(require_staff_or_adherent),
+):
+    """Tableau de bord impayés (totaux, par statut, par plateforme)."""
+    _assert_impaye_adherent_scope(user, code_union)
+    if user.role == UserRole.ADHERENT and not code_union:
+        code_union = user.linked_code_union
+    try:
+        return impayes_service.summary(code_union=code_union)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Impossible de charger le résumé impayés : {e}")
+
+
+@router.get("/impayes/flags")
+async def impayes_flags(
+    codes: Optional[str] = Query(None, description="Codes Union séparés par virgule"),
+    user: User = Depends(require_staff_or_adherent),
+):
+    """Indicateurs par adhérent (présence d'impayé actif)."""
+    code_list = None
+    if user.role == UserRole.ADHERENT:
+        if not user.linked_code_union:
+            return {"flags": {}}
+        code_list = [user.linked_code_union]
+    elif codes:
+        code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    try:
+        flags = impayes_service.flags_by_codes(code_list)
+        return {"flags": flags}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Impossible de charger les indicateurs : {e}")
+
+
+@router.get("/impayes")
+async def list_impayes(
+    code_union: Optional[str] = None,
+    statut: Optional[str] = None,
+    plateforme: Optional[str] = None,
+    commercial: Optional[str] = None,
+    q: Optional[str] = None,
+    actifs_only: bool = False,
+    user: User = Depends(require_staff_or_adherent),
+):
+    """Liste filtrable des dossiers d'impayés."""
+    if user.role == UserRole.ADHERENT:
+        code_union = user.linked_code_union
+        if not code_union:
+            return {"items": []}
+    try:
+        items = impayes_service.list_impayes(
+            code_union=code_union,
+            statut=statut,
+            plateforme=plateforme,
+            commercial=commercial,
+            q=q,
+            actifs_only=actifs_only,
+        )
+        return {"items": items, "count": len(items)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Impossible de lister les impayés : {e}")
+
+
+@router.get("/impayes/by-adherent/{code_union}")
+async def impayes_by_adherent(
+    code_union: str,
+    user: User = Depends(require_staff_or_adherent),
+):
+    """Impayés d'un adhérent (bandeau fiche)."""
+    _assert_impaye_adherent_scope(user, code_union)
+    try:
+        items = impayes_service.list_impayes(code_union=code_union)
+        recap = impayes_service.summary(code_union=code_union)
+        return {"code_union": code_union.upper(), "items": items, "summary": recap}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/impayes/{impaye_id}")
+async def get_impaye(impaye_id: str, user: User = Depends(require_staff_or_adherent)):
+    item = impayes_service.get_impaye(impaye_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Dossier introuvable")
+    _assert_impaye_adherent_scope(user, item.get("code_union"))
+    events = impayes_service.list_events(impaye_id)
+    return {**item, "events": events}
+
+
+@router.post("/impayes")
+async def create_impaye(body: Dict[str, Any] = Body(...), user: User = Depends(require_staff)):
+    try:
+        item = impayes_service.create_impaye(body, actor=_impayes_actor(user))
+        return item
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Création impossible : {e}")
+
+
+@router.patch("/impayes/{impaye_id}")
+async def update_impaye(
+    impaye_id: str,
+    body: Dict[str, Any] = Body(...),
+    user: User = Depends(require_staff),
+):
+    try:
+        return impayes_service.update_impaye(impaye_id, body, actor=_impayes_actor(user))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Dossier introuvable")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mise à jour impossible : {e}")
+
+
+@router.post("/impayes/{impaye_id}/statut")
+async def change_impaye_statut(
+    impaye_id: str,
+    body: Dict[str, Any] = Body(...),
+    user: User = Depends(require_staff),
+):
+    statut = (body.get("statut") or "").strip()
+    commentaire = body.get("commentaire") or body.get("note")
+    try:
+        return impayes_service.change_statut(
+            impaye_id,
+            statut,
+            commentaire=commentaire,
+            actor=_impayes_actor(user),
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Dossier introuvable")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Changement de statut impossible : {e}")
+
+
+@router.post("/impayes/{impaye_id}/notes")
+async def add_impaye_note(
+    impaye_id: str,
+    body: Dict[str, Any] = Body(...),
+    user: User = Depends(require_staff),
+):
+    commentaire = (body.get("commentaire") or body.get("note") or "").strip()
+    if not commentaire:
+        raise HTTPException(status_code=400, detail="Commentaire requis")
+    try:
+        return impayes_service.add_note(impaye_id, commentaire, actor=_impayes_actor(user))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Dossier introuvable")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -260,6 +260,7 @@ def init_db():
     run_migrations()
     _ensure_pg_level_baremes_column()
     _ensure_cotisation_year_column()
+    _ensure_impayes_tables()
     seed_admin_user()
     seed_dev_test_user()
 
@@ -299,6 +300,15 @@ def _ensure_cotisation_year_column():
                     print("[MIGRATION] Colonne cotisationsetting.year ajoutée")
     except Exception as e:
         print(f"[INIT_DB] cotisation year migration warning: {e}")
+
+
+def _ensure_impayes_tables():
+    """Crée les tables impayés (Supabase / SQLite) si absentes."""
+    try:
+        from app.services.impayes_service import ensure_tables
+        ensure_tables()
+    except Exception as e:
+        print(f"[INIT_DB] impayes tables warning: {e}")
 
 
 def get_session():

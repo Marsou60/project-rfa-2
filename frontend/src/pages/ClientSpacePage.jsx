@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026, upsertCotisation } from '../api/client'
+import ImpayesAdherentBanner from '../components/ImpayesAdherentBanner'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
 
-function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }) {
+function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, isAdmin, onNavigate }) {
   const { supplierFilter, getKeysForCurrentSupplier } = useSupplierFilter()
   const supplierKeys = useMemo(() => getKeysForCurrentSupplier(), [getKeysForCurrentSupplier])
 
@@ -653,6 +654,17 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent }
                 : 'Export identique à cette page pour envoyer les détails RFA au client.'}
             </p>
           </div>
+
+          {mode === 'client' && (entity.code_union || entity.id) && (
+            <div className="mb-4">
+              <ImpayesAdherentBanner
+                codeUnion={entity.code_union || entity.id}
+                nomMagasin={entity.nom_client || ''}
+                canWrite={!isAdherent}
+                onOpenModule={onNavigate ? () => onNavigate('impayes') : undefined}
+              />
+            </div>
+          )}
 
           {/* Onglets de vue */}
           <div className="mb-4">
