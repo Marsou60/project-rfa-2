@@ -7,6 +7,7 @@ Drive (pièces) et Gmail (ouvertures fournisseurs) restent gérés dans nathalie
 from __future__ import annotations
 
 import re
+import unicodedata
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -28,13 +29,20 @@ COLUMNS = [
     "adresse",
     "code_postal",
     "ville",
+    "departement",
     "siret",
     "tva",
+    "raison_sociale",
+    "etat_insee",
+    "perimetre",
+    "region_commerciale",
     "notes",
     "is_closed",
     "agent_union",
     "contrat_union",
     "ouverture_chez",
+    "contact_responsable_pdv",
+    "contact_appro",
     "rib_url",
     "kbis_url",
     "piece_identite_url",
@@ -79,13 +87,20 @@ def ensure_tables() -> None:
           adresse text,
           code_postal text,
           ville text,
+          departement text,
           siret text,
           tva text,
+          raison_sociale text,
+          etat_insee text,
+          perimetre text,
+          region_commerciale text,
           notes text,
           is_closed boolean NOT NULL DEFAULT false,
           agent_union text,
           contrat_union text,
           ouverture_chez text,
+          contact_responsable_pdv text,
+          contact_appro text,
           rib_url text,
           kbis_url text,
           piece_identite_url text,
@@ -114,13 +129,20 @@ def ensure_tables() -> None:
           adresse TEXT,
           code_postal TEXT,
           ville TEXT,
+          departement TEXT,
           siret TEXT,
           tva TEXT,
+          raison_sociale TEXT,
+          etat_insee TEXT,
+          perimetre TEXT,
+          region_commerciale TEXT,
           notes TEXT,
           is_closed INTEGER NOT NULL DEFAULT 0,
           agent_union TEXT,
           contrat_union TEXT,
           ouverture_chez TEXT,
+          contact_responsable_pdv TEXT,
+          contact_appro TEXT,
           rib_url TEXT,
           kbis_url TEXT,
           piece_identite_url TEXT,
@@ -137,6 +159,28 @@ def ensure_tables() -> None:
         f"CREATE INDEX IF NOT EXISTS idx_nathalie_adherents_groupe ON {TABLE}(groupe)",
         f"CREATE INDEX IF NOT EXISTS idx_nathalie_adherents_ville ON {TABLE}(ville)",
         f"CREATE INDEX IF NOT EXISTS idx_nathalie_adherents_closed ON {TABLE}(is_closed)",
+        f"CREATE INDEX IF NOT EXISTS idx_nathalie_adherents_region ON {TABLE}(region_commerciale)",
+        f"CREATE INDEX IF NOT EXISTS idx_nathalie_adherents_agent ON {TABLE}(agent_union)",
+    ]
+    extra_pg = [
+        "departement text",
+        "raison_sociale text",
+        "etat_insee text",
+        "perimetre text",
+        "region_commerciale text",
+        "contact_responsable_pdv text",
+        "contact_appro text",
+        "drive_checked_at timestamptz",
+    ]
+    extra_sqlite = [
+        "departement",
+        "raison_sociale",
+        "etat_insee",
+        "perimetre",
+        "region_commerciale",
+        "contact_responsable_pdv",
+        "contact_appro",
+        "drive_checked_at",
     ]
     with engine.begin() as conn:
         conn.execute(text(ddl))
@@ -145,18 +189,23 @@ def ensure_tables() -> None:
                 conn.execute(text(stmt))
             except Exception:
                 pass
-        for stmt in indexes:
-            conn.execute(text(stmt))
         try:
             if _is_pg():
-                conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS drive_checked_at timestamptz"))
+                for col in extra_pg:
+                    conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS {col}"))
             else:
                 cols = conn.execute(text(f"PRAGMA table_info({TABLE})")).fetchall()
                 names = {c[1] for c in cols}
-                if "drive_checked_at" not in names:
-                    conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN drive_checked_at TEXT"))
+                for col in extra_sqlite:
+                    if col not in names:
+                        conn.execute(text(f"ALTER TABLE {TABLE} ADD COLUMN {col} TEXT"))
         except Exception:
             pass
+        for stmt in indexes:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
         if _is_pg():
             try:
                 conn.execute(text(f"ALTER TABLE {TABLE} ENABLE ROW LEVEL SECURITY"))
@@ -178,11 +227,15 @@ def clean_postal(value: Any) -> Optional[str]:
         return None
     if isinstance(value, float):
         return f"{int(value):05d}"
-    s = str(value).strip().replace(" ", "")
+    s = str(value).strip()
+    digits = re.search(r"(\d{5})", s.replace(" ", ""))
+    if digits:
+        return digits.group(1)
+    compact = s.replace(" ", "")
     try:
-        return f"{int(float(s)):05d}"
+        return f"{int(float(compact)):05d}"
     except (ValueError, OverflowError):
-        return str(value).strip()
+        return s or None
 
 
 def clean_siret(value: Any) -> Optional[str]:
@@ -202,12 +255,14 @@ def clean_text(value: Any) -> Optional[str]:
     if value is None:
         return None
     s = str(value).strip()
-    return s or None
+    if s in ("", "?", "-", "N/A", "NA", "None"):
+        return None
+    return s
 
 
-def is_closed_from(nom: str, notes: Optional[str]) -> bool:
-    blob = f"{nom or ''} {notes or ''}".upper()
-    return any(k in blob for k in ("FERME", "FERMÉ", "LIQUIDATION", "RADIE"))
+def is_closed_from(nom: str, notes: Optional[str] = None, etat_insee: Optional[str] = None) -> bool:
+    blob = f"{nom or ''} {notes or ''} {etat_insee or ''}".upper()
+    return any(k in blob for k in ("FERME", "FERMÉ", "LIQUIDATION", "RADIE", "CESSÉE", "CESSEE"))
 
 
 def _row_to_client(row) -> Dict[str, Any]:
@@ -266,7 +321,7 @@ def get_by_code(code_union: str) -> Optional[Dict[str, Any]]:
 
 
 def next_code_union(prefix: str = "M") -> str:
-    """Prochain code Mxxxx (indépendants). Les codes J restent gérés pour Jumbo existants."""
+    """Prochain code Mxxxx d'après l'annuaire (liste clients), pas Drive."""
     ensure_tables()
     prefix = (prefix or "M").upper()
     with engine.connect() as conn:
@@ -310,13 +365,26 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
         "adresse": clean_text(payload.get("adresse")),
         "code_postal": clean_postal(payload.get("code_postal")),
         "ville": clean_text(payload.get("ville")),
+        "departement": clean_text(payload.get("departement")),
         "siret": clean_siret(payload.get("siret")),
         "tva": clean_text(payload.get("tva")),
+        "raison_sociale": clean_text(payload.get("raison_sociale")),
+        "etat_insee": clean_text(payload.get("etat_insee")),
+        "perimetre": clean_text(payload.get("perimetre")),
+        "region_commerciale": clean_text(
+            payload.get("region_commerciale") or payload.get("region")
+        ),
         "notes": notes,
-        "is_closed": _bool(payload.get("is_closed") if payload.get("is_closed") is not None else is_closed_from(nom, notes)),
+        "is_closed": _bool(
+            payload.get("is_closed")
+            if payload.get("is_closed") is not None
+            else is_closed_from(nom, notes, payload.get("etat_insee"))
+        ),
         "agent_union": clean_text(payload.get("agent_union")),
         "contrat_union": clean_text(payload.get("contrat_union") or payload.get("contrat_type")),
         "ouverture_chez": clean_text(payload.get("ouverture_chez")),
+        "contact_responsable_pdv": clean_text(payload.get("contact_responsable_pdv")),
+        "contact_appro": clean_text(payload.get("contact_appro") or payload.get("contact_achat")),
         "rib_url": clean_text(payload.get("rib_url") or payload.get("rib")),
         "kbis_url": clean_text(payload.get("kbis_url") or payload.get("kbis")),
         "piece_identite_url": clean_text(payload.get("piece_identite_url") or payload.get("piece_identite")),
@@ -335,7 +403,6 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
             "drive_link": existing.get("drive_link"),
             "drive_checked_at": existing.get("drive_checked_at"),
             "ouverture_chez": existing.get("ouverture_chez"),
-            "agent_union": existing.get("agent_union"),
             "contrat_union": existing.get("contrat_union"),
         }
         for key, previous in aliases.items():
@@ -369,18 +436,119 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
     return created
 
 
+def _norm_header(value: Any) -> str:
+    s = unicodedata.normalize("NFKD", str(value or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+_EXCEL_HEADERS = {
+    "code union": "code_union",
+    "perimetre": "perimetre",
+    "nom client": "nom_client",
+    "magasins": "nom_client",
+    "groupe": "groupe",
+    "region commercial": "region_commerciale",
+    "contact magasin": "contact_magasin",
+    "adresse": "adresse",
+    "code postal": "code_postal",
+    "departement": "departement",
+    "ville": "ville",
+    "telephone": "telephone",
+    "contact responsable pdv": "contact_responsable_pdv",
+    "contact achat appro": "contact_appro",
+    "mail": "mail",
+    "agent union": "agent_union",
+    "siret": "siret",
+    "tva": "tva",
+    "raison sociale officielle": "raison_sociale",
+    "etat insee": "etat_insee",
+    "notes": "notes",
+    "commentaires": "notes",
+}
+
+
+def _pick_excel_sheet(wb):
+    for name in wb.sheetnames:
+        if "liste client" in name.lower():
+            return wb[name]
+    for name in wb.sheetnames:
+        if "juillet" in name.lower():
+            return wb[name]
+    return wb[wb.sheetnames[-1]]
+
+
+def _header_map(row) -> Dict[int, str]:
+    mapping: Dict[int, str] = {}
+    for idx, cell in enumerate(row):
+        key = _EXCEL_HEADERS.get(_norm_header(cell))
+        if key:
+            mapping[idx] = key
+    return mapping
+
+
 def parse_excel_rows(path: str) -> List[Dict[str, Any]]:
     import openpyxl
 
     wb = openpyxl.load_workbook(path, data_only=True)
-    sheet = None
-    for name in wb.sheetnames:
-        if "juillet" in name.lower():
-            sheet = wb[name]
-            break
-    if sheet is None:
-        sheet = wb[wb.sheetnames[-1]]
+    sheet = _pick_excel_sheet(wb)
 
+    header_row_idx = None
+    col_map: Dict[int, str] = {}
+    for i, raw in enumerate(sheet.iter_rows(min_row=1, max_row=8, values_only=True), start=1):
+        mapping = _header_map(raw)
+        if "code_union" in mapping.values() and "nom_client" in mapping.values():
+            header_row_idx = i
+            col_map = mapping
+            break
+
+    if header_row_idx is None:
+        return _parse_juillet_fixed(sheet)
+
+    rows: List[Dict[str, Any]] = []
+    by_code: Dict[str, Dict[str, Any]] = {}
+    for raw in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        parsed: Dict[str, Any] = {}
+        for idx, key in col_map.items():
+            parsed[key] = raw[idx] if idx < len(raw) else None
+        nom = clean_text(parsed.get("nom_client")) or ""
+        code = clean_code_union(parsed.get("code_union"))
+        if not nom and not code:
+            continue
+        notes = clean_text(parsed.get("notes"))
+        etat = clean_text(parsed.get("etat_insee"))
+        row = {
+            "code_union": code,
+            "nom_client": nom,
+            "groupe": parsed.get("groupe"),
+            "contact_magasin": parsed.get("contact_magasin"),
+            "telephone": parsed.get("telephone"),
+            "mail": parsed.get("mail"),
+            "adresse": parsed.get("adresse"),
+            "code_postal": parsed.get("code_postal"),
+            "ville": parsed.get("ville"),
+            "departement": parsed.get("departement"),
+            "siret": parsed.get("siret"),
+            "tva": parsed.get("tva"),
+            "raison_sociale": parsed.get("raison_sociale"),
+            "etat_insee": etat,
+            "perimetre": parsed.get("perimetre"),
+            "region_commerciale": parsed.get("region_commerciale"),
+            "contact_responsable_pdv": parsed.get("contact_responsable_pdv"),
+            "contact_appro": parsed.get("contact_appro"),
+            "agent_union": parsed.get("agent_union"),
+            "notes": notes,
+            "is_closed": is_closed_from(nom, notes, etat),
+            "source": "excel",
+        }
+        if code:
+            by_code[code] = row
+        else:
+            rows.append(row)
+    return rows + list(by_code.values())
+
+
+def _parse_juillet_fixed(sheet) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for raw in sheet.iter_rows(min_row=2, max_col=12, values_only=True):
         vals = list(raw) + [None] * 12
@@ -426,6 +594,36 @@ def import_excel_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         except Exception as exc:
             errors.append(f"Ligne {i}: {exc}")
     return {"created": created, "updated": updated, "errors": errors[:30], "total": created + updated}
+
+
+def replace_directory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Remplace l'annuaire par l'Excel : upsert + suppression des codes absents.
+
+    Conserve RIB / Kbis / pièce / dossier Drive déjà liés au même code_union.
+    """
+    stats = import_excel_rows(rows)
+    imported = {clean_code_union(r.get("code_union")) for r in rows}
+    imported.discard(None)
+    deleted = 0
+    if imported:
+        ensure_tables()
+        with engine.begin() as conn:
+            existing = [
+                clean_code_union(r[0])
+                for r in conn.execute(text(f"SELECT code_union FROM {TABLE}")).fetchall()
+            ]
+            to_del = [c for c in existing if c and c not in imported]
+            for i in range(0, len(to_del), 80):
+                chunk = to_del[i : i + 80]
+                params = {f"c{j}": c for j, c in enumerate(chunk)}
+                placeholders = ", ".join(f":c{j}" for j in range(len(chunk)))
+                conn.execute(
+                    text(f"DELETE FROM {TABLE} WHERE UPPER(code_union) IN ({placeholders})"),
+                    params,
+                )
+            deleted = len(to_del)
+    stats["deleted"] = deleted
+    return stats
 
 
 def patch_drive_docs(code_union: str, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:

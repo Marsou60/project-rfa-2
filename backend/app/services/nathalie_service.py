@@ -25,10 +25,10 @@ SHEET_CLIENTS    = "LISTE CLIENT 2"
 SHEET_SUPPLIERS  = os.environ.get("CONTACT_FOURNISSEURS_SHEET", "CONTACT FOURNISSEURS ")
 SHEET_TASKS      = "TACHE CLIENTS"
 
-# IDs des dossiers Drive par groupe (mappés depuis le frontend)
+# IDs des dossiers Drive par groupe (sous ADHERENTS)
 DRIVE_FOLDERS = {
-    "INDEPENDANT": "1JA1g_h4dwbJ4KEAG1sAXF9S1uOxRWaDx",
-    "MAGASIN":     "1JA1g_h4dwbJ4KEAG1sAXF9S1uOxRWaDx", # Alias
+    "INDEPENDANT": "1GRcpfjc4PqGQT1cwMRFn1LFZ2suctiwk",
+    "MAGASIN":     "1GRcpfjc4PqGQT1cwMRFn1LFZ2suctiwk",
     "JUMBO":       "1f3st2KMi-OvIjgK7PDvRhe8Im2HFSmGw",
     "EMERIC":      "1Ko3a16Ppn_VrVLPjHKgXHs2lMjN28kEL",
     "APA":         "1IDG1y8w2ccLgJid0w2D-QxrAlqpoBv5C",
@@ -36,8 +36,8 @@ DRIVE_FOLDERS = {
     "DISCOUNT":    "1tPB595WC7alCuhtVGaJDbyrwZjWoWLYN",
     "LYONNAIS":    "1d57aZjaFRw8RSDbosWNWgCLM3IFQd0PE",
     "STARCOM":     "1cljTqnufHf6PC6xJ7kGn6jIYRkPa0MZF",
-    "CENTER":      "1JA1g_h4dwbJ4KEAG1sAXF9S1uOxRWaDx",
-    "CODIFA":      "1JA1g_h4dwbJ4KEAG1sAXF9S1uOxRWaDx",
+    "CENTER":      "1i7eoeaRvZeKXHq_yZE9sCkoEzkFs4ZQV",
+    "CODIFA":      "1Ko3a16Ppn_VrVLPjHKgXHs2lMjN28kEL",
 }
 
 # Colonnes de LISTE CLIENT 2 (0-indexed) - Pour lecture ET écriture
@@ -323,19 +323,49 @@ def _build_supplier_col_map(headers: List[str]) -> Dict[str, int]:
 # ── Logique Métier : Création Client ───────────────────────────────────────────
 
 def get_next_code_union() -> str:
-    """Trouve le dernier code Mxxxx (indépendants) et retourne le suivant."""
+    """Prochain Mxxxx = dernier code de l'annuaire (liste clients) + 1.
+
+    Le Drive n'est pas la source : il peut être en retard ou contenir des dossiers orphelins.
+    """
     return nathalie_adherents.next_code_union("M")
+
+
+def _drive_parent_exists(drive, folder_id: str) -> bool:
+    try:
+        meta = drive.files().get(
+            fileId=folder_id,
+            fields="id,trashed",
+            supportsAllDrives=True,
+        ).execute()
+        return not meta.get("trashed")
+    except Exception:
+        return False
+
+
+def _resolve_drive_parent(drive, parent_id: str) -> str:
+    """Si l'ID mappé a été déplacé / supprimé, retombe sur INDEPENDANTS puis ADHERENTS."""
+    if parent_id and _drive_parent_exists(drive, parent_id):
+        return parent_id
+    independants = DRIVE_FOLDERS.get("INDEPENDANT") or DRIVE_ROOT_ID
+    if _drive_parent_exists(drive, independants):
+        return independants
+    return DRIVE_ROOT_ID
 
 
 def create_drive_folder(parent_id: str, name: str) -> str:
     """Crée un dossier dans Drive et retourne son ID."""
     drive = _get_drive_client()
+    parent_id = _resolve_drive_parent(drive, parent_id)
     metadata = {
         "name": name,
         "mimeType": "application/vnd.google-apps.folder",
-        "parents": [parent_id]
+        "parents": [parent_id],
     }
-    file = drive.files().create(body=metadata, fields="id").execute()
+    file = drive.files().create(
+        body=metadata,
+        fields="id",
+        supportsAllDrives=True,
+    ).execute()
     return file.get("id")
 
 
@@ -343,14 +373,15 @@ def upload_file_to_drive(parent_id: str, file: UploadFile) -> str:
     """Upload un fichier dans Drive et retourne son lien WebView."""
     from googleapiclient.http import MediaIoBaseUpload
     drive = _get_drive_client()
-    
+
     metadata = {"name": file.filename, "parents": [parent_id]}
     media = MediaIoBaseUpload(file.file, mimetype=file.content_type, resumable=True)
-    
+
     uploaded = drive.files().create(
         body=metadata,
         media_body=media,
-        fields="id, webViewLink"
+        fields="id, webViewLink",
+        supportsAllDrives=True,
     ).execute()
     return uploaded.get("webViewLink")
 
@@ -400,17 +431,33 @@ def score_drive_folder_name(folder_name: str, code_union: str, nom_client: str =
     code = (code_union or "").strip().upper()
     if not name or not code:
         return 0
+    nom = (nom_client or "").strip().upper()
+    rest = name.split(":", 1)[-1].strip() if ":" in name else name
+    name_ok = _drive_names_overlap(nom, rest) if nom else True
     if name.startswith(f"{code} :") or name.startswith(f"{code}:"):
-        return 100
+        return 100 if name_ok else 15
     if name.startswith(f"{code} ") or name == code:
-        return 80
+        return 80 if name_ok else 15
     if re.search(rf"\b{re.escape(code)}\b", name):
-        score = 50
-        nom = (nom_client or "").strip().upper()
-        if nom and nom[:8] in name:
-            score += 20
-        return score
+        return 70 if name_ok else 15
     return 0
+
+
+def _drive_names_overlap(nom_client: str, folder_rest: str) -> bool:
+    def blob(s: str) -> str:
+        t = (s or "").upper()
+        for old, new in (("É", "E"), ("È", "E"), ("Ê", "E"), ("À", "A"), ("Ç", "C"), ("'", " ")):
+            t = t.replace(old, new)
+        return re.sub(r"[^A-Z0-9]+", " ", t).strip()
+
+    nom = blob(nom_client)
+    rest = blob(folder_rest)
+    if not nom or not rest:
+        return True
+    if nom in rest or rest in nom:
+        return True
+    tokens = [t for t in nom.split() if len(t) >= 4]
+    return bool(tokens) and any(t in rest for t in tokens)
 
 
 def _list_drive_files(drive, **kwargs) -> List[Dict[str, Any]]:
@@ -510,7 +557,7 @@ def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, 
                 reverse=True,
             )
             folder = next(
-                (f for f in ranked if score_drive_folder_name(f.get("name") or "", code, client.get("nom_client") or "") > 0),
+                (f for f in ranked if score_drive_folder_name(f.get("name") or "", code, client.get("nom_client") or "") >= 80),
                 None,
             )
 

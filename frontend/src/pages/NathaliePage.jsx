@@ -149,6 +149,8 @@ export default function NathaliePage() {
       c.code_union?.toLowerCase().includes(s) ||
       c.ville?.toLowerCase().includes(s) ||
       c.groupe?.toLowerCase().includes(s) ||
+      c.region_commerciale?.toLowerCase().includes(s) ||
+      c.agent_union?.toLowerCase().includes(s) ||
       c.ouverture_chez?.toLowerCase().includes(s)
     )
   })
@@ -401,6 +403,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
     telephone: '',
     mail: '',
     agent_union: '',
+    region_commerciale: '',
     contrat_type: '',
     notes: '',
   })
@@ -724,6 +727,14 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
             <label className="label-field">N° TVA</label>
             <input value={form.tva} onChange={e => setForm({...form, tva: e.target.value})} className="input-field" placeholder="FR…" />
           </div>
+          <div>
+            <label className="label-field">Région commerciale</label>
+            <input value={form.region_commerciale} onChange={e => setForm({...form, region_commerciale: e.target.value})} className="input-field" placeholder="IDF, PACA…" />
+          </div>
+          <div>
+            <label className="label-field">Agent Union</label>
+            <input value={form.agent_union} onChange={e => setForm({...form, agent_union: e.target.value})} className="input-field" placeholder="Vanessa, Martial…" />
+          </div>
         </div>
 
         {/* Contact */}
@@ -955,6 +966,9 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
           <h2 className="text-lg font-bold text-white">{client.nom_client}</h2>
           <p className="text-blue-300/50 text-xs font-mono">{client.code_union}</p>
         </div>
+        {client.is_closed ? (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">Fermé</span>
+        ) : null}
       </div>
 
       <div className="grid md:grid-cols-2 gap-5">
@@ -967,7 +981,13 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
             {[
               ['SIRET', client.siret],
               ['TVA', client.tva],
+              ['Raison sociale', client.raison_sociale],
+              ['État INSEE', client.etat_insee],
+              ['Périmètre', client.perimetre],
+              ['Région', client.region_commerciale],
               ['Contact', client.contact_magasin],
+              ['Resp. PDV', client.contact_responsable_pdv],
+              ['Achat / Appro', client.contact_appro],
               ['Adresse', [client.adresse, client.code_postal, client.ville].filter(Boolean).join(', ')],
               ['Téléphone', client.telephone],
               ['Email', client.mail],

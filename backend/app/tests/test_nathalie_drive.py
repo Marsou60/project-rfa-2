@@ -19,6 +19,8 @@ def test_score_existing_drive_folder():
     assert score_drive_folder_name("M0160 GARAGE", "M0160") == 80
     assert score_drive_folder_name("Dossier M0160 archives", "M0160") >= 50
     assert score_drive_folder_name("Autre magasin", "M0160") == 0
+    assert score_drive_folder_name("M0338 : MS PIECE AUTO", "M0338", "GROUPEMENT UNION") < 80
+    assert score_drive_folder_name("M0338 : MS PIECE AUTO", "M0338", "MS PIECE AUTO") == 100
 
 
 def test_extract_code_from_folder_name():

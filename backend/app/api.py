@@ -6199,6 +6199,7 @@ async def nathalie_create_client(
     tva: str = Form(""),
     contact_magasin: str = Form(""),
     agent_union: str = Form(""),
+    region_commerciale: str = Form(""),
     contrat_type: str = Form(""),
     notes: str = Form(""),
     # Fichiers
@@ -6224,6 +6225,7 @@ async def nathalie_create_client(
         "tva": tva,
         "contact_magasin": contact_magasin,
         "agent_union": agent_union,
+        "region_commerciale": region_commerciale,
         "contrat_type": contrat_type,
         "notes": notes,
     }
