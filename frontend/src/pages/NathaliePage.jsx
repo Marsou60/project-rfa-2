@@ -3,7 +3,7 @@ import {
   UserPlus, Clock, CheckCircle2, AlertCircle, ChevronRight,
   Building2, Phone, Mail, MapPin, FileText, Send, ArrowLeft,
   Sparkles, Search, RefreshCw, Loader2, Eye, X, Copy, Check,
-  FileCheck, FileMinus, ExternalLink, UploadCloud, ScanSearch,
+  FileCheck, FileMinus, ExternalLink, UploadCloud, ScanSearch, Users,
 } from 'lucide-react'
 import {
   nathalieGetClients,
@@ -57,7 +57,9 @@ function clientStatus(client) {
 
 /* ═══════════════════════════════════════════════════════════════ */
 export default function NathaliePage() {
-  const [view, setView] = useState('accueil') // accueil | nouveau | dossiers | client | emails
+  const [view, setView] = useState('accueil') // accueil | nouveau | dossiers | annuaire | client | emails
+  const [listOrigin, setListOrigin] = useState('dossiers')
+  const [annuaireFilter, setAnnuaireFilter] = useState('tous') // tous | ouverts | fermes
   const [clients, setClients] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(false)
@@ -92,7 +94,8 @@ export default function NathaliePage() {
 
   useEffect(() => { loadData() }, [])
 
-  const openClient = async (client) => {
+  const openClient = async (client, origin = view) => {
+    if (origin === 'annuaire' || origin === 'dossiers') setListOrigin(origin)
     setSelectedClient(client)
     setGeneratedEmails([])
     const preselect = (client.ouverture_chez || '')
@@ -198,7 +201,8 @@ export default function NathaliePage() {
           stats={stats}
           loading={loading}
           scanning={scanning}
-          onVoirDossiers={() => setView('dossiers')}
+          onVoirDossiers={() => { setSearch(''); setView('dossiers') }}
+          onVoirAnnuaire={() => { setSearch(''); setAnnuaireFilter('tous'); setView('annuaire') }}
           onNouveau={() => setView('nouveau')}
           onScanDrive={scanDrive}
         />
@@ -221,8 +225,26 @@ export default function NathaliePage() {
           search={search}
           setSearch={setSearch}
           onBack={() => setView('accueil')}
-          onSelectClient={openClient}
+          onSelectClient={(c) => openClient(c, 'dossiers')}
           onScanDrive={scanDrive}
+        />
+      )}
+
+      {view === 'annuaire' && (
+        <AnnuaireView
+          clients={filteredClients.filter(c => {
+            if (annuaireFilter === 'fermes') return Boolean(c.is_closed)
+            if (annuaireFilter === 'ouverts') return !c.is_closed
+            return true
+          })}
+          total={clients.length}
+          loading={loading}
+          search={search}
+          setSearch={setSearch}
+          filter={annuaireFilter}
+          setFilter={setAnnuaireFilter}
+          onBack={() => setView('accueil')}
+          onSelectClient={(c) => openClient(c, 'annuaire')}
         />
       )}
 
@@ -235,7 +257,7 @@ export default function NathaliePage() {
           setSelectedSuppliers={setSelectedSuppliers}
           generating={generating}
           onGenerate={handleGenerateEmails}
-          onBack={() => { loadData(); setView('dossiers') }}
+          onBack={() => { loadData(); setView(listOrigin === 'annuaire' ? 'annuaire' : 'dossiers') }}
         />
       )}
 
@@ -284,26 +306,31 @@ function NathalieHeader({ onRefresh, loading }) {
 }
 
 /* ── Accueil ─────────────────────────────────────────────────── */
-function AccueilView({ stats, loading, scanning, onVoirDossiers, onNouveau, onScanDrive }) {
+function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire, onNouveau, onScanDrive }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'En cours', value: stats.enCours, color: 'text-amber-300' },
-          { label: 'Complets', value: stats.complets, color: 'text-emerald-300' },
-          { label: 'À scanner', value: stats.aScanner, color: 'text-slate-300' },
-          { label: 'Annuaire', value: stats.total, color: 'text-blue-300' },
+          { label: 'En cours', value: stats.enCours, color: 'text-amber-300', onClick: onVoirDossiers },
+          { label: 'Complets', value: stats.complets, color: 'text-emerald-300', onClick: onVoirAnnuaire },
+          { label: 'À scanner', value: stats.aScanner, color: 'text-slate-300', onClick: onVoirAnnuaire },
+          { label: 'Annuaire', value: stats.total, color: 'text-blue-300', onClick: onVoirAnnuaire },
         ].map(k => (
-          <div key={k.label} className="glass-card p-4 flex flex-col gap-1">
+          <button
+            key={k.label}
+            type="button"
+            onClick={k.onClick}
+            className="glass-card p-4 flex flex-col gap-1 text-left hover:bg-white/5"
+          >
             <span className="text-xs text-blue-300/50 font-medium">{k.label}</span>
             <div className={`text-2xl font-black ${k.color}`}>
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : k.value}
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-3 gap-4">
         <button
           onClick={onNouveau}
           className="glass-card p-6 text-left hover:scale-[1.02] hover:shadow-2xl hover:shadow-emerald-500/20 transition-all duration-300 group"
@@ -334,6 +361,22 @@ function AccueilView({ stats, loading, scanning, onVoirDossiers, onNouveau, onSc
           <p className="text-blue-300/60 text-sm">
             File des magasins dont le RIB ou le Kbis manque encore dans Drive.
             {typeof stats.enCours === 'number' ? ` ${stats.enCours} en attente.` : ''}
+          </p>
+        </button>
+
+        <button
+          onClick={onVoirAnnuaire}
+          className="glass-card p-6 text-left hover:scale-[1.02] hover:shadow-2xl hover:shadow-blue-500/20 transition-all duration-300 group"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+              <Users className="w-6 h-6 text-white" />
+            </div>
+            <ChevronRight className="w-5 h-5 text-white/30 group-hover:text-white/70 group-hover:translate-x-1 transition-all" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1">Annuaire complet</h3>
+          <p className="text-blue-300/60 text-sm">
+            Les {stats.total || 0} adhérents Union : ouverts, fermés, région, agent, SIRET.
           </p>
         </button>
       </div>
@@ -900,6 +943,107 @@ function DossiersView({ clients, loading, scanning, aScanner, search, setSearch,
                         </a>
                       ) : (
                         <span className="text-white/20 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ChevronRight className="w-4 h-4 text-white/30" />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Annuaire complet ─────────────────────────────────────────── */
+function AnnuaireView({ clients, total, loading, search, setSearch, filter, setFilter, onBack, onSelectClient }) {
+  const filters = [
+    { id: 'tous', label: 'Tous' },
+    { id: 'ouverts', label: 'Ouverts' },
+    { id: 'fermes', label: 'Fermés' },
+  ]
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={onBack} className="glass-btn-icon"><ArrowLeft className="w-4 h-4" /></button>
+        <div className="flex-1 min-w-[180px]">
+          <h2 className="text-lg font-bold text-white">Annuaire complet</h2>
+          <p className="text-xs text-blue-300/50">
+            {clients.length} / {total} adhérents
+          </p>
+        </div>
+        <div className="flex rounded-xl bg-white/10 border border-white/15 p-0.5">
+          {filters.map(f => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFilter(f.id)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition ${
+                filter === f.id ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/80'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Code, magasin, ville, agent…"
+            className="pl-9 pr-4 py-2 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/30 text-sm focus:outline-none focus:border-emerald-400/50 w-64"
+          />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20 text-blue-300/60 gap-3">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Chargement…
+        </div>
+      ) : (
+        <div className="glass-card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10">
+                {['Code Union', 'Nom client', 'Groupe', 'Région', 'Agent', 'Ville', 'Statut'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-blue-300/50 font-semibold text-xs uppercase tracking-wider">{h}</th>
+                ))}
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {clients.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center py-10 text-white/30">
+                    Aucun adhérent pour ce filtre.
+                  </td>
+                </tr>
+              )}
+              {clients.map((c, i) => {
+                const st = c.is_closed ? null : STATUS_STYLE[clientStatus(c)]
+                return (
+                  <tr
+                    key={c.code_union + i}
+                    className={`border-b border-white/5 hover:bg-white/5 transition cursor-pointer ${i % 2 === 0 ? 'bg-white/[0.02]' : ''}`}
+                    onClick={() => onSelectClient(c)}
+                  >
+                    <td className="px-4 py-3 font-mono text-xs text-blue-300/70">{c.code_union}</td>
+                    <td className="px-4 py-3 font-semibold text-white max-w-[220px] truncate">{c.nom_client}</td>
+                    <td className="px-4 py-3 text-white/50 text-xs max-w-[140px] truncate">{c.groupe || '—'}</td>
+                    <td className="px-4 py-3 text-white/50 text-xs">{c.region_commerciale || '—'}</td>
+                    <td className="px-4 py-3 text-white/50 text-xs">{c.agent_union || '—'}</td>
+                    <td className="px-4 py-3 text-white/50 text-xs">{c.ville || '—'}</td>
+                    <td className="px-4 py-3">
+                      {c.is_closed ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">Fermé</span>
+                      ) : (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${st.bg} ${st.text}`}>{st.label}</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
