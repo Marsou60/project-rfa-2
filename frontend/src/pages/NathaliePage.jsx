@@ -648,6 +648,9 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
           {result.drive_warning && (
             <p className="text-xs text-amber-300/80 pt-1">Drive : {result.drive_warning}</p>
           )}
+          {result.sheet_warning && (
+            <p className="text-xs text-amber-300/80 pt-1">Liste Client 2 : {result.sheet_warning}</p>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mt-6">
@@ -1233,11 +1236,13 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
       setEditing(false)
       setPhotoFiles({})
       const n = Object.values(res.reassigned || {}).reduce((a, b) => a + b, 0)
-      if (res.agent_changed) {
-        setSaveMsg(`Fiche enregistrée. CA et analyses réaffectés à ${res.client?.agent_union || 'l’agent'} (${n} lignes).`)
-      } else {
-        setSaveMsg('Fiche enregistrée.')
+      let msg = res.agent_changed
+        ? `Fiche enregistrée. CA et analyses réaffectés à ${res.client?.agent_union || 'l’agent'} (${n} lignes).`
+        : 'Fiche enregistrée.'
+      if (res.sheet_warning) {
+        msg += ` Copie Liste Client 2 : ${res.sheet_warning}`
       }
+      setSaveMsg(msg)
       inspectDrive()
     } catch (e) {
       setSaveMsg(e?.response?.data?.detail || e.message || 'Enregistrement impossible.')

@@ -1,7 +1,8 @@
 """
 Service Nathalie — Ouverture de comptes adhérents.
 
-- Annuaire adhérents : table Supabase `nathalie_adherents` (plus LISTE CLIENT 2).
+- Annuaire adhérents : table Supabase `nathalie_adherents` (source de vérité).
+- LISTE CLIENT 2 (Google Sheets) : copie de sécurité, alimentée en best-effort.
 - Contacts fournisseurs + tâches : Google Sheets (CONTACT FOURNISSEURS, TACHE CLIENTS).
 - Pièces : Google Drive. Envoi ouvertures : Gmail.
 """
@@ -262,6 +263,144 @@ def _read_sheet(sheet_name: str, max_col: str = "Z") -> List[List[str]]:
     )
     values = result.get("values", [])
     return values  # ligne 0 = en-têtes, lignes 1+ = données
+
+
+def _client_to_sheet_row(client: Dict[str, Any]) -> List[str]:
+    """Ligne LISTE CLIENT 2 (même ordre de colonnes qu'historiquement)."""
+    max_idx = max(COL.values())
+    row = [""] * (max_idx + 1)
+    code = (client.get("code_union") or "").strip()
+    row[COL["id_client"]] = code
+    row[COL["code_union"]] = code
+    row[COL["nom_client"]] = client.get("nom_client") or ""
+    row[COL["groupe"]] = client.get("groupe") or ""
+    row[COL["region"]] = client.get("region_commerciale") or client.get("region") or ""
+    row[COL["contact_magasin"]] = client.get("contact_magasin") or client.get("gerant") or ""
+    row[COL["adresse"]] = client.get("adresse") or ""
+    row[COL["code_postal"]] = client.get("code_postal") or ""
+    row[COL["departement"]] = client.get("departement") or ""
+    row[COL["ville"]] = client.get("ville") or ""
+    row[COL["telephone"]] = client.get("telephone") or ""
+    row[COL["responsable_pdv"]] = client.get("contact_responsable_pdv") or ""
+    row[COL["contact_appro"]] = client.get("contact_appro") or ""
+    row[COL["mail"]] = client.get("mail") or ""
+    row[COL["siret"]] = client.get("siret") or ""
+    row[COL["rib"]] = client.get("rib_url") or client.get("rib") or ""
+    row[COL["kbis"]] = client.get("kbis_url") or client.get("kbis") or ""
+    row[COL["piece_identite"]] = client.get("piece_identite_url") or client.get("piece_identite") or ""
+    row[COL["ouverture_chez"]] = client.get("ouverture_chez") or ""
+    row[COL["agent_union"]] = client.get("agent_union") or ""
+    row[COL["contrat_union"]] = client.get("contrat_union") or client.get("contrat_type") or ""
+    notes = client.get("notes") or client.get("note_generale") or ""
+    tel_resp = client.get("telephone_responsable") or ""
+    if tel_resp and "Tél responsable" not in notes:
+        notes = f"{notes}\nTél responsable magasin : {tel_resp}".strip()
+    row[COL["note_generale"]] = notes
+    row[COL["photo_enseigne"]] = client.get("photo_devanture_url") or client.get("photo_devanture") or ""
+    return row
+
+
+def _find_liste_client_row(code_union: str) -> Tuple[Optional[int], Optional[List[str]]]:
+    """Numéro de ligne Sheets (1 = en-tête) + contenu. (None, None) si absent."""
+    code = (code_union or "").strip().upper()
+    if not code:
+        return None, None
+    rows = _read_sheet(SHEET_CLIENTS, max_col="Z")
+    for i, row in enumerate(rows[1:], start=2):
+        if _safe(row, COL["code_union"]).upper() == code:
+            return i, row
+    return None, None
+
+
+def _preserve_sheet_backup_columns(new_row: List[str], existing: Optional[List[str]]) -> List[str]:
+    """Garde CA / Alliance / contact agent historiques si on met à jour une ligne existante."""
+    if not existing:
+        if not new_row[COL["contact_agent"]]:
+            new_row[COL["contact_agent"]] = new_row[COL["agent_union"]]
+        return new_row
+    for key in ("contact_agent", "total_2024", "adherent_alliance"):
+        idx = COL[key]
+        old = _safe(existing, idx)
+        if old:
+            new_row[idx] = old
+    return new_row
+
+
+def _liste_client_sheet_id(sheets) -> int:
+    meta = sheets.spreadsheets().get(
+        spreadsheetId=SPREADSHEET_ID,
+        fields="sheets.properties",
+    ).execute()
+    for sheet in meta.get("sheets") or []:
+        props = sheet.get("properties") or {}
+        if props.get("title") == SHEET_CLIENTS:
+            return int(props["sheetId"])
+    raise ValueError(f"Feuille {SHEET_CLIENTS} introuvable")
+
+
+def _upsert_liste_client_2_row(client: Dict[str, Any]) -> str:
+    """Crée ou met à jour la ligne. Retourne 'created' | 'updated'."""
+    sheets = _get_sheets_client()
+    code = (client.get("code_union") or "").strip()
+    row_number, existing_row = _find_liste_client_row(code)
+    values = [_preserve_sheet_backup_columns(_client_to_sheet_row(client), existing_row)]
+    if row_number:
+        sheets.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_CLIENTS}!A{row_number}",
+            valueInputOption="USER_ENTERED",
+            body={"values": values},
+        ).execute()
+        return "updated"
+    sheets.spreadsheets().values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{SHEET_CLIENTS}!A1",
+        valueInputOption="USER_ENTERED",
+        insertDataOption="INSERT_ROWS",
+        body={"values": values},
+    ).execute()
+    return "created"
+
+
+def _delete_liste_client_2_row(code_union: str) -> bool:
+    row_number, _ = _find_liste_client_row(code_union)
+    if not row_number:
+        return False
+    sheets = _get_sheets_client()
+    sheet_id = _liste_client_sheet_id(sheets)
+    sheets.spreadsheets().batchUpdate(
+        spreadsheetId=SPREADSHEET_ID,
+        body={
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "ROWS",
+                        "startIndex": row_number - 1,
+                        "endIndex": row_number,
+                    }
+                }
+            }]
+        },
+    ).execute()
+    return True
+
+
+def _sync_liste_client_2(
+    client: Optional[Dict[str, Any]] = None,
+    *,
+    delete_code: Optional[str] = None,
+) -> Optional[str]:
+    """Best-effort : n'empêche jamais la création / MAJ / suppression Supabase."""
+    try:
+        if delete_code:
+            _delete_liste_client_2_row(delete_code)
+            return None
+        if client:
+            _upsert_liste_client_2_row(client)
+        return None
+    except Exception as exc:
+        return str(exc)
 
 
 def _safe(row: List[str], idx: int) -> str:
@@ -881,6 +1020,9 @@ async def create_client_full(
         "source": "manuel",
     }, keep_docs=False)
 
+    created = nathalie_adherents.get_by_code(code_union)
+    sheet_warning = _sync_liste_client_2(created)
+
     result = {
         "success": True,
         "code_union": code_union,
@@ -892,6 +1034,8 @@ async def create_client_full(
         result["date_creation_compte"] = result["date_creation_compte"].isoformat()
     if drive_warning:
         result["drive_warning"] = drive_warning
+    if sheet_warning:
+        result["sheet_warning"] = sheet_warning
     return result
 
 
@@ -973,6 +1117,9 @@ async def update_client_full(
     }
     if drive_warning:
         result["drive_warning"] = drive_warning
+    sheet_warning = _sync_liste_client_2(client)
+    if sheet_warning:
+        result["sheet_warning"] = sheet_warning
     return result
 
 
@@ -990,6 +1137,7 @@ def delete_client_full(code_union: str, *, trash_drive: bool = True) -> Dict[str
         except Exception as exc:
             drive_warning = str(exc)
     nathalie_adherents.delete_client(code_union)
+    sheet_warning = _sync_liste_client_2(delete_code=existing.get("code_union"))
     result = {
         "success": True,
         "deleted": existing.get("code_union"),
@@ -998,7 +1146,12 @@ def delete_client_full(code_union: str, *, trash_drive: bool = True) -> Dict[str
     }
     if drive_warning:
         result["drive_warning"] = drive_warning
+    if sheet_warning:
+        result["sheet_warning"] = sheet_warning
     return result
+
+
+def _normalize_group_key(groupe_input: str) -> str:
     """Normalise le nom du groupe pour trouver l'ID Drive."""
     s = groupe_input.upper()
     if "JUMBO" in s: return "JUMBO"
