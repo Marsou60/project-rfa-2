@@ -4,6 +4,7 @@ import {
   Building2, Phone, Mail, MapPin, FileText, Send, ArrowLeft,
   Sparkles, Search, RefreshCw, Loader2, Eye, X, Copy, Check,
   FileCheck, FileMinus, ExternalLink, UploadCloud, ScanSearch, Users,
+  Pencil, Save, Camera,
 } from 'lucide-react'
 import {
   nathalieGetClients,
@@ -11,6 +12,7 @@ import {
   nathalieGenerateEmails,
   nathalieGetClientDetail,
   nathalieCreateClient,
+  nathalieUpdateClient,
   nathalieSendEmails,
   nathalieSearchEntreprise,
   nathalieExtractKbis,
@@ -22,6 +24,25 @@ import {
 const KNOWN_SUPPLIERS = ['ACR', 'ALLIANCE', 'DCA', 'EXADIS', 'PURFLUX']
 
 /* ── Groupes (pour le routage Drive) ───────────────────────── */
+const AGENTS_UNION = [
+  'Vanessa', 'Emeric', 'El Mehdi', 'Rayane', 'Agathe', 'Alya', 'Coralie', 'Martial',
+]
+
+const PHOTO_SLOTS = [
+  { key: 'photo_devanture', label: 'Photo 1 — Devanture', urlKey: 'photo_devanture_url' },
+  { key: 'photo_comptoir', label: 'Photo 2 — Comptoir', urlKey: 'photo_comptoir_url' },
+  { key: 'photo_stock', label: 'Photo 3 — Stock', urlKey: 'photo_stock_url' },
+  { key: 'photo_autre_1', label: 'Photo 4 — Autre', urlKey: 'photo_autre_1_url' },
+  { key: 'photo_autre_2', label: 'Photo 5 — Autre', urlKey: 'photo_autre_2_url' },
+]
+
+function formatCompteDate(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10)
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
 const GROUPES = [
   'INDEPENDANT UNION',
   'GROUPE JUMBO',
@@ -257,6 +278,7 @@ export default function NathaliePage() {
           setSelectedSuppliers={setSelectedSuppliers}
           generating={generating}
           onGenerate={handleGenerateEmails}
+          onClientUpdated={(c) => { setSelectedClient(c); loadData() }}
           onBack={() => { loadData(); setView(listOrigin === 'annuaire' ? 'annuaire' : 'dossiers') }}
         />
       )}
@@ -440,6 +462,8 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
     siret: '',
     tva: '',
     contact_magasin: '',
+    contact_responsable_pdv: '',
+    telephone_responsable: '',
     adresse: '',
     code_postal: '',
     ville: '',
@@ -455,6 +479,11 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
     rib: null,
     kbis: null,
     piece_identite: null,
+    photo_devanture: null,
+    photo_comptoir: null,
+    photo_stock: null,
+    photo_autre_1: null,
+    photo_autre_2: null,
   })
   const [query, setQuery] = useState('')
   const [suggestions, setSuggestions] = useState([])
@@ -564,6 +593,9 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
       if (files.rib) formData.append('rib', files.rib)
       if (files.kbis) formData.append('kbis', files.kbis)
       if (files.piece_identite) formData.append('piece_identite', files.piece_identite)
+      PHOTO_SLOTS.forEach(({ key }) => {
+        if (files[key]) formData.append(key, files[key])
+      })
 
       const res = await nathalieCreateClient(formData)
       setResult(res)
@@ -591,6 +623,12 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
             <span className="text-blue-300/50 text-sm">Code Union généré</span>
             <span className="text-emerald-400 font-mono font-bold text-lg">{result.code_union}</span>
           </div>
+          {formatCompteDate(result.date_creation_compte) && (
+            <div className="flex justify-between items-center">
+              <span className="text-blue-300/50 text-sm">Compte créé le</span>
+              <span className="text-white/80 text-sm">{formatCompteDate(result.date_creation_compte)}</span>
+            </div>
+          )}
           <div className="flex justify-between items-center">
             <span className="text-blue-300/50 text-sm">Dossier Drive</span>
             {result.drive_link ? (
@@ -763,10 +801,6 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
             <input value={form.siret} onChange={e => setForm({...form, siret: e.target.value})} className="input-field" placeholder="14 chiffres" />
           </div>
           <div>
-            <label className="label-field">Contact magasin</label>
-            <input value={form.contact_magasin} onChange={e => setForm({...form, contact_magasin: e.target.value})} className="input-field" placeholder="Nom du contact" />
-          </div>
-          <div>
             <label className="label-field">N° TVA</label>
             <input value={form.tva} onChange={e => setForm({...form, tva: e.target.value})} className="input-field" placeholder="FR…" />
           </div>
@@ -776,19 +810,35 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
           </div>
           <div>
             <label className="label-field">Agent Union</label>
-            <input value={form.agent_union} onChange={e => setForm({...form, agent_union: e.target.value})} className="input-field" placeholder="Vanessa, Martial…" />
+            <select value={form.agent_union} onChange={e => setForm({...form, agent_union: e.target.value})} className="input-field">
+              <option value="" className="text-black">Choisir…</option>
+              {AGENTS_UNION.map(a => <option key={a} value={a} className="text-black">{a}</option>)}
+            </select>
           </div>
         </div>
 
-        {/* Contact */}
-        <div className="grid md:grid-cols-2 gap-5">
+        <div className="grid md:grid-cols-2 gap-5 pt-2">
+          <div className="md:col-span-2 text-xs font-semibold text-emerald-300/80 uppercase tracking-wider">Gérant</div>
           <div>
-            <label className="label-field">Email contact</label>
-            <input type="email" value={form.mail} onChange={e => setForm({...form, mail: e.target.value})} className="input-field" placeholder="contact@garage.fr" />
+            <label className="label-field">Nom du gérant</label>
+            <input value={form.contact_magasin} onChange={e => setForm({...form, contact_magasin: e.target.value})} className="input-field" placeholder="Nom du gérant" />
           </div>
           <div>
-            <label className="label-field">Téléphone</label>
+            <label className="label-field">Téléphone gérant</label>
             <input type="tel" value={form.telephone} onChange={e => setForm({...form, telephone: e.target.value})} className="input-field" placeholder="06 12 34 56 78" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="label-field">Email gérant</label>
+            <input type="email" value={form.mail} onChange={e => setForm({...form, mail: e.target.value})} className="input-field" placeholder="gerant@magasin.fr" />
+          </div>
+          <div className="md:col-span-2 text-xs font-semibold text-emerald-300/80 uppercase tracking-wider pt-2">Responsable magasin</div>
+          <div>
+            <label className="label-field">Nom du responsable magasin</label>
+            <input value={form.contact_responsable_pdv} onChange={e => setForm({...form, contact_responsable_pdv: e.target.value})} className="input-field" placeholder="Nom du responsable" />
+          </div>
+          <div>
+            <label className="label-field">Téléphone responsable magasin</label>
+            <input type="tel" value={form.telephone_responsable} onChange={e => setForm({...form, telephone_responsable: e.target.value})} className="input-field" placeholder="06 …" />
           </div>
           <div className="md:col-span-2">
             <label className="label-field">Adresse complète</label>
@@ -824,6 +874,32 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
                     <>
                       <div className="text-white/40 text-xs mb-1 uppercase font-bold">{l}</div>
                       <span className="text-emerald-400 text-xs font-medium bg-emerald-400/10 px-2 py-1 rounded">Choisir</span>
+                    </>
+                  )}
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-4 pt-4 border-t border-white/10">
+          <h3 className="font-bold text-white flex items-center gap-2">
+            <Camera className="w-5 h-5 text-emerald-400" /> Photos magasin
+          </h3>
+          <p className="text-xs text-blue-300/50">Enregistrées dans le dossier Drive du client.</p>
+          <div className="grid md:grid-cols-5 gap-3">
+            {PHOTO_SLOTS.map(({ key, label }) => (
+              <div key={key} className={`border-2 border-dashed rounded-xl p-3 text-center transition-colors ${
+                files[key] ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-white/10 hover:border-white/30 bg-white/5'
+              }`}>
+                <input type="file" id={key} accept="image/*" className="hidden" onChange={e => handleFileChange(key, e)} />
+                <label htmlFor={key} className="cursor-pointer block h-full">
+                  {files[key] ? (
+                    <div className="text-emerald-300 text-xs font-medium truncate">{files[key].name}</div>
+                  ) : (
+                    <>
+                      <div className="text-white/50 text-[10px] mb-1 font-semibold leading-tight">{label}</div>
+                      <span className="text-emerald-400 text-[10px] font-medium bg-emerald-400/10 px-2 py-0.5 rounded">Choisir</span>
                     </>
                   )}
                 </label>
@@ -1060,11 +1136,44 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
   )
 }
 
+function formFromClient(c) {
+  return {
+    nom_client: c.nom_client || '',
+    groupe: c.groupe || 'INDEPENDANT UNION',
+    siret: c.siret || '',
+    tva: c.tva || '',
+    contact_magasin: c.contact_magasin || '',
+    contact_responsable_pdv: c.contact_responsable_pdv || '',
+    telephone_responsable: c.telephone_responsable || '',
+    adresse: c.adresse || '',
+    code_postal: c.code_postal || '',
+    ville: c.ville || '',
+    telephone: c.telephone || '',
+    mail: c.mail || '',
+    agent_union: c.agent_union || '',
+    region_commerciale: c.region_commerciale || '',
+    contrat_type: c.contrat_union || '',
+    notes: c.notes || c.note_generale || '',
+    is_closed: Boolean(c.is_closed),
+  }
+}
+
 /* ── Client detail ────────────────────────────────────────────── */
-function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSelectedSuppliers, generating, onGenerate, onBack }) {
+function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSelectedSuppliers, generating, onGenerate, onBack, onClientUpdated }) {
   const [drive, setDrive] = useState(null)
   const [driveLoading, setDriveLoading] = useState(true)
   const [driveError, setDriveError] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState(null)
+  const [form, setForm] = useState(() => formFromClient(client))
+  const [photoFiles, setPhotoFiles] = useState({})
+
+  useEffect(() => {
+    setForm(formFromClient(client))
+    setPhotoFiles({})
+    setEditing(false)
+  }, [client.code_union])
 
   const inspectDrive = async () => {
     if (!client?.code_union) return
@@ -1102,18 +1211,68 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
     { key: 'piece_identite', label: "Pièce d'identité", icon: <FileCheck className="w-4 h-4" /> },
   ]
 
+  const createdLabel = formatCompteDate(client.date_creation_compte)
+
+  const saveFiche = async () => {
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      const formData = new FormData()
+      Object.entries(form).forEach(([k, v]) => {
+        if (k === 'is_closed') formData.append(k, v ? 'true' : 'false')
+        else formData.append(k, v ?? '')
+      })
+      PHOTO_SLOTS.forEach(({ key }) => {
+        if (photoFiles[key]) formData.append(key, photoFiles[key])
+      })
+      const res = await nathalieUpdateClient(client.code_union, formData)
+      if (res.client && onClientUpdated) onClientUpdated(res.client)
+      setEditing(false)
+      setPhotoFiles({})
+      const n = Object.values(res.reassigned || {}).reduce((a, b) => a + b, 0)
+      if (res.agent_changed) {
+        setSaveMsg(`Fiche enregistrée. CA et analyses réaffectés à ${res.client?.agent_union || 'l’agent'} (${n} lignes).`)
+      } else {
+        setSaveMsg('Fiche enregistrée.')
+      }
+      inspectDrive()
+    } catch (e) {
+      setSaveMsg(e?.response?.data?.detail || e.message || 'Enregistrement impossible.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={onBack} className="glass-btn-icon"><ArrowLeft className="w-4 h-4" /></button>
-        <div>
+        <div className="flex-1 min-w-0">
           <h2 className="text-lg font-bold text-white">{client.nom_client}</h2>
-          <p className="text-blue-300/50 text-xs font-mono">{client.code_union}</p>
+          <p className="text-blue-300/50 text-xs font-mono">
+            {client.code_union}
+            {createdLabel ? ` · Compte créé le ${createdLabel}` : ''}
+          </p>
         </div>
         {client.is_closed ? (
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">Fermé</span>
         ) : null}
+        {!editing ? (
+          <button type="button" onClick={() => { setForm(formFromClient(client)); setEditing(true); setSaveMsg(null) }} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-white/10 border border-white/15 text-white/80 hover:bg-white/15">
+            <Pencil className="w-3.5 h-3.5" /> Modifier
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setEditing(false); setForm(formFromClient(client)); setPhotoFiles({}) }} className="text-xs px-3 py-2 rounded-xl bg-white/10 text-white/70">Annuler</button>
+            <button type="button" onClick={saveFiche} disabled={saving} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-emerald-600 text-white font-semibold disabled:opacity-50">
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Enregistrer
+            </button>
+          </div>
+        )}
       </div>
+      {saveMsg && (
+        <div className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-2">{saveMsg}</div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-5">
         {/* Infos client */}
@@ -1121,33 +1280,90 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
           <h3 className="font-bold text-white flex items-center gap-2">
             <Building2 className="w-4 h-4 text-emerald-400" /> Informations
           </h3>
-          <div className="space-y-2 text-sm">
-            {[
-              ['SIRET', client.siret],
-              ['TVA', client.tva],
-              ['Raison sociale', client.raison_sociale],
-              ['État INSEE', client.etat_insee],
-              ['Périmètre', client.perimetre],
-              ['Région', client.region_commerciale],
-              ['Contact', client.contact_magasin],
-              ['Resp. PDV', client.contact_responsable_pdv],
-              ['Achat / Appro', client.contact_appro],
-              ['Adresse', [client.adresse, client.code_postal, client.ville].filter(Boolean).join(', ')],
-              ['Téléphone', client.telephone],
-              ['Email', client.mail],
-              ['Agent Union', client.agent_union],
-              ['Groupe', client.groupe],
-            ].map(([label, value]) => value ? (
-              <div key={label} className="flex justify-between">
-                <span className="text-blue-300/50">{label}</span>
-                <span className="text-white/80 text-right max-w-[60%] break-words">{value}</span>
+          {editing ? (
+            <div className="space-y-3 text-sm">
+              <input value={form.nom_client} onChange={e => setForm({ ...form, nom_client: e.target.value })} className="input-field" placeholder="Raison sociale" />
+              <div className="grid grid-cols-2 gap-2">
+                <select value={form.groupe} onChange={e => setForm({ ...form, groupe: e.target.value })} className="input-field">
+                  {GROUPES.map(g => <option key={g} value={g} className="text-black">{g}</option>)}
+                </select>
+                <select value={form.agent_union} onChange={e => setForm({ ...form, agent_union: e.target.value })} className="input-field">
+                  <option value="" className="text-black">Agent Union…</option>
+                  {AGENTS_UNION.map(a => <option key={a} value={a} className="text-black">{a}</option>)}
+                </select>
               </div>
-            ) : null)}
-          </div>
-          {client.note_generale && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300">
-              📝 {client.note_generale}
+              <input value={form.region_commerciale} onChange={e => setForm({ ...form, region_commerciale: e.target.value })} className="input-field" placeholder="Région commerciale" />
+              <div className="grid grid-cols-2 gap-2">
+                <input value={form.siret} onChange={e => setForm({ ...form, siret: e.target.value })} className="input-field" placeholder="SIRET" />
+                <input value={form.tva} onChange={e => setForm({ ...form, tva: e.target.value })} className="input-field" placeholder="TVA" />
+              </div>
+              <p className="text-[10px] uppercase tracking-wider text-emerald-300/70 pt-1">Gérant</p>
+              <input value={form.contact_magasin} onChange={e => setForm({ ...form, contact_magasin: e.target.value })} className="input-field" placeholder="Nom du gérant" />
+              <div className="grid grid-cols-2 gap-2">
+                <input value={form.telephone} onChange={e => setForm({ ...form, telephone: e.target.value })} className="input-field" placeholder="Tél. gérant" />
+                <input value={form.mail} onChange={e => setForm({ ...form, mail: e.target.value })} className="input-field" placeholder="Email gérant" />
+              </div>
+              <p className="text-[10px] uppercase tracking-wider text-emerald-300/70 pt-1">Responsable magasin</p>
+              <input value={form.contact_responsable_pdv} onChange={e => setForm({ ...form, contact_responsable_pdv: e.target.value })} className="input-field" placeholder="Nom du responsable" />
+              <input value={form.telephone_responsable} onChange={e => setForm({ ...form, telephone_responsable: e.target.value })} className="input-field" placeholder="Tél. responsable magasin" />
+              <input value={form.adresse} onChange={e => setForm({ ...form, adresse: e.target.value })} className="input-field" placeholder="Adresse" />
+              <div className="grid grid-cols-3 gap-2">
+                <input value={form.code_postal} onChange={e => setForm({ ...form, code_postal: e.target.value })} className="input-field" placeholder="CP" />
+                <input value={form.ville} onChange={e => setForm({ ...form, ville: e.target.value })} className="input-field col-span-2" placeholder="Ville" />
+              </div>
+              <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="input-field min-h-[72px]" placeholder="Notes" />
+              <label className="flex items-center gap-2 text-white/70 text-xs">
+                <input type="checkbox" checked={form.is_closed} onChange={e => setForm({ ...form, is_closed: e.target.checked })} />
+                Magasin fermé
+              </label>
+              <p className="text-[10px] uppercase tracking-wider text-emerald-300/70 pt-1">Photos magasin</p>
+              <div className="grid grid-cols-1 gap-2">
+                {PHOTO_SLOTS.map(({ key, label, urlKey }) => (
+                  <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-white/60">{label}</span>
+                    <div className="flex items-center gap-2">
+                      {client[urlKey] && (
+                        <a href={client[urlKey]} target="_blank" rel="noreferrer" className="text-emerald-400">Voir</a>
+                      )}
+                      <input type="file" accept="image/*" className="text-[10px] text-white/50 w-36" onChange={e => setPhotoFiles(f => ({ ...f, [key]: e.target.files?.[0] }))} />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
+          ) : (
+            <>
+              <div className="space-y-2 text-sm">
+                {[
+                  ['SIRET', client.siret],
+                  ['TVA', client.tva],
+                  ['Raison sociale', client.raison_sociale],
+                  ['État INSEE', client.etat_insee],
+                  ['Périmètre', client.perimetre],
+                  ['Région', client.region_commerciale],
+                  ['Gérant', client.contact_magasin],
+                  ['Tél. gérant', client.telephone],
+                  ['Email gérant', client.mail],
+                  ['Responsable magasin', client.contact_responsable_pdv],
+                  ['Tél. responsable', client.telephone_responsable],
+                  ['Achat / Appro', client.contact_appro],
+                  ['Adresse', [client.adresse, client.code_postal, client.ville].filter(Boolean).join(', ')],
+                  ['Agent Union', client.agent_union],
+                  ['Groupe', client.groupe],
+                  ['Compte créé le', createdLabel],
+                ].map(([label, value]) => value ? (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-blue-300/50">{label}</span>
+                    <span className="text-white/80 text-right max-w-[60%] break-words">{value}</span>
+                  </div>
+                ) : null)}
+              </div>
+              {client.note_generale && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-300">
+                  📝 {client.note_generale}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -1221,6 +1437,48 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
                         )
                       ) : (
                         <span className="text-xs text-red-400">Manquant</span>
+                      )}
+                    </div>
+                  )
+                })}
+                {PHOTO_SLOTS.map(({ key, label, urlKey }) => {
+                  const fromDrive = drive?.[key]
+                  const fromDb = client[urlKey]
+                  const present = Boolean(fromDrive || fromDb)
+                  const link = fromDrive?.link || (typeof fromDb === 'string' && fromDb.startsWith('http') ? fromDb : null)
+                  return (
+                    <div key={key} className={`flex items-center justify-between p-3 rounded-xl ${present ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-white/5 border border-white/10'}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Camera className={`w-4 h-4 ${present ? 'text-emerald-400' : 'text-white/30'}`} />
+                        <div className={`text-sm font-medium ${present ? 'text-emerald-300' : 'text-white/40'}`}>{label}</div>
+                      </div>
+                      {present && link ? (
+                        <a href={link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-emerald-400">
+                          <ExternalLink className="w-3 h-3" /> Voir
+                        </a>
+                      ) : (
+                        <span className="text-xs text-white/25">—</span>
+                      )}
+                    </div>
+                  )
+                })}
+                {PHOTO_SLOTS.map(({ key, label, urlKey }) => {
+                  const fromDrive = drive?.[key]
+                  const fromDb = client[urlKey]
+                  const present = Boolean(fromDrive || fromDb)
+                  const link = fromDrive?.link || (typeof fromDb === 'string' && fromDb.startsWith('http') ? fromDb : null)
+                  return (
+                    <div key={key} className={`flex items-center justify-between p-3 rounded-xl ${present ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-white/5 border border-white/10'}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Camera className={`w-4 h-4 ${present ? 'text-emerald-400' : 'text-white/30'}`} />
+                        <div className={`text-sm font-medium ${present ? 'text-emerald-300' : 'text-white/40'}`}>{label}</div>
+                      </div>
+                      {present && link ? (
+                        <a href={link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-emerald-400">
+                          <ExternalLink className="w-3 h-3" /> Voir
+                        </a>
+                      ) : (
+                        <span className="text-xs text-white/25">—</span>
                       )}
                     </div>
                   )

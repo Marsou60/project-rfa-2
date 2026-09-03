@@ -7,6 +7,7 @@ Périmètre commercial Pure Data.
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from app.models import User, UserRole
@@ -27,6 +28,28 @@ USERNAME_TO_COMMERCIAL = {
     # Vanessa est full-access ; mapping utile si un jour on retire l'exception
     "VANESSA": "Vanessa",
 }
+
+CANONICAL_COMMERCIALS = {
+    "VANESSA": "Vanessa",
+    "EMERIC": "Emeric",
+    "EL MEHDI": "El Mehdi",
+    "ELMEHDI": "El Mehdi",
+    "RAYANE": "Rayane",
+    "AGATHE": "Agathe",
+    "ALYA": "Alya",
+    "CORALIE": "Coralie",
+    "MARTIAL": "Martial",
+}
+
+
+def canonical_commercial_label(value: Optional[str]) -> Optional[str]:
+    """Normalise « emeric » / « El-Mehdi » vers le libellé Pure Data."""
+    s = (value or "").strip()
+    if not s:
+        return None
+    key = re.sub(r"[\s\-_]+", " ", s).upper().strip()
+    compact = key.replace(" ", "")
+    return CANONICAL_COMMERCIALS.get(key) or CANONICAL_COMMERCIALS.get(compact) or s
 
 
 def _role_str(user: User) -> str:

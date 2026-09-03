@@ -15,6 +15,44 @@ from fastapi import UploadFile
 
 from app.services import nathalie_adherents
 
+PHOTO_SLOTS = [
+    {
+        "file_key": "photo_devanture",
+        "url_key": "photo_devanture_url",
+        "kind": "photo_devanture",
+        "drive_name": "PHOTO 1 - Devanture",
+        "patterns": (r"devanture", r"facade", r"façade", r"photo\s*1\b"),
+    },
+    {
+        "file_key": "photo_comptoir",
+        "url_key": "photo_comptoir_url",
+        "kind": "photo_comptoir",
+        "drive_name": "PHOTO 2 - Comptoir",
+        "patterns": (r"comptoir", r"photo\s*2\b"),
+    },
+    {
+        "file_key": "photo_stock",
+        "url_key": "photo_stock_url",
+        "kind": "photo_stock",
+        "drive_name": "PHOTO 3 - Stock",
+        "patterns": (r"\bstock\b", r"entrepot", r"entrepôt", r"photo\s*3\b"),
+    },
+    {
+        "file_key": "photo_autre_1",
+        "url_key": "photo_autre_1_url",
+        "kind": "photo_autre_1",
+        "drive_name": "PHOTO 4",
+        "patterns": (r"photo\s*4\b",),
+    },
+    {
+        "file_key": "photo_autre_2",
+        "url_key": "photo_autre_2_url",
+        "kind": "photo_autre_2",
+        "drive_name": "PHOTO 5",
+        "patterns": (r"photo\s*5\b",),
+    },
+]
+
 # ── Constantes ───────────────────────────────────────────────────────────────
 
 SPREADSHEET_ID = "1C9UzZlLm6fnjNe4zbXfkDGqMEzbSQrHTuEP0BALN7X0"
@@ -369,13 +407,14 @@ def create_drive_folder(parent_id: str, name: str) -> str:
     return file.get("id")
 
 
-def upload_file_to_drive(parent_id: str, file: UploadFile) -> str:
+def upload_file_to_drive(parent_id: str, file: UploadFile, filename: Optional[str] = None) -> str:
     """Upload un fichier dans Drive et retourne son lien WebView."""
     from googleapiclient.http import MediaIoBaseUpload
     drive = _get_drive_client()
+    name = filename or file.filename
 
-    metadata = {"name": file.filename, "parents": [parent_id]}
-    media = MediaIoBaseUpload(file.file, mimetype=file.content_type, resumable=True)
+    metadata = {"name": name, "parents": [parent_id]}
+    media = MediaIoBaseUpload(file.file, mimetype=file.content_type or "application/octet-stream", resumable=True)
 
     uploaded = drive.files().create(
         body=metadata,
@@ -415,10 +454,13 @@ _DOC_KIND_PATTERNS = {
 
 
 def classify_drive_filename(name: str) -> Optional[str]:
-    """Classe un fichier Drive : rib | kbis | piece_identite, sinon None."""
+    """Classe un fichier Drive : rib | kbis | piece_identite | photo_*, sinon None."""
     raw = (name or "").lower()
     for old, new in (("é", "e"), ("è", "e"), ("ê", "e"), ("à", "a"), ("’", "'"), ("'", " ")):
         raw = raw.replace(old, new)
+    for slot in PHOTO_SLOTS:
+        if any(re.search(p, raw) for p in slot["patterns"]):
+            return slot["kind"]
     for kind, patterns in _DOC_KIND_PATTERNS.items():
         if any(re.search(p, raw) for p in patterns):
             return kind
@@ -589,6 +631,7 @@ def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, 
         rib = classified.get("rib")
         kbis = classified.get("kbis")
         piece = classified.get("piece_identite")
+        photos = {slot["kind"]: classified.get(slot["kind"]) for slot in PHOTO_SLOTS}
         result = {
             "code_union": code,
             "folder_found": True,
@@ -598,20 +641,26 @@ def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, 
             "rib": rib,
             "kbis": kbis,
             "piece_identite": piece,
+            **photos,
             "files": files_out,
             "has_rib": bool(rib),
             "has_kbis": bool(kbis),
             "docs_ok": bool(rib and kbis),
         }
         if persist:
-            nathalie_adherents.patch_drive_docs(code, {
+            patch = {
                 "drive_folder_id": result["folder_id"],
                 "drive_link": result["drive_link"],
                 "rib_url": (rib or {}).get("link"),
                 "kbis_url": (kbis or {}).get("link"),
                 "piece_identite_url": (piece or {}).get("link"),
                 "drive_checked_at": nathalie_adherents._now(),
-            })
+            }
+            for slot in PHOTO_SLOTS:
+                link = (photos.get(slot["kind"]) or {}).get("link")
+                if link:
+                    patch[slot["url_key"]] = link
+            nathalie_adherents.patch_drive_docs(code, patch)
         return result
     except Exception as exc:
         return _fail(exc)
@@ -708,6 +757,42 @@ def _has_upload(file: Optional[UploadFile]) -> bool:
     return bool(file and getattr(file, "filename", None))
 
 
+def _file_ext(file: UploadFile) -> str:
+    name = file.filename or ""
+    _, ext = os.path.splitext(name)
+    return ext if ext else ".jpg"
+
+
+def _upload_client_files(folder_id: str, files: Optional[Dict[str, UploadFile]]) -> Dict[str, str]:
+    links: Dict[str, str] = {}
+    files = files or {}
+    for key in ("rib", "kbis", "piece_identite"):
+        f = files.get(key)
+        if _has_upload(f):
+            links[key] = upload_file_to_drive(folder_id, f)
+    for slot in PHOTO_SLOTS:
+        f = files.get(slot["file_key"])
+        if _has_upload(f):
+            links[slot["file_key"]] = upload_file_to_drive(
+                folder_id, f, f"{slot['drive_name']}{_file_ext(f)}"
+            )
+    return links
+
+
+def _ensure_client_folder(client: Dict[str, Any], nom: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    folder_id = client.get("drive_folder_id")
+    drive_link = client.get("drive_link")
+    if folder_id:
+        return folder_id, drive_link, None
+    groupe_key = _normalize_group_key(client.get("groupe") or "")
+    parent_folder_id = DRIVE_FOLDERS.get(groupe_key, DRIVE_FOLDERS["MAGASIN"])
+    code = client.get("code_union")
+    folder_name = f"{code} : {nom}"
+    folder_id = create_drive_folder(parent_folder_id, folder_name)
+    drive_link = f"https://drive.google.com/drive/folders/{folder_id}"
+    return folder_id, drive_link, None
+
+
 async def create_client_full(
     data: Dict[str, Any],
     files: Dict[str, UploadFile]
@@ -715,7 +800,7 @@ async def create_client_full(
     """
     Orchestre la création complète :
     1. Générer Code Union
-    2. Créer dossier Drive (selon groupe) + upload pièces (best-effort)
+    2. Créer dossier Drive (selon groupe) + upload pièces / photos (best-effort)
     3. Enregistrer l'adhérent dans Supabase
     """
     nom = (data.get("nom_client") or "").strip()
@@ -744,23 +829,30 @@ async def create_client_full(
         parent_folder_id = DRIVE_FOLDERS.get(groupe_key, DRIVE_FOLDERS["MAGASIN"])
         folder_id = create_drive_folder(parent_folder_id, folder_name)
         drive_link = f"https://drive.google.com/drive/folders/{folder_id}"
-        for key, file in (files or {}).items():
-            if _has_upload(file):
-                links[key] = upload_file_to_drive(folder_id, file)
+        links = _upload_client_files(folder_id, files)
     except Exception as exc:
         drive_warning = str(exc)
 
+    now = nathalie_adherents._now()
     nathalie_adherents.upsert_client({
         **data,
         "code_union": code_union,
         "nom_client": nom,
-        "contact_magasin": data.get("contact_magasin") or data.get("contact"),
+        "contact_magasin": data.get("contact_magasin") or data.get("gerant") or data.get("contact"),
+        "contact_responsable_pdv": data.get("contact_responsable_pdv") or data.get("responsable_magasin"),
+        "telephone_responsable": data.get("telephone_responsable"),
         "rib": links.get("rib"),
         "kbis": links.get("kbis"),
         "piece_identite": links.get("piece_identite"),
+        "photo_devanture": links.get("photo_devanture"),
+        "photo_comptoir": links.get("photo_comptoir"),
+        "photo_stock": links.get("photo_stock"),
+        "photo_autre_1": links.get("photo_autre_1"),
+        "photo_autre_2": links.get("photo_autre_2"),
         "drive_folder_id": folder_id,
         "drive_link": drive_link,
-        "drive_checked_at": nathalie_adherents._now(),
+        "drive_checked_at": now,
+        "date_creation_compte": now,
         "source": "manuel",
     }, keep_docs=False)
 
@@ -769,6 +861,90 @@ async def create_client_full(
         "code_union": code_union,
         "folder_name": folder_name,
         "drive_link": drive_link,
+        "date_creation_compte": now if isinstance(now, str) else getattr(now, "isoformat", lambda: now)(),
+    }
+    if hasattr(result["date_creation_compte"], "isoformat"):
+        result["date_creation_compte"] = result["date_creation_compte"].isoformat()
+    if drive_warning:
+        result["drive_warning"] = drive_warning
+    return result
+
+
+async def update_client_full(
+    code_union: str,
+    data: Dict[str, Any],
+    files: Optional[Dict[str, UploadFile]] = None,
+) -> Dict[str, Any]:
+    existing = nathalie_adherents.get_by_code(code_union)
+    if not existing:
+        raise ValueError(f"Client {code_union} introuvable")
+    code = existing["code_union"]
+    nom = (data.get("nom_client") or existing.get("nom_client") or "").strip()
+    if not nom:
+        raise ValueError("nom_client requis")
+    if not (data.get("agent_union") or "").strip():
+        data["agent_union"] = existing.get("agent_union")
+    if not (data.get("region_commerciale") or "").strip():
+        data["region_commerciale"] = existing.get("region_commerciale")
+    if not (data.get("groupe") or "").strip():
+        data["groupe"] = existing.get("groupe")
+
+    siret_in = data.get("siret")
+    if siret_in:
+        from app.services.nathalie_entreprise import resolve_siret_for_storage
+        stored = resolve_siret_for_storage(siret_in)
+        if stored:
+            data["siret"] = stored
+
+    old_agent = (existing.get("agent_union") or "").strip()
+    old_region = (existing.get("region_commerciale") or "").strip()
+
+    folder_id = existing.get("drive_folder_id")
+    drive_link = existing.get("drive_link")
+    drive_warning = None
+    links: Dict[str, str] = {}
+    has_files = any(_has_upload((files or {}).get(k)) for k in [
+        "rib", "kbis", "piece_identite",
+        *(s["file_key"] for s in PHOTO_SLOTS),
+    ])
+    if has_files:
+        try:
+            folder_id, drive_link, _ = _ensure_client_folder({**existing, **data, "code_union": code}, nom)
+            links = _upload_client_files(folder_id, files)
+        except Exception as exc:
+            drive_warning = str(exc)
+
+    payload = {
+        **data,
+        "code_union": code,
+        "nom_client": nom,
+        "source": existing.get("source") or "manuel",
+        "drive_folder_id": folder_id,
+        "drive_link": drive_link,
+        "rib": links.get("rib"),
+        "kbis": links.get("kbis"),
+        "piece_identite": links.get("piece_identite"),
+        "photo_devanture": links.get("photo_devanture"),
+        "photo_comptoir": links.get("photo_comptoir"),
+        "photo_stock": links.get("photo_stock"),
+        "photo_autre_1": links.get("photo_autre_1"),
+        "photo_autre_2": links.get("photo_autre_2"),
+    }
+    client = nathalie_adherents.upsert_client(payload, keep_docs=True)
+
+    new_agent = (client.get("agent_union") or "").strip()
+    new_region = (client.get("region_commerciale") or "").strip()
+    reassigned = {}
+    if new_agent != old_agent or new_region != old_region:
+        reassigned = nathalie_adherents.reassign_code_union_portfolio(
+            code, new_agent or None, new_region or None,
+        )
+
+    result = {
+        "success": True,
+        "client": client,
+        "reassigned": reassigned,
+        "agent_changed": new_agent != old_agent,
     }
     if drive_warning:
         result["drive_warning"] = drive_warning

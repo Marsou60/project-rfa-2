@@ -6187,7 +6187,6 @@ async def nathalie_client_drive(code_union: str, persist: bool = True):
 
 @router.post("/nathalie/create-client")
 async def nathalie_create_client(
-    # Champs formulaire
     nom_client: str = Form(...),
     groupe: str = Form(...),
     adresse: str = Form(""),
@@ -6198,14 +6197,20 @@ async def nathalie_create_client(
     siret: str = Form(""),
     tva: str = Form(""),
     contact_magasin: str = Form(""),
+    contact_responsable_pdv: str = Form(""),
+    telephone_responsable: str = Form(""),
     agent_union: str = Form(""),
     region_commerciale: str = Form(""),
     contrat_type: str = Form(""),
     notes: str = Form(""),
-    # Fichiers
     rib: UploadFile = File(None),
     kbis: UploadFile = File(None),
     piece_identite: UploadFile = File(None),
+    photo_devanture: UploadFile = File(None),
+    photo_comptoir: UploadFile = File(None),
+    photo_stock: UploadFile = File(None),
+    photo_autre_1: UploadFile = File(None),
+    photo_autre_2: UploadFile = File(None),
 ):
     """
     Crée un adhérent :
@@ -6224,6 +6229,8 @@ async def nathalie_create_client(
         "siret": siret,
         "tva": tva,
         "contact_magasin": contact_magasin,
+        "contact_responsable_pdv": contact_responsable_pdv,
+        "telephone_responsable": telephone_responsable,
         "agent_union": agent_union,
         "region_commerciale": region_commerciale,
         "contrat_type": contrat_type,
@@ -6233,6 +6240,11 @@ async def nathalie_create_client(
         "rib": rib,
         "kbis": kbis,
         "piece_identite": piece_identite,
+        "photo_devanture": photo_devanture,
+        "photo_comptoir": photo_comptoir,
+        "photo_stock": photo_stock,
+        "photo_autre_1": photo_autre_1,
+        "photo_autre_2": photo_autre_2,
     }
 
     try:
@@ -6244,6 +6256,76 @@ async def nathalie_create_client(
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur création client : {str(e)}")
+
+
+@router.patch("/nathalie/client/{code_union}")
+async def nathalie_update_client(
+    code_union: str,
+    nom_client: str = Form(""),
+    groupe: str = Form(""),
+    adresse: str = Form(""),
+    code_postal: str = Form(""),
+    ville: str = Form(""),
+    telephone: str = Form(""),
+    mail: str = Form(""),
+    siret: str = Form(""),
+    tva: str = Form(""),
+    contact_magasin: str = Form(""),
+    contact_responsable_pdv: str = Form(""),
+    telephone_responsable: str = Form(""),
+    agent_union: str = Form(""),
+    region_commerciale: str = Form(""),
+    contrat_type: str = Form(""),
+    notes: str = Form(""),
+    is_closed: str = Form(""),
+    rib: UploadFile = File(None),
+    kbis: UploadFile = File(None),
+    piece_identite: UploadFile = File(None),
+    photo_devanture: UploadFile = File(None),
+    photo_comptoir: UploadFile = File(None),
+    photo_stock: UploadFile = File(None),
+    photo_autre_1: UploadFile = File(None),
+    photo_autre_2: UploadFile = File(None),
+):
+    """Met à jour la fiche. Un changement d'agent Union réaffecte le CA Pure Data."""
+    data = {
+        "nom_client": nom_client,
+        "groupe": groupe,
+        "adresse": adresse,
+        "code_postal": code_postal,
+        "ville": ville,
+        "telephone": telephone,
+        "mail": mail,
+        "siret": siret,
+        "tva": tva,
+        "contact_magasin": contact_magasin,
+        "contact_responsable_pdv": contact_responsable_pdv,
+        "telephone_responsable": telephone_responsable,
+        "agent_union": agent_union,
+        "region_commerciale": region_commerciale,
+        "contrat_type": contrat_type,
+        "notes": notes,
+    }
+    if is_closed != "":
+        data["is_closed"] = is_closed
+    files = {
+        "rib": rib,
+        "kbis": kbis,
+        "piece_identite": piece_identite,
+        "photo_devanture": photo_devanture,
+        "photo_comptoir": photo_comptoir,
+        "photo_stock": photo_stock,
+        "photo_autre_1": photo_autre_1,
+        "photo_autre_2": photo_autre_2,
+    }
+    try:
+        return await nathalie_service.update_client_full(code_union, data, files)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur mise à jour : {str(e)}")
 
 
 # ==================== IMPAYÉS ADHÉRENTS ====================

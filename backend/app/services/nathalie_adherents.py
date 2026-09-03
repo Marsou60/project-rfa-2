@@ -42,13 +42,20 @@ COLUMNS = [
     "contrat_union",
     "ouverture_chez",
     "contact_responsable_pdv",
+    "telephone_responsable",
     "contact_appro",
     "rib_url",
     "kbis_url",
     "piece_identite_url",
+    "photo_devanture_url",
+    "photo_comptoir_url",
+    "photo_stock_url",
+    "photo_autre_1_url",
+    "photo_autre_2_url",
     "drive_folder_id",
     "drive_link",
     "drive_checked_at",
+    "date_creation_compte",
     "source",
     "created_at",
     "updated_at",
@@ -71,6 +78,14 @@ def _bool(val) -> Any:
     if _is_pg():
         return bool(val)
     return 1 if val else 0
+
+
+def _coerce_closed(val, nom: str, notes: Optional[str], etat_insee) -> Any:
+    if val is None or (isinstance(val, str) and val.strip() == ""):
+        return _bool(is_closed_from(nom, notes, etat_insee))
+    if isinstance(val, str):
+        return _bool(val.strip().lower() in ("1", "true", "oui", "on", "yes"))
+    return _bool(val)
 
 
 def ensure_tables() -> None:
@@ -100,13 +115,20 @@ def ensure_tables() -> None:
           contrat_union text,
           ouverture_chez text,
           contact_responsable_pdv text,
+          telephone_responsable text,
           contact_appro text,
           rib_url text,
           kbis_url text,
           piece_identite_url text,
+          photo_devanture_url text,
+          photo_comptoir_url text,
+          photo_stock_url text,
+          photo_autre_1_url text,
+          photo_autre_2_url text,
           drive_folder_id text,
           drive_link text,
           drive_checked_at timestamptz,
+          date_creation_compte timestamptz,
           source text NOT NULL DEFAULT 'manuel',
           created_at timestamptz NOT NULL DEFAULT now(),
           updated_at timestamptz NOT NULL DEFAULT now()
@@ -142,13 +164,20 @@ def ensure_tables() -> None:
           contrat_union TEXT,
           ouverture_chez TEXT,
           contact_responsable_pdv TEXT,
+          telephone_responsable TEXT,
           contact_appro TEXT,
           rib_url TEXT,
           kbis_url TEXT,
           piece_identite_url TEXT,
+          photo_devanture_url TEXT,
+          photo_comptoir_url TEXT,
+          photo_stock_url TEXT,
+          photo_autre_1_url TEXT,
+          photo_autre_2_url TEXT,
           drive_folder_id TEXT,
           drive_link TEXT,
           drive_checked_at TEXT,
+          date_creation_compte TEXT,
           source TEXT NOT NULL DEFAULT 'manuel',
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
@@ -169,8 +198,15 @@ def ensure_tables() -> None:
         "perimetre text",
         "region_commerciale text",
         "contact_responsable_pdv text",
+        "telephone_responsable text",
         "contact_appro text",
+        "photo_devanture_url text",
+        "photo_comptoir_url text",
+        "photo_stock_url text",
+        "photo_autre_1_url text",
+        "photo_autre_2_url text",
         "drive_checked_at timestamptz",
+        "date_creation_compte timestamptz",
     ]
     extra_sqlite = [
         "departement",
@@ -179,8 +215,15 @@ def ensure_tables() -> None:
         "perimetre",
         "region_commerciale",
         "contact_responsable_pdv",
+        "telephone_responsable",
         "contact_appro",
+        "photo_devanture_url",
+        "photo_comptoir_url",
+        "photo_stock_url",
+        "photo_autre_1_url",
+        "photo_autre_2_url",
         "drive_checked_at",
+        "date_creation_compte",
     ]
     with engine.begin() as conn:
         conn.execute(text(ddl))
@@ -267,7 +310,7 @@ def is_closed_from(nom: str, notes: Optional[str] = None, etat_insee: Optional[s
 
 def _row_to_client(row) -> Dict[str, Any]:
     data = dict(row)
-    for key in ("created_at", "updated_at", "drive_checked_at"):
+    for key in ("created_at", "updated_at", "drive_checked_at", "date_creation_compte"):
         val = data.get(key)
         if hasattr(val, "isoformat"):
             data[key] = val.isoformat()
@@ -279,6 +322,17 @@ def _row_to_client(row) -> Dict[str, Any]:
     data["rib"] = rib
     data["kbis"] = kbis
     data["piece_identite"] = piece
+    data["gerant"] = data.get("contact_magasin") or ""
+    data["gerant_telephone"] = data.get("telephone") or ""
+    data["gerant_mail"] = data.get("mail") or ""
+    data["responsable_magasin"] = data.get("contact_responsable_pdv") or ""
+    data["photos"] = {
+        "devanture": data.get("photo_devanture_url") or "",
+        "comptoir": data.get("photo_comptoir_url") or "",
+        "stock": data.get("photo_stock_url") or "",
+        "autre_1": data.get("photo_autre_1_url") or "",
+        "autre_2": data.get("photo_autre_2_url") or "",
+    }
     data["note_generale"] = data.get("notes") or ""
     data["docs_complets"] = bool(rib and kbis and piece)
     data["has_rib"] = bool(rib)
@@ -375,22 +429,27 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
             payload.get("region_commerciale") or payload.get("region")
         ),
         "notes": notes,
-        "is_closed": _bool(
-            payload.get("is_closed")
-            if payload.get("is_closed") is not None
-            else is_closed_from(nom, notes, payload.get("etat_insee"))
-        ),
-        "agent_union": clean_text(payload.get("agent_union")),
+        "is_closed": _coerce_closed(payload.get("is_closed"), nom, notes, payload.get("etat_insee")),
+        "agent_union": _canonical_agent(payload.get("agent_union")),
         "contrat_union": clean_text(payload.get("contrat_union") or payload.get("contrat_type")),
         "ouverture_chez": clean_text(payload.get("ouverture_chez")),
-        "contact_responsable_pdv": clean_text(payload.get("contact_responsable_pdv")),
+        "contact_responsable_pdv": clean_text(
+            payload.get("contact_responsable_pdv") or payload.get("responsable_magasin")
+        ),
+        "telephone_responsable": clean_text(payload.get("telephone_responsable")),
         "contact_appro": clean_text(payload.get("contact_appro") or payload.get("contact_achat")),
         "rib_url": clean_text(payload.get("rib_url") or payload.get("rib")),
         "kbis_url": clean_text(payload.get("kbis_url") or payload.get("kbis")),
         "piece_identite_url": clean_text(payload.get("piece_identite_url") or payload.get("piece_identite")),
+        "photo_devanture_url": clean_text(payload.get("photo_devanture_url") or payload.get("photo_devanture")),
+        "photo_comptoir_url": clean_text(payload.get("photo_comptoir_url") or payload.get("photo_comptoir")),
+        "photo_stock_url": clean_text(payload.get("photo_stock_url") or payload.get("photo_stock")),
+        "photo_autre_1_url": clean_text(payload.get("photo_autre_1_url") or payload.get("photo_autre_1")),
+        "photo_autre_2_url": clean_text(payload.get("photo_autre_2_url") or payload.get("photo_autre_2")),
         "drive_folder_id": clean_text(payload.get("drive_folder_id")),
         "drive_link": clean_text(payload.get("drive_link")),
         "drive_checked_at": payload.get("drive_checked_at"),
+        "date_creation_compte": payload.get("date_creation_compte"),
         "source": payload.get("source") or "manuel",
         "updated_at": _now(),
     }
@@ -399,9 +458,15 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
             "rib_url": existing.get("rib_url") or existing.get("rib"),
             "kbis_url": existing.get("kbis_url") or existing.get("kbis"),
             "piece_identite_url": existing.get("piece_identite_url") or existing.get("piece_identite"),
+            "photo_devanture_url": existing.get("photo_devanture_url"),
+            "photo_comptoir_url": existing.get("photo_comptoir_url"),
+            "photo_stock_url": existing.get("photo_stock_url"),
+            "photo_autre_1_url": existing.get("photo_autre_1_url"),
+            "photo_autre_2_url": existing.get("photo_autre_2_url"),
             "drive_folder_id": existing.get("drive_folder_id"),
             "drive_link": existing.get("drive_link"),
             "drive_checked_at": existing.get("drive_checked_at"),
+            "date_creation_compte": existing.get("date_creation_compte"),
             "ouverture_chez": existing.get("ouverture_chez"),
             "contrat_union": existing.get("contrat_union"),
         }
@@ -411,8 +476,8 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
 
     now = _now()
     if existing:
-        sets = ", ".join(f"{c} = :{c}" for c in COLUMNS if c not in ("id", "code_union", "created_at"))
-        params = {k: record[k] for k in COLUMNS if k not in ("id", "code_union", "created_at")}
+        sets = ", ".join(f"{c} = :{c}" for c in COLUMNS if c not in ("id", "code_union", "created_at", "date_creation_compte"))
+        params = {k: record[k] for k in COLUMNS if k not in ("id", "code_union", "created_at", "date_creation_compte")}
         params["code"] = code
         with engine.begin() as conn:
             conn.execute(
@@ -426,6 +491,8 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
 
     record["id"] = payload.get("id") or _uuid()
     record["created_at"] = now
+    if not record.get("date_creation_compte") and (record.get("source") or "manuel") == "manuel":
+        record["date_creation_compte"] = now
     cols = ", ".join(COLUMNS)
     placeholders = ", ".join(f":{c}" for c in COLUMNS)
     with engine.begin() as conn:
@@ -626,6 +693,52 @@ def replace_directory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     return stats
 
 
+def _canonical_agent(value: Any) -> Optional[str]:
+    from app.services.commercial_scope import canonical_commercial_label
+    return canonical_commercial_label(clean_text(value))
+
+
+def reassign_code_union_portfolio(
+    code_union: str,
+    commercial: Optional[str],
+    region: Optional[str] = None,
+) -> Dict[str, int]:
+    """Réaffecte le CA / analyses Pure Data et les impayés au nouvel agent Union."""
+    code = clean_code_union(code_union)
+    if not code:
+        return {}
+    comm = _canonical_agent(commercial)
+    region_s = clean_text(region)
+    counts: Dict[str, int] = {}
+    targets = (
+        ("pure_data_monthly", True),
+        ("pure_data_cumulative", True),
+        ("pure_data", True),
+        ("impayes", False),
+    )
+    for table, has_region in targets:
+        sets = ["commercial = :c"] if comm is not None else []
+        params: Dict[str, Any] = {"code": code}
+        if comm is not None:
+            params["c"] = comm
+        if has_region and region_s:
+            sets.append("region_commerciale = :r")
+            params["r"] = region_s
+        if not sets:
+            continue
+        sql = (
+            f'UPDATE "{table}" SET {", ".join(sets)} '
+            "WHERE UPPER(TRIM(code_union)) = :code"
+        )
+        try:
+            with engine.begin() as conn:
+                result = conn.execute(text(sql), params)
+            counts[table] = int(result.rowcount or 0)
+        except Exception:
+            counts[table] = 0
+    return counts
+
+
 def patch_drive_docs(code_union: str, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Met à jour uniquement les liens Drive / pièces, sans toucher au reste de la fiche."""
     ensure_tables()
@@ -636,6 +749,11 @@ def patch_drive_docs(code_union: str, fields: Dict[str, Any]) -> Optional[Dict[s
         "rib_url",
         "kbis_url",
         "piece_identite_url",
+        "photo_devanture_url",
+        "photo_comptoir_url",
+        "photo_stock_url",
+        "photo_autre_1_url",
+        "photo_autre_2_url",
         "drive_folder_id",
         "drive_link",
         "drive_checked_at",

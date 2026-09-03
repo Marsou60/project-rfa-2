@@ -86,3 +86,13 @@ def test_parse_liste_clients_siret_tva():
     jumbo = next(r for r in rows if r["code_union"] == "J0068")
     assert jumbo["is_closed"]
     assert jumbo["agent_union"] == "Vanessa"
+
+
+def test_canonical_agent_and_closed_form():
+    from app.services.commercial_scope import canonical_commercial_label
+    from app.services.nathalie_adherents import _coerce_closed
+
+    assert canonical_commercial_label("emeric") == "Emeric"
+    assert canonical_commercial_label("El-Mehdi") == "El Mehdi"
+    assert _coerce_closed("false", "X", None, None) in (False, 0)
+    assert _coerce_closed("true", "X", None, None) in (True, 1)

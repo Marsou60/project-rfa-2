@@ -12,6 +12,11 @@ def test_classify_rib_kbis_id():
     assert classify_drive_filename("Extrait K-bis 2026.pdf") == "kbis"
     assert classify_drive_filename("CNI recto verso.pdf") == "piece_identite"
     assert classify_drive_filename("photo enseigne.jpg") is None
+    assert classify_drive_filename("PHOTO 1 - Devanture.jpg") == "photo_devanture"
+    assert classify_drive_filename("PHOTO 2 - Comptoir.png") == "photo_comptoir"
+    assert classify_drive_filename("PHOTO 3 - Stock.jpeg") == "photo_stock"
+    assert classify_drive_filename("PHOTO 4.jpg") == "photo_autre_1"
+    assert classify_drive_filename("PHOTO 5.webp") == "photo_autre_2"
 
 
 def test_score_existing_drive_folder():

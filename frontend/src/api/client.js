@@ -1099,6 +1099,15 @@ export const nathalieCreateClient = async (formData) => {
   return response.data
 }
 
+export const nathalieUpdateClient = async (codeUnion, formData) => {
+  const response = await api.patch(`/nathalie/client/${encodeURIComponent(codeUnion)}`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return response.data
+}
+
 // ==================== IMPAYÉS ADHÉRENTS ====================
 
 export const getImpayesSummary = async (codeUnion = null) => {
