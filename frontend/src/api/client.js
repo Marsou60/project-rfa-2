@@ -1108,6 +1108,11 @@ export const nathalieUpdateClient = async (codeUnion, formData) => {
   return response.data
 }
 
+export const nathalieDeleteClient = async (codeUnion) => {
+  const response = await api.delete(`/nathalie/client/${encodeURIComponent(codeUnion)}`)
+  return response.data
+}
+
 // ==================== IMPAYÉS ADHÉRENTS ====================
 
 export const getImpayesSummary = async (codeUnion = null) => {

@@ -407,6 +407,19 @@ def create_drive_folder(parent_id: str, name: str) -> str:
     return file.get("id")
 
 
+def trash_drive_folder(folder_id: str) -> None:
+    """Met le dossier client à la corbeille Drive (pas une suppression définitive Google)."""
+    drive = _get_drive_client()
+    try:
+        drive.files().update(
+            fileId=folder_id,
+            body={"trashed": True},
+            supportsAllDrives=True,
+        ).execute()
+    except Exception:
+        drive.files().update(fileId=folder_id, body={"trashed": True}).execute()
+
+
 def upload_file_to_drive(parent_id: str, file: UploadFile, filename: Optional[str] = None) -> str:
     """Upload un fichier dans Drive et retourne son lien WebView."""
     from googleapiclient.http import MediaIoBaseUpload
@@ -414,7 +427,13 @@ def upload_file_to_drive(parent_id: str, file: UploadFile, filename: Optional[st
     name = filename or file.filename
 
     metadata = {"name": name, "parents": [parent_id]}
-    media = MediaIoBaseUpload(file.file, mimetype=file.content_type or "application/octet-stream", resumable=True)
+    stream = file.file
+    if hasattr(stream, "seek"):
+        try:
+            stream.seek(0)
+        except Exception:
+            pass
+    media = MediaIoBaseUpload(stream, mimetype=file.content_type or "application/octet-stream", resumable=True)
 
     uploaded = drive.files().create(
         body=metadata,
@@ -754,6 +773,8 @@ def sync_drive_dossiers() -> Dict[str, Any]:
 
 
 def _has_upload(file: Optional[UploadFile]) -> bool:
+    if isinstance(file, (list, tuple)):
+        file = file[0] if file else None
     return bool(file and getattr(file, "filename", None))
 
 
@@ -768,10 +789,14 @@ def _upload_client_files(folder_id: str, files: Optional[Dict[str, UploadFile]])
     files = files or {}
     for key in ("rib", "kbis", "piece_identite"):
         f = files.get(key)
+        if isinstance(f, (list, tuple)):
+            f = f[0] if f else None
         if _has_upload(f):
             links[key] = upload_file_to_drive(folder_id, f)
     for slot in PHOTO_SLOTS:
         f = files.get(slot["file_key"])
+        if isinstance(f, (list, tuple)):
+            f = f[0] if f else None
         if _has_upload(f):
             links[slot["file_key"]] = upload_file_to_drive(
                 folder_id, f, f"{slot['drive_name']}{_file_ext(f)}"
@@ -951,7 +976,29 @@ async def update_client_full(
     return result
 
 
-def _normalize_group_key(groupe_input: str) -> str:
+def delete_client_full(code_union: str, *, trash_drive: bool = True) -> Dict[str, Any]:
+    existing = nathalie_adherents.get_by_code(code_union)
+    if not existing:
+        raise ValueError(f"Client {code_union} introuvable")
+    drive_warning = None
+    drive_trashed = False
+    folder_id = existing.get("drive_folder_id")
+    if trash_drive and folder_id:
+        try:
+            trash_drive_folder(folder_id)
+            drive_trashed = True
+        except Exception as exc:
+            drive_warning = str(exc)
+    nathalie_adherents.delete_client(code_union)
+    result = {
+        "success": True,
+        "deleted": existing.get("code_union"),
+        "nom_client": existing.get("nom_client"),
+        "drive_trashed": drive_trashed,
+    }
+    if drive_warning:
+        result["drive_warning"] = drive_warning
+    return result
     """Normalise le nom du groupe pour trouver l'ID Drive."""
     s = groupe_input.upper()
     if "JUMBO" in s: return "JUMBO"

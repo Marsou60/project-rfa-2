@@ -4,7 +4,7 @@ import {
   Building2, Phone, Mail, MapPin, FileText, Send, ArrowLeft,
   Sparkles, Search, RefreshCw, Loader2, Eye, X, Copy, Check,
   FileCheck, FileMinus, ExternalLink, UploadCloud, ScanSearch, Users,
-  Pencil, Save, Camera,
+  Pencil, Save, Camera, Trash2,
 } from 'lucide-react'
 import {
   nathalieGetClients,
@@ -13,6 +13,7 @@ import {
   nathalieGetClientDetail,
   nathalieCreateClient,
   nathalieUpdateClient,
+  nathalieDeleteClient,
   nathalieSendEmails,
   nathalieSearchEntreprise,
   nathalieExtractKbis,
@@ -279,6 +280,7 @@ export default function NathaliePage() {
           generating={generating}
           onGenerate={handleGenerateEmails}
           onClientUpdated={(c) => { setSelectedClient(c); loadData() }}
+          onDeleted={() => { setSelectedClient(null); loadData(); setView('annuaire') }}
           onBack={() => { loadData(); setView(listOrigin === 'annuaire' ? 'annuaire' : 'dossiers') }}
         />
       )}
@@ -584,7 +586,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
   }, [form.siret])
 
   const handleSubmit = async () => {
-    if (!form.nom_client) return
+    if (!form.nom_client || submitting) return
     setSubmitted(true)
 
     try {
@@ -911,10 +913,10 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
         <div className="pt-6">
           <button
             onClick={handleSubmit}
-            disabled={!form.nom_client || (form.siret || '').replace(/\D/g, '').length !== 14}
+            disabled={submitting || !form.nom_client || (form.siret || '').replace(/\D/g, '').length !== 14}
             className="w-full py-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-lg shadow-lg hover:shadow-emerald-500/20 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
-            Créer le dossier complet
+            {submitting ? 'Création en cours…' : 'Créer le dossier complet'}
           </button>
         </div>
       </div>
@@ -1159,12 +1161,13 @@ function formFromClient(c) {
 }
 
 /* ── Client detail ────────────────────────────────────────────── */
-function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSelectedSuppliers, generating, onGenerate, onBack, onClientUpdated }) {
+function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSelectedSuppliers, generating, onGenerate, onBack, onClientUpdated, onDeleted }) {
   const [drive, setDrive] = useState(null)
   const [driveLoading, setDriveLoading] = useState(true)
   const [driveError, setDriveError] = useState(null)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [saveMsg, setSaveMsg] = useState(null)
   const [form, setForm] = useState(() => formFromClient(client))
   const [photoFiles, setPhotoFiles] = useState({})
@@ -1243,6 +1246,22 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
     }
   }
 
+  const deleteFiche = async () => {
+    const ok = window.confirm(
+      `Supprimer définitivement ${client.nom_client} (${client.code_union}) ?\n\nLa fiche disparaît de l’annuaire et le dossier Drive va à la corbeille. Le CA / les analyses Pure Data ne sont pas effacés.`
+    )
+    if (!ok) return
+    setDeleting(true)
+    setSaveMsg(null)
+    try {
+      await nathalieDeleteClient(client.code_union)
+      if (onDeleted) onDeleted()
+    } catch (e) {
+      setSaveMsg(e?.response?.data?.detail || e.message || 'Suppression impossible.')
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3 flex-wrap">
@@ -1258,9 +1277,14 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">Fermé</span>
         ) : null}
         {!editing ? (
-          <button type="button" onClick={() => { setForm(formFromClient(client)); setEditing(true); setSaveMsg(null) }} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-white/10 border border-white/15 text-white/80 hover:bg-white/15">
-            <Pencil className="w-3.5 h-3.5" /> Modifier
-          </button>
+          <>
+            <button type="button" onClick={() => { setForm(formFromClient(client)); setEditing(true); setSaveMsg(null) }} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-white/10 border border-white/15 text-white/80 hover:bg-white/15">
+              <Pencil className="w-3.5 h-3.5" /> Modifier
+            </button>
+            <button type="button" onClick={deleteFiche} disabled={deleting} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 disabled:opacity-50">
+              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Supprimer
+            </button>
+          </>
         ) : (
           <div className="flex gap-2">
             <button type="button" onClick={() => { setEditing(false); setForm(formFromClient(client)); setPhotoFiles({}) }} className="text-xs px-3 py-2 rounded-xl bg-white/10 text-white/70">Annuler</button>
@@ -1437,27 +1461,6 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
                         )
                       ) : (
                         <span className="text-xs text-red-400">Manquant</span>
-                      )}
-                    </div>
-                  )
-                })}
-                {PHOTO_SLOTS.map(({ key, label, urlKey }) => {
-                  const fromDrive = drive?.[key]
-                  const fromDb = client[urlKey]
-                  const present = Boolean(fromDrive || fromDb)
-                  const link = fromDrive?.link || (typeof fromDb === 'string' && fromDb.startsWith('http') ? fromDb : null)
-                  return (
-                    <div key={key} className={`flex items-center justify-between p-3 rounded-xl ${present ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-white/5 border border-white/10'}`}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Camera className={`w-4 h-4 ${present ? 'text-emerald-400' : 'text-white/30'}`} />
-                        <div className={`text-sm font-medium ${present ? 'text-emerald-300' : 'text-white/40'}`}>{label}</div>
-                      </div>
-                      {present && link ? (
-                        <a href={link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-emerald-400">
-                          <ExternalLink className="w-3 h-3" /> Voir
-                        </a>
-                      ) : (
-                        <span className="text-xs text-white/25">—</span>
                       )}
                     </div>
                   )

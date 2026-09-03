@@ -770,3 +770,18 @@ def patch_drive_docs(code_union: str, fields: Dict[str, Any]) -> Optional[Dict[s
             updates,
         )
     return get_by_code(code_union)
+
+
+def delete_client(code_union: str) -> Optional[Dict[str, Any]]:
+    """Supprime la fiche annuaire. Ne touche pas au CA Pure Data / RFA."""
+    ensure_tables()
+    existing = get_by_code(code_union)
+    if not existing:
+        return None
+    code = clean_code_union(code_union)
+    with engine.begin() as conn:
+        conn.execute(
+            text(f"DELETE FROM {TABLE} WHERE UPPER(code_union) = :code"),
+            {"code": code},
+        )
+    return existing

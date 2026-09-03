@@ -6328,6 +6328,17 @@ async def nathalie_update_client(
         raise HTTPException(status_code=500, detail=f"Erreur mise à jour : {str(e)}")
 
 
+@router.delete("/nathalie/client/{code_union}")
+async def nathalie_delete_client(code_union: str, trash_drive: bool = True):
+    """Supprime la fiche annuaire et met le dossier Drive à la corbeille."""
+    try:
+        return nathalie_service.delete_client_full(code_union, trash_drive=trash_drive)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur suppression : {str(e)}")
+
+
 # ==================== IMPAYÉS ADHÉRENTS ====================
 
 def _impayes_actor(user: User) -> str:
