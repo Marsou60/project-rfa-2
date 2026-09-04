@@ -1113,6 +1113,32 @@ export const nathalieDeleteClient = async (codeUnion) => {
   return response.data
 }
 
+// ==================== VEILLE LÉGALE ENTREPRISES ====================
+
+export const getEnterpriseWatchAlerts = async ({ acknowledged = false, codeUnion, limit = 200 } = {}) => {
+  const response = await api.get('/enterprise-watch/alerts', {
+    params: {
+      acknowledged,
+      code_union: codeUnion || undefined,
+      limit,
+    },
+  })
+  return response.data
+}
+
+export const acknowledgeEnterpriseWatchAlert = async (alertId) => {
+  const response = await api.post(`/enterprise-watch/alerts/${encodeURIComponent(alertId)}/acknowledge`)
+  return response.data
+}
+
+export const runEnterpriseWatch = async (force = true) => {
+  const response = await api.post('/enterprise-watch/run', null, {
+    params: { force },
+    timeout: 300000,
+  })
+  return response.data
+}
+
 // ==================== IMPAYÉS ADHÉRENTS ====================
 
 export const getImpayesSummary = async (codeUnion = null) => {

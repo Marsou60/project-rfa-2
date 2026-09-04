@@ -5999,6 +5999,57 @@ async def genie_export_excel(import_id: str, session: Session = Depends(get_sess
 #  NATHALIE — Ouverture de comptes
 # ═══════════════════════════════════════════════════════════════════
 
+@router.get("/enterprise-watch/alerts")
+async def enterprise_watch_alerts(
+    acknowledged: Optional[bool] = None,
+    code_union: Optional[str] = None,
+    limit: int = Query(200, ge=1, le=500),
+    user: User = Depends(require_staff),
+):
+    """Alertes légales détectées pour les adhérents Union."""
+    from app.services import enterprise_watch
+
+    try:
+        return enterprise_watch.list_alerts(
+            acknowledged=acknowledged,
+            code_union=code_union,
+            limit=limit,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lecture des alertes légales impossible : {e}")
+
+
+@router.post("/enterprise-watch/alerts/{alert_id}/acknowledge")
+async def enterprise_watch_acknowledge(
+    alert_id: str,
+    user: User = Depends(require_staff),
+):
+    """Marque une alerte légale comme traitée."""
+    from app.services import enterprise_watch
+
+    actor = (user.display_name or user.username or "utilisateur").strip()
+    try:
+        return enterprise_watch.acknowledge(alert_id, actor)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Acquittement impossible : {e}")
+
+
+@router.post("/enterprise-watch/run")
+async def enterprise_watch_run(
+    force: bool = False,
+    user: User = Depends(require_staff),
+):
+    """Lance immédiatement la veille (le job automatique l'exécute chaque jour)."""
+    from app.services import enterprise_watch
+
+    try:
+        return enterprise_watch.sync_all(force=force)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Veille légale indisponible : {e}")
+
+
 @router.get("/nathalie/entreprise/search")
 async def nathalie_entreprise_search(q: str = Query("", min_length=0)):
     """Recherche Annuaire des entreprises (SIRET, SIREN ou nom)."""

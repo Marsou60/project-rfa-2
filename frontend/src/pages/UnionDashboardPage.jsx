@@ -20,8 +20,16 @@ import {
   Package,
   Wrench,
   Link2,
+  CheckCircle2,
+  ExternalLink,
+  ShieldAlert,
 } from 'lucide-react'
-import { getNetworkDashboard } from '../api/client'
+import {
+  acknowledgeEnterpriseWatchAlert,
+  getEnterpriseWatchAlerts,
+  getNetworkDashboard,
+  runEnterpriseWatch,
+} from '../api/client'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import { SUPPLIER_KEYS, SUPPLIER_LABELS } from '../constants/suppliers'
 import { useAuth } from '../context/AuthContext'
@@ -233,6 +241,83 @@ function AlertTable({ rows, columns }) {
   )
 }
 
+const LEGAL_TYPE_LABELS = {
+  ADDRESS_CHANGE: 'Adresse',
+  DIRECTOR_CHANGE: 'Dirigeant',
+  COMPANY_STATUS_CHANGE: 'Statut entreprise',
+  ESTABLISHMENT_STATUS_CHANGE: 'Statut établissement',
+  LEGAL_NAME_CHANGE: 'Raison sociale',
+  LEGAL_FORM_CHANGE: 'Forme juridique',
+  COLLECTIVE_PROCEEDING: 'Procédure collective',
+}
+
+const legalValue = (value) => {
+  if (value == null || value === '') return '—'
+  if (Array.isArray(value)) {
+    return value.map((item) => item?.role ? `${item.name} (${item.role})` : String(item)).join(', ') || '—'
+  }
+  if (typeof value === 'object') {
+    return value.nature || value.detail || [value.address, value.postal_code, value.city].filter(Boolean).join(' ') || JSON.stringify(value)
+  }
+  if (value === 'A') return 'Actif'
+  if (value === 'C' || value === 'F') return 'Fermé / cessé'
+  return String(value)
+}
+
+function LegalAlertsPanel({ data, loading, error, running, isAdmin, onAcknowledge, onRun }) {
+  const alerts = data?.alerts || []
+  return (
+    <div className="ud-panel ud-legal-panel">
+      <div className="ud-legal-head">
+        <div>
+          <h3><ShieldAlert className="w-4 h-4" /> Veille légale entreprises <span className="ud-acount r">{data?.unacknowledged || 0}</span></h3>
+          <p className="psub">Adresse, dirigeants, statut administratif et annonces BODACC</p>
+        </div>
+        {isAdmin && (
+          <button type="button" className="ud-refresh" onClick={onRun} disabled={running}>
+            <RefreshCw className={`w-3.5 h-3.5 ${running ? 'animate-spin' : ''}`} />
+            {running ? 'Vérification…' : 'Vérifier maintenant'}
+          </button>
+        )}
+      </div>
+      {error && <div className="ud-error">{error}</div>}
+      {loading && <p className="ud-empty">Chargement de la veille légale…</p>}
+      {!loading && alerts.map((alert) => (
+        <div className={`ud-legal-row ${alert.severity || ''}`} key={alert.id}>
+          <div className="ud-legal-main">
+            <div className="ud-legal-meta">
+              <span className="ud-legal-type">{LEGAL_TYPE_LABELS[alert.alert_type] || alert.alert_type}</span>
+              <strong>{alert.code_union}</strong>
+              <span>{new Date(alert.detected_at).toLocaleDateString('fr-FR')}</span>
+            </div>
+            <div className="ud-legal-title">{alert.title}</div>
+            {alert.alert_type === 'COLLECTIVE_PROCEEDING' ? (
+              <div className="ud-legal-change">{legalValue(alert.new_value)}</div>
+            ) : (
+              <div className="ud-legal-change">
+                <span>{legalValue(alert.old_value)}</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+                <b>{legalValue(alert.new_value)}</b>
+              </div>
+            )}
+          </div>
+          <div className="ud-legal-actions">
+            {alert.source_url && (
+              <a href={alert.source_url} target="_blank" rel="noreferrer" title={`Voir sur ${alert.source}`}>
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+            <button type="button" onClick={() => onAcknowledge(alert.id)}>
+              <CheckCircle2 className="w-4 h-4" /> Traité
+            </button>
+          </div>
+        </div>
+      ))}
+      {!loading && !alerts.length && !error && <p className="ud-empty">Aucune alerte légale non traitée.</p>}
+    </div>
+  )
+}
+
 const UD_CSS = `
   .ud-root {
     --ud-navy: #0d2f5e; --ud-navy2: #12376b; --ud-blue: #1b6ec2; --ud-red: #d81f2a;
@@ -383,6 +468,24 @@ const UD_CSS = `
   .ud-refresh { background:var(--ud-navy); color:#fff; border-radius:8px; padding:7px 12px; font-size:12px; font-weight:600;
     display:inline-flex; align-items:center; gap:6px; cursor:pointer; border:none; }
   .ud-refresh:hover { background:var(--ud-navy2); }
+  .ud-legal-panel { border-top:4px solid var(--ud-red); }
+  .ud-legal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .ud-legal-row { display:flex; justify-content:space-between; gap:14px; padding:12px 10px; border-top:1px solid var(--ud-line); border-radius:8px; }
+  .ud-legal-row.critical { background:#fff6f6; }
+  .ud-legal-row.high { background:#fffbf1; }
+  .ud-legal-main { min-width:0; }
+  .ud-legal-meta { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:11px; color:var(--ud-muted); }
+  .ud-legal-type { color:var(--ud-red); font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
+  .ud-legal-title { font-size:13px; font-weight:800; color:var(--ud-navy); margin-top:4px; }
+  .ud-legal-change { display:flex; align-items:center; gap:6px; flex-wrap:wrap; color:var(--ud-muted); font-size:12px; margin-top:3px; }
+  .ud-legal-change b { color:var(--ud-ink); }
+  .ud-legal-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .ud-legal-actions a { color:var(--ud-blue); padding:7px; }
+  .ud-legal-actions button { display:flex; align-items:center; gap:5px; border:1px solid var(--ud-line); background:#fff; color:var(--ud-navy);
+    border-radius:8px; padding:6px 9px; font-size:11px; font-weight:700; cursor:pointer; }
+  .ud-legal-actions button:hover { border-color:var(--ud-blue); color:var(--ud-blue); }
+  .ud-legal-actions button:focus-visible, .ud-legal-actions a:focus-visible { outline:3px solid rgba(27,110,194,.3); outline-offset:2px; border-radius:8px; }
+  @media (max-width: 700px) { .ud-legal-row { flex-direction:column; } .ud-legal-actions { justify-content:flex-end; } }
 `
 
 export default function UnionDashboardPage({ currentImportId, isCommercial = false, onNavigate }) {
@@ -394,6 +497,10 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
   const [active, setActive] = useState('synth')
   const [alertPct, setAlertPct] = useState(15)
   const [alertCaMin, setAlertCaMin] = useState(5000)
+  const [legalAlerts, setLegalAlerts] = useState({ alerts: [], unacknowledged: 0 })
+  const [legalLoading, setLegalLoading] = useState(true)
+  const [legalError, setLegalError] = useState(null)
+  const [watchRunning, setWatchRunning] = useState(false)
   const isAdmin = user?.role === 'ADMIN'
 
   const load = async () => {
@@ -419,6 +526,48 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
   useEffect(() => {
     load()
   }, [supplierFilter, alertPct, alertCaMin])
+
+  const loadLegalAlerts = async () => {
+    setLegalLoading(true)
+    setLegalError(null)
+    try {
+      setLegalAlerts(await getEnterpriseWatchAlerts({ acknowledged: false }))
+    } catch (e) {
+      setLegalError(e?.response?.data?.detail || e.message || 'Erreur chargement veille légale')
+    } finally {
+      setLegalLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadLegalAlerts()
+  }, [])
+
+  const acknowledgeLegal = async (alertId) => {
+    try {
+      await acknowledgeEnterpriseWatchAlert(alertId)
+      setLegalAlerts((current) => ({
+        ...current,
+        alerts: current.alerts.filter((alert) => alert.id !== alertId),
+        unacknowledged: Math.max(0, (current.unacknowledged || 0) - 1),
+      }))
+    } catch (e) {
+      setLegalError(e?.response?.data?.detail || e.message || 'Impossible de marquer cette alerte comme traitée')
+    }
+  }
+
+  const runWatch = async () => {
+    setWatchRunning(true)
+    setLegalError(null)
+    try {
+      await runEnterpriseWatch(true)
+      await loadLegalAlerts()
+    } catch (e) {
+      setLegalError(e?.response?.data?.detail || e.message || 'Vérification légale impossible')
+    } finally {
+      setWatchRunning(false)
+    }
+  }
 
   const kpis = data?.kpis || {}
   const months = data?.months || []
@@ -480,7 +629,9 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
         <nav className="ud-nav">
           {NAV.map((item) => {
             const Icon = item.icon
-            const badge = item.id === 'alertes' ? alertes.n_crit : null
+            const badge = item.id === 'alertes'
+              ? (Number(alertes.n_crit) || 0) + (Number(legalAlerts.unacknowledged) || 0)
+              : null
             return (
               <button key={item.id} type="button" className={active === item.id ? 'on' : ''} onClick={() => go(item.id)}>
                 <Icon className="w-4 h-4 opacity-90" />
@@ -526,6 +677,18 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
               </button>
             )}
           </div>
+        )}
+
+        {active === 'alertes' && !data?.available && (
+          <LegalAlertsPanel
+            data={legalAlerts}
+            loading={legalLoading}
+            error={legalError}
+            running={watchRunning}
+            isAdmin={isAdmin}
+            onAcknowledge={acknowledgeLegal}
+            onRun={runWatch}
+          />
         )}
 
         {data?.available && active === 'synth' && (
@@ -614,6 +777,15 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
         {data?.available && active === 'alertes' && (
           <>
             <SlideHead ey={navMeta.ey} title="Alertes & signaux" sub={`Détection automatique ${periodLabel} vs ${data.year_previous}`} />
+            <LegalAlertsPanel
+              data={legalAlerts}
+              loading={legalLoading}
+              error={legalError}
+              running={watchRunning}
+              isAdmin={isAdmin}
+              onAcknowledge={acknowledgeLegal}
+              onRun={runWatch}
+            />
             <div className="ud-alert-ctrl">
               <strong style={{ color: 'var(--ud-navy)' }}>Seuils</strong>
               <label>Baisse/hausse ≥{' '}

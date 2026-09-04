@@ -1,6 +1,7 @@
 """
 Application FastAPI principale.
 """
+import asyncio
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -26,6 +27,21 @@ else:
 app = FastAPI(title="RFA Excel Import API", version="0.2.0")
 
 
+async def _enterprise_watch_loop() -> None:
+    """Veille quotidienne, activée en production Railway sauf désactivation explicite."""
+    await asyncio.sleep(120)
+    while True:
+        try:
+            from app.services.enterprise_watch import sync_all
+            result = await asyncio.to_thread(sync_all)
+            print(f"[ENTERPRISE WATCH] {result}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[ENTERPRISE WATCH] warning: {exc}")
+        await asyncio.sleep(24 * 60 * 60)
+
+
 @app.exception_handler(Exception)
 async def generic_exception_handler(request, exc):
     """Retourne le message d'erreur réel (500) ou préserve HTTPException (401, 403, etc.)."""
@@ -41,7 +57,7 @@ async def generic_exception_handler(request, exc):
 
 # Initialiser la base de données au démarrage
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     try:
         init_db()
     except Exception as e:
@@ -54,6 +70,20 @@ def on_startup():
         ensure_adherent_2026_contract()
     except Exception as e:
         print(f"[STARTUP] adherent 2026 seed warning: {e}")
+    enabled_default = "1" if os.environ.get("RAILWAY_ENVIRONMENT") else "0"
+    if os.environ.get("ENTERPRISE_WATCH_ENABLED", enabled_default).lower() in ("1", "true", "yes", "on"):
+        app.state.enterprise_watch_task = asyncio.create_task(_enterprise_watch_loop())
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    task = getattr(app.state, "enterprise_watch_task", None)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 # CORS pour le frontend
 _extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]

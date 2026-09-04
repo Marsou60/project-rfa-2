@@ -262,6 +262,7 @@ def init_db():
     _ensure_cotisation_year_column()
     _ensure_impayes_tables()
     _ensure_nathalie_adherents_table()
+    _ensure_enterprise_watch_tables()
     seed_admin_user()
     seed_dev_test_user()
 
@@ -319,6 +320,15 @@ def _ensure_nathalie_adherents_table():
         ensure_tables()
     except Exception as e:
         print(f"[INIT_DB] nathalie_adherents table warning: {e}")
+
+
+def _ensure_enterprise_watch_tables():
+    """Crée les snapshots et alertes de veille légale."""
+    try:
+        from app.services.enterprise_watch import ensure_tables
+        ensure_tables()
+    except Exception as e:
+        print(f"[INIT_DB] enterprise watch tables warning: {e}")
 
 
 def get_session():
