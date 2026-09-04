@@ -15,6 +15,7 @@ import {
   Calculator,
   TrendingUp,
   Sparkles,
+  ShieldAlert,
   Home,
   MoreHorizontal,
   RefreshCw,
@@ -40,6 +41,7 @@ import UnionDashboardPage from './pages/UnionDashboardPage'
 import NathaliePage from './pages/NathaliePage'
 import PaulPage from './pages/PaulPage'
 import ImpayesPage from './pages/ImpayesPage'
+import EnterpriseWatchPage from './pages/EnterpriseWatchPage'
 import PureDataMonthlyImportPage from './pages/PureDataMonthlyImportPage'
 import ErrorBoundary from './components/ErrorBoundary'
 import { AppUpdaterEffect } from './components/AppUpdater'
@@ -185,7 +187,7 @@ function AppContent() {
   // Pages accessibles uniquement aux admins
   const adminOnlyPages = ['contracts', 'assignments', 'ads', 'users', 'settings', 'upload', 'clients', 'recap', 'margin-simulator', 'paul', 'union-space', 'pure-data-platform-import', 'pure-data-monthly-import']
   // Pages accessibles aux commerciaux (Nicolas + Nathalie)
-  const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'pure-data-monthly', 'nathalie', 'impayes']
+  const commercialPages = ['hub', 'client-space', 'genie', 'pure-data', 'pure-data-monthly', 'nathalie', 'impayes', 'alertes-legales']
 
   // Adhérent : redirige vers espace client seulement si les données sont prêtes
   // (sans données, on laisse afficher le message de bienvenue)
@@ -328,6 +330,12 @@ function AppContent() {
                     onClick={() => { setCurrentPage('nathalie'); setOpenMenu(null) }}
                     icon={<span className="text-base leading-none">🤝</span>}
                     label="Nathalie"
+                  />
+                  <NavButton
+                    active={effectivePage === 'alertes-legales'}
+                    onClick={() => { setCurrentPage('alertes-legales'); setOpenMenu(null) }}
+                    icon={<ShieldAlert className="w-4 h-4" />}
+                    label="Alertes"
                   />
                 </>
               )}
@@ -500,6 +508,12 @@ function AppContent() {
                     onClick={() => { setCurrentPage('nathalie'); setOpenMenu(null) }}
                     icon={<span className="text-base leading-none">🤝</span>}
                     label="Nathalie"
+                  />
+                  <NavButton
+                    active={effectivePage === 'alertes-legales'}
+                    onClick={() => { setCurrentPage('alertes-legales'); setOpenMenu(null) }}
+                    icon={<ShieldAlert className="w-4 h-4" />}
+                    label="Alertes"
                   />
 
                   {/* ── Plus ── */}
@@ -707,6 +721,9 @@ function AppContent() {
         )}
         {effectivePage === 'impayes' && (isAdmin || isCommercial) && (
           <ImpayesPage canWrite={isAdmin || isCommercial} />
+        )}
+        {effectivePage === 'alertes-legales' && (isAdmin || isCommercial) && (
+          <EnterpriseWatchPage />
         )}
         {effectivePage === 'upload' && isAdmin && (
           <UploadPage onUploadSuccess={handleUploadSuccess} />
