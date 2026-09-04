@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Search,
   ShieldAlert,
+  ArrowLeft,
 } from 'lucide-react'
 import {
   acknowledgeEnterpriseWatchAlert,
@@ -52,7 +53,7 @@ function TypeBadge({ type }) {
   )
 }
 
-export default function EnterpriseWatchPage() {
+export default function EnterpriseWatchPage({ embedded = false, onBack, onOpenClient }) {
   const { isAdmin, isCommercial } = useAuth()
   const canRun = isAdmin || isCommercial
   const [data, setData] = useState({ alerts: [], unacknowledged: 0 })
@@ -116,6 +117,9 @@ export default function EnterpriseWatchPage() {
       if (!term) return true
       const blob = [
         alert.code_union,
+        alert.nom_client,
+        alert.ville,
+        alert.groupe,
         alert.title,
         alert.siret,
         formatLegalValue(alert.old_value),
@@ -136,6 +140,32 @@ export default function EnterpriseWatchPage() {
 
   return (
     <div className="space-y-6 pb-16">
+      {embedded ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          {onBack && (
+            <button type="button" onClick={onBack} className="glass-btn-icon"><ArrowLeft className="w-4 h-4" /></button>
+          )}
+          <div className="flex-1 min-w-[180px]">
+            <h2 className="text-lg font-bold text-white">Alertes légales</h2>
+            <p className="text-xs text-blue-300/50">
+              Adresse, dirigeant, statut et procédures collectives des adhérents
+            </p>
+          </div>
+          <button onClick={load} className="glass-btn-icon" title="Actualiser" disabled={loading}>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          {canRun && (
+            <button
+              onClick={runWatch}
+              disabled={running}
+              className="px-3 py-2 rounded-xl bg-white text-rose-800 text-sm font-bold flex items-center gap-2 disabled:opacity-60"
+            >
+              {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {running ? 'Vérification…' : 'Vérifier maintenant'}
+            </button>
+          )}
+        </div>
+      ) : (
       <div className="glass-card overflow-hidden">
         <div className="bg-gradient-to-r from-rose-800 via-red-700 to-orange-600 px-6 py-5 relative">
           <div className="absolute inset-0 bg-black/25" />
@@ -174,6 +204,7 @@ export default function EnterpriseWatchPage() {
           </div>
         </div>
       </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="glass-card p-4">
@@ -200,7 +231,7 @@ export default function EnterpriseWatchPage() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Code Union, SIRET, nom…"
+            placeholder="Nom du magasin, code Union, SIRET…"
             className="w-full bg-white/10 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder:text-white/35"
           />
         </div>
@@ -251,12 +282,33 @@ export default function EnterpriseWatchPage() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2 mb-1">
                 <TypeBadge type={alert.alert_type} />
-                <span className="font-black text-white">{alert.code_union}</span>
-                {alert.siret && <span className="text-xs text-white/45">{alert.siret}</span>}
                 <span className="text-xs text-white/45">
                   {alert.detected_at ? new Date(alert.detected_at).toLocaleDateString('fr-FR') : ''}
                 </span>
               </div>
+              {onOpenClient ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenClient(alert)}
+                  className="text-left"
+                >
+                  <div className="text-base font-black text-white hover:text-emerald-200">{alert.nom_client || alert.code_union}</div>
+                  <div className="text-xs text-white/50 mt-0.5">
+                    {alert.code_union}
+                    {alert.ville ? ` · ${alert.ville}` : ''}
+                    {alert.siret ? ` · ${alert.siret}` : ''}
+                  </div>
+                </button>
+              ) : (
+                <>
+                  <div className="text-base font-black text-white">{alert.nom_client || alert.code_union}</div>
+                  <div className="text-xs text-white/50 mt-0.5">
+                    {alert.code_union}
+                    {alert.ville ? ` · ${alert.ville}` : ''}
+                    {alert.siret ? ` · ${alert.siret}` : ''}
+                  </div>
+                </>
+              )}
               <div className="text-sm font-semibold text-white">{alert.title}</div>
               {alert.alert_type === 'COLLECTIVE_PROCEEDING' ? (
                 <div className="text-sm text-white/70 mt-1">{formatLegalValue(alert.new_value)}</div>

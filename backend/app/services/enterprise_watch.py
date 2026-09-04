@@ -473,17 +473,24 @@ def list_alerts(
     ensure_tables()
     clauses, params = [], {"limit": max(1, min(limit, 500))}
     if acknowledged is not None:
-        clauses.append("acknowledged=:acknowledged")
+        clauses.append("a.acknowledged=:acknowledged")
         params["acknowledged"] = acknowledged if _is_pg() else int(acknowledged)
     if code_union:
-        clauses.append("code_union=:code_union")
+        clauses.append("a.code_union=:code_union")
         params["code_union"] = code_union.strip().upper()
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    sql = f"""
+        SELECT a.*, n.nom_client AS nom_client, n.groupe AS groupe, n.ville AS ville,
+               n.raison_sociale AS raison_sociale, s.legal_name AS legal_name
+        FROM {ALERT_TABLE} a
+        LEFT JOIN {nathalie_adherents.TABLE} n ON n.code_union = a.code_union
+        LEFT JOIN {SNAPSHOT_TABLE} s ON s.code_union = a.code_union
+        {where}
+        ORDER BY a.detected_at DESC
+        LIMIT :limit
+    """
     with engine.connect() as conn:
-        rows = conn.execute(
-            text(f"SELECT * FROM {ALERT_TABLE}{where} ORDER BY detected_at DESC LIMIT :limit"),
-            params,
-        ).mappings().all()
+        rows = conn.execute(text(sql), params).mappings().all()
         open_count = conn.execute(
             text(f"SELECT COUNT(*) FROM {ALERT_TABLE} WHERE acknowledged=:ack"),
             {"ack": False if _is_pg() else 0},
@@ -494,6 +501,12 @@ def list_alerts(
         item["old_value"] = _loads(item.get("old_value"), None)
         item["new_value"] = _loads(item.get("new_value"), None)
         item["acknowledged"] = bool(item.get("acknowledged"))
+        item["nom_client"] = (
+            _clean_text(item.get("nom_client"))
+            or _clean_text(item.get("raison_sociale"))
+            or _clean_text(item.get("legal_name"))
+            or item.get("code_union")
+        )
         for key in ("detected_at", "acknowledged_at"):
             if hasattr(item.get(key), "isoformat"):
                 item[key] = item[key].isoformat()

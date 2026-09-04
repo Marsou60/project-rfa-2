@@ -287,7 +287,8 @@ function LegalAlertsPanel({ data, loading, error, running, isAdmin, onAcknowledg
           <div className="ud-legal-main">
             <div className="ud-legal-meta">
               <span className="ud-legal-type">{LEGAL_TYPE_LABELS[alert.alert_type] || alert.alert_type}</span>
-              <strong>{alert.code_union}</strong>
+              <strong>{alert.nom_client || alert.code_union}</strong>
+              <span>{alert.nom_client ? alert.code_union : ''}</span>
               <span>{new Date(alert.detected_at).toLocaleDateString('fr-FR')}</span>
             </div>
             <div className="ud-legal-title">{alert.title}</div>

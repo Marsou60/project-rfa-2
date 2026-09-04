@@ -4,7 +4,7 @@ import {
   Building2, Phone, Mail, MapPin, FileText, Send, ArrowLeft,
   Sparkles, Search, RefreshCw, Loader2, Eye, X, Copy, Check,
   FileCheck, FileMinus, ExternalLink, UploadCloud, ScanSearch, Users,
-  Pencil, Save, Camera, Trash2,
+  Pencil, Save, Camera, Trash2, ShieldAlert,
 } from 'lucide-react'
 import {
   nathalieGetClients,
@@ -19,7 +19,9 @@ import {
   nathalieExtractKbis,
   nathalieInspectDrive,
   nathalieSyncDrive,
+  getEnterpriseWatchAlerts,
 } from '../api/client'
+import EnterpriseWatchPage from './EnterpriseWatchPage'
 
 /* ── Fournisseurs connus (pour les cases à cocher) ─────────── */
 const KNOWN_SUPPLIERS = ['ACR', 'ALLIANCE', 'DCA', 'EXADIS', 'PURFLUX']
@@ -79,7 +81,7 @@ function clientStatus(client) {
 
 /* ═══════════════════════════════════════════════════════════════ */
 export default function NathaliePage() {
-  const [view, setView] = useState('accueil') // accueil | nouveau | dossiers | annuaire | client | emails
+  const [view, setView] = useState('accueil') // accueil | nouveau | dossiers | annuaire | alertes | client | emails
   const [listOrigin, setListOrigin] = useState('dossiers')
   const [annuaireFilter, setAnnuaireFilter] = useState('tous') // tous | ouverts | fermes
   const [clients, setClients] = useState([])
@@ -94,6 +96,7 @@ export default function NathaliePage() {
   const [generating, setGenerating] = useState(false)
 
   const [scanning, setScanning] = useState(false)
+  const [legalOpen, setLegalOpen] = useState(0)
 
   const loadData = async () => {
     setLoading(true)
@@ -101,6 +104,12 @@ export default function NathaliePage() {
     try {
       const c = await nathalieGetClients(false)
       setClients(c.clients || [])
+      try {
+        const legal = await getEnterpriseWatchAlerts({ acknowledged: false, limit: 1 })
+        setLegalOpen(legal.unacknowledged || 0)
+      } catch {
+        setLegalOpen(0)
+      }
       try {
         const s = await nathalieGetSuppliers()
         setSuppliers(s.suppliers || [])
@@ -117,7 +126,7 @@ export default function NathaliePage() {
   useEffect(() => { loadData() }, [])
 
   const openClient = async (client, origin = view) => {
-    if (origin === 'annuaire' || origin === 'dossiers') setListOrigin(origin)
+    if (origin === 'annuaire' || origin === 'dossiers' || origin === 'alertes') setListOrigin(origin)
     setSelectedClient(client)
     setGeneratedEmails([])
     const preselect = (client.ouverture_chez || '')
@@ -225,6 +234,8 @@ export default function NathaliePage() {
           scanning={scanning}
           onVoirDossiers={() => { setSearch(''); setView('dossiers') }}
           onVoirAnnuaire={() => { setSearch(''); setAnnuaireFilter('tous'); setView('annuaire') }}
+          onVoirAlertes={() => setView('alertes')}
+          legalOpen={legalOpen}
           onNouveau={() => setView('nouveau')}
           onScanDrive={scanDrive}
         />
@@ -270,6 +281,23 @@ export default function NathaliePage() {
         />
       )}
 
+      {view === 'alertes' && (
+        <EnterpriseWatchPage
+          embedded
+          onBack={() => setView('accueil')}
+          onOpenClient={(alert) => {
+            const found = clients.find((c) => (c.code_union || '').toUpperCase() === String(alert.code_union || '').toUpperCase())
+            openClient(found || {
+              code_union: alert.code_union,
+              nom_client: alert.nom_client,
+              ville: alert.ville,
+              groupe: alert.groupe,
+              siret: alert.siret,
+            }, 'alertes')
+          }}
+        />
+      )}
+
       {view === 'client' && selectedClient && (
         <ClientView
           client={selectedClient}
@@ -281,7 +309,7 @@ export default function NathaliePage() {
           onGenerate={handleGenerateEmails}
           onClientUpdated={(c) => { setSelectedClient(c); loadData() }}
           onDeleted={() => { setSelectedClient(null); loadData(); setView('annuaire') }}
-          onBack={() => { loadData(); setView(listOrigin === 'annuaire' ? 'annuaire' : 'dossiers') }}
+          onBack={() => { loadData(); setView(listOrigin === 'annuaire' || listOrigin === 'alertes' ? listOrigin : 'dossiers') }}
         />
       )}
 
@@ -330,14 +358,15 @@ function NathalieHeader({ onRefresh, loading }) {
 }
 
 /* ── Accueil ─────────────────────────────────────────────────── */
-function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire, onNouveau, onScanDrive }) {
+function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire, onVoirAlertes, legalOpen, onNouveau, onScanDrive }) {
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: 'En cours', value: stats.enCours, color: 'text-amber-300', onClick: onVoirDossiers },
           { label: 'Complets', value: stats.complets, color: 'text-emerald-300', onClick: onVoirAnnuaire },
           { label: 'À scanner', value: stats.aScanner, color: 'text-slate-300', onClick: onVoirAnnuaire },
+          { label: 'Alertes', value: legalOpen || 0, color: 'text-rose-300', onClick: onVoirAlertes },
           { label: 'Annuaire', value: stats.total, color: 'text-blue-300', onClick: onVoirAnnuaire },
         ].map(k => (
           <button
@@ -354,7 +383,7 @@ function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire,
         ))}
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
         <button
           onClick={onNouveau}
           className="glass-card p-6 text-left hover:scale-[1.02] hover:shadow-2xl hover:shadow-emerald-500/20 transition-all duration-300 group"
@@ -401,6 +430,23 @@ function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire,
           <h3 className="text-lg font-bold text-white mb-1">Annuaire complet</h3>
           <p className="text-blue-300/60 text-sm">
             Les {stats.total || 0} adhérents Union : ouverts, fermés, région, agent, SIRET.
+          </p>
+        </button>
+
+        <button
+          onClick={onVoirAlertes}
+          className="glass-card p-6 text-left hover:scale-[1.02] hover:shadow-2xl hover:shadow-rose-500/20 transition-all duration-300 group"
+        >
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-600 flex items-center justify-center shadow-lg">
+              <ShieldAlert className="w-6 h-6 text-white" />
+            </div>
+            <ChevronRight className="w-5 h-5 text-white/30 group-hover:text-white/70 group-hover:translate-x-1 transition-all" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-1">Alertes légales</h3>
+          <p className="text-blue-300/60 text-sm">
+            Changement d’adresse, de gérant ou procédure collective.
+            {legalOpen ? ` ${legalOpen} à traiter.` : ' Aucune alerte en attente.'}
           </p>
         </button>
       </div>
