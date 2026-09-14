@@ -93,18 +93,24 @@ function TrendBadge({ pct }) {
   )
 }
 
-function MonthBars({ months, yearCurrent, yearPrevious }) {
+function MonthBars({ months, yearCurrent, yearPrevious, onMonthClick }) {
   const max = Math.max(1, ...months.map((m) => Math.max(m.current || 0, m.previous || 0)))
   return (
     <div className="ud-bars">
       {months.map((m) => (
-        <div key={m.month} className="ud-bar-col" title={`${MONTH_FR[m.month]}: ${fmtCompact(m.current)} vs ${fmtCompact(m.previous)}`}>
+        <button
+          type="button"
+          key={m.month}
+          className={`ud-bar-col${onMonthClick ? ' ud-click' : ''}`}
+          title={`${MONTH_FR[m.month]}: ${fmtCompact(m.current)} vs ${fmtCompact(m.previous)}`}
+          onClick={() => onMonthClick?.(m)}
+        >
           <div className="ud-bar-pair">
             <div className="ud-bar prev" style={{ height: `${((m.previous || 0) / max) * 100}%` }} />
             <div className="ud-bar cur" style={{ height: `${((m.current || 0) / max) * 100}%` }} />
           </div>
           <div className="ud-bar-lab">{MONTH_FR[m.month]?.slice(0, 3) || m.month}</div>
-        </div>
+        </button>
       ))}
       <div className="ud-bar-legend">
         <span><i className="cur" /> {yearCurrent}</span>
@@ -127,24 +133,34 @@ function SlideHead({ ey, title, sub, right }) {
   )
 }
 
-function Insight({ tone, label, value, detail }) {
-  return (
-    <div className={`ud-insight ${tone || ''}`}>
+function Insight({ tone, label, value, detail, onClick }) {
+  const cls = `ud-insight ${tone || ''}${onClick ? ' ud-click' : ''}`
+  const inner = (
+    <>
       <div className="il">{label}</div>
       <div className="iv">{value}</div>
       {detail && <div className="id">{detail}</div>}
-    </div>
+    </>
   )
+  if (onClick) {
+    return <button type="button" className={cls} onClick={onClick}>{inner}</button>
+  }
+  return <div className={cls}>{inner}</div>
 }
 
-function RankList({ title, items, valueKey = 'current' }) {
+function RankList({ title, items, valueKey = 'current', onRowClick }) {
   const max = Math.max(1, ...(items || []).map((i) => i[valueKey] || 0))
   return (
     <div className="ud-panel">
       <h3>{title}</h3>
       <div className="ud-rank">
         {(items || []).map((it) => (
-          <div key={it.key || it.code_union} className="ud-rank-row">
+          <button
+            type="button"
+            key={it.key || it.code_union}
+            className={`ud-rank-row${onRowClick ? ' ud-click' : ''}`}
+            onClick={() => onRowClick?.(it)}
+          >
             <div className="ud-rank-top">
               <span className="name">{it.key || it.raison_sociale || it.code_union}</span>
               <span className="val">{fmtCompact(it[valueKey])}</span>
@@ -156,7 +172,7 @@ function RankList({ title, items, valueKey = 'current' }) {
               <TrendBadge pct={it.delta_pct} />
               <span className="muted">{fmtCompact(it.delta)} vs N-1</span>
             </div>
-          </div>
+          </button>
         ))}
         {!items?.length && <p className="ud-empty">Aucune donnée</p>}
       </div>
@@ -164,7 +180,7 @@ function RankList({ title, items, valueKey = 'current' }) {
   )
 }
 
-function DimTable({ rows, yearCurrent, yearPrevious, label = 'Libellé' }) {
+function DimTable({ rows, yearCurrent, yearPrevious, label = 'Libellé', onRowClick }) {
   const [q, setQ] = useState('')
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase()
@@ -199,7 +215,11 @@ function DimTable({ rows, yearCurrent, yearPrevious, label = 'Libellé' }) {
           </thead>
           <tbody>
             {filtered.map((r, i) => (
-              <tr key={r.key || r.code_union || i}>
+              <tr
+                key={r.key || r.code_union || i}
+                className={onRowClick ? 'ud-click' : ''}
+                onClick={() => onRowClick?.(r)}
+              >
                 <td><span className="ud-rk">{i + 1}</span></td>
                 <td>
                   <div className="name">{r.key || r.raison_sociale}</div>
@@ -219,7 +239,7 @@ function DimTable({ rows, yearCurrent, yearPrevious, label = 'Libellé' }) {
   )
 }
 
-function AlertTable({ rows, columns }) {
+function AlertTable({ rows, columns, onRowClick }) {
   return (
     <div className="ud-table-wrap">
       <table className="ud-table">
@@ -228,7 +248,11 @@ function AlertTable({ rows, columns }) {
         </thead>
         <tbody>
           {(rows || []).map((r, i) => (
-            <tr key={r.key + String(i)}>
+            <tr
+              key={(r.key || r.code_union || '') + String(i)}
+              className={onRowClick ? 'ud-click' : ''}
+              onClick={() => onRowClick?.(r)}
+            >
               {columns.map((c) => (
                 <td key={c.t}>{c.render ? c.render(r) : r[c.k]}</td>
               ))}
@@ -264,14 +288,14 @@ const legalValue = (value) => {
   return String(value)
 }
 
-function LegalAlertsPanel({ data, loading, error, running, isAdmin, onAcknowledge, onRun }) {
+function LegalAlertsPanel({ data, loading, error, running, isAdmin, onAcknowledge, onRun, onClientClick }) {
   const alerts = data?.alerts || []
   return (
     <div className="ud-panel ud-legal-panel">
       <div className="ud-legal-head">
         <div>
           <h3><ShieldAlert className="w-4 h-4" /> Veille légale entreprises <span className="ud-acount r">{data?.unacknowledged || 0}</span></h3>
-          <p className="psub">Adresse, dirigeants, statut administratif et annonces BODACC</p>
+          <p className="psub">Adresse, dirigeants, statut administratif et annonces BODACC · clic client pour le détail</p>
         </div>
         {isAdmin && (
           <button type="button" className="ud-refresh" onClick={onRun} disabled={running}>
@@ -284,7 +308,11 @@ function LegalAlertsPanel({ data, loading, error, running, isAdmin, onAcknowledg
       {loading && <p className="ud-empty">Chargement de la veille légale…</p>}
       {!loading && alerts.map((alert) => (
         <div className={`ud-legal-row ${alert.severity || ''}`} key={alert.id}>
-          <div className="ud-legal-main">
+          <button
+            type="button"
+            className={`ud-legal-main${onClientClick && alert.code_union ? ' ud-click' : ''}`}
+            onClick={() => onClientClick?.(alert)}
+          >
             <div className="ud-legal-meta">
               <span className="ud-legal-type">{LEGAL_TYPE_LABELS[alert.alert_type] || alert.alert_type}</span>
               <strong>{alert.nom_client || alert.code_union}</strong>
@@ -301,7 +329,7 @@ function LegalAlertsPanel({ data, loading, error, running, isAdmin, onAcknowledg
                 <b>{legalValue(alert.new_value)}</b>
               </div>
             )}
-          </div>
+          </button>
           <div className="ud-legal-actions">
             {alert.source_url && (
               <a href={alert.source_url} target="_blank" rel="noreferrer" title={`Voir sur ${alert.source}`}>
@@ -468,13 +496,28 @@ const UD_CSS = `
   .ud-loading { color:var(--ud-muted); font-size:14px; padding:40px; text-align:center; }
   .ud-refresh { background:var(--ud-navy); color:#fff; border-radius:8px; padding:7px 12px; font-size:12px; font-weight:600;
     display:inline-flex; align-items:center; gap:6px; cursor:pointer; border:none; }
-  .ud-refresh:hover { background:var(--ud-navy2); }
+  .ud-table tr.ud-click { cursor: pointer; }
+  .ud-table tr.ud-click:hover td { background:#eef4fb; }
+  .ud-rank-row, .ud-bar-col { background:none; border:none; padding:0; color:inherit; font:inherit; text-align:left; }
+  .ud-rank-row.ud-click, .ud-bar-col.ud-click, .ud-kpi.ud-click, button.ud-insight { cursor:pointer; width:100%; }
+  .ud-rank-row.ud-click:hover { background:#f7f9fc; border-radius:8px; }
+  .ud-kpi.ud-click:hover { transform:translateY(-1px); }
+  button.ud-kpi { border:none; text-align:left; font:inherit; }
+  button.ud-insight { border:none; text-align:left; }
+  .ud-active-filters { display:flex; flex-wrap:wrap; gap:6px; margin:-4px 0 12px; }
+  .ud-af { display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--ud-line); border-radius:20px; padding:4px 10px; font-size:11px; font-weight:700; color:var(--ud-navy); cursor:pointer; }
+  .ud-af:hover { border-color:var(--ud-red); color:var(--ud-red); }
+  .ud-regseg { margin-top:8px; }
   .ud-legal-panel { border-top:4px solid var(--ud-red); }
   .ud-legal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   .ud-legal-row { display:flex; justify-content:space-between; gap:14px; padding:12px 10px; border-top:1px solid var(--ud-line); border-radius:8px; }
   .ud-legal-row.critical { background:#fff6f6; }
   .ud-legal-row.high { background:#fffbf1; }
-  .ud-legal-main { min-width:0; }
+  .ud-legal-main { min-width:0; background:none; border:none; padding:0; text-align:left; font:inherit; color:inherit; }
+  .ud-legal-main.ud-click { cursor:pointer; }
+  .ud-legal-main.ud-click:hover .ud-legal-title, .ud-legal-main.ud-click:hover strong { color:var(--ud-blue); }
+  .ud-dist-col.ud-click { cursor:pointer; background:none; border:none; padding:0; font:inherit; color:inherit; width:100%; }
+  .ud-dist-col.ud-click:hover .b { filter:brightness(1.08); }
   .ud-legal-meta { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:11px; color:var(--ud-muted); }
   .ud-legal-type { color:var(--ud-red); font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
   .ud-legal-title { font-size:13px; font-weight:800; color:var(--ud-navy); margin-top:4px; }
@@ -502,6 +545,13 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
   const [legalLoading, setLegalLoading] = useState(true)
   const [legalError, setLegalError] = useState(null)
   const [watchRunning, setWatchRunning] = useState(false)
+  const [selectedRegions, setSelectedRegions] = useState([])
+  const [commercialFilter, setCommercialFilter] = useState(null)
+  const [marqueFilter, setMarqueFilter] = useState(null)
+  const [familleFilter, setFamilleFilter] = useState(null)
+  const [sousFamilleFilter, setSousFamilleFilter] = useState(null)
+  const [groupeFilter, setGroupeFilter] = useState(null)
+  const [regionOptions, setRegionOptions] = useState([])
   const isAdmin = user?.role === 'ADMIN'
 
   const load = async () => {
@@ -512,10 +562,19 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
         yearCurrent: 2026,
         yearPrevious: 2025,
         fournisseur: supplierFilter || undefined,
+        region: selectedRegions.length ? selectedRegions.join(',') : undefined,
+        commercial: commercialFilter || undefined,
+        marque: marqueFilter || undefined,
+        famille: familleFilter || undefined,
+        sousFamille: sousFamilleFilter || undefined,
+        groupeClient: groupeFilter || undefined,
         alertPct,
         alertCaMin,
       })
       setData(res)
+      if (res?.filter_options?.regions?.length) {
+        setRegionOptions(res.filter_options.regions)
+      }
     } catch (e) {
       setError(e?.response?.data?.detail || e.message || 'Erreur chargement dashboard')
       setData(null)
@@ -526,7 +585,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
 
   useEffect(() => {
     load()
-  }, [supplierFilter, alertPct, alertCaMin])
+  }, [supplierFilter, alertPct, alertCaMin, selectedRegions, commercialFilter, marqueFilter, familleFilter, sousFamilleFilter, groupeFilter])
 
   const loadLegalAlerts = async () => {
     setLegalLoading(true)
@@ -594,6 +653,58 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const toggleRegion = (name) => {
+    if (!name) return
+    setSelectedRegions((cur) => (cur.includes(name) ? cur.filter((x) => x !== name) : [...cur, name]))
+  }
+
+  const openClient = (code, name) => {
+    if (!code) return
+    sessionStorage.setItem('client_space_focus', JSON.stringify({ mode: 'client', id: code, label: name || code }))
+    if (currentImportId) onNavigate?.('client-space')
+  }
+
+  const openGroupe = (groupe) => {
+    if (!groupe) return
+    sessionStorage.setItem('client_space_focus', JSON.stringify({ mode: 'group', id: groupe }))
+    if (currentImportId) onNavigate?.('client-space')
+  }
+
+  const clickClient = (row) => openClient(row?.code_union, row?.raison_sociale || row?.key)
+  const clickMarque = (row) => { if (row?.key) { setMarqueFilter(row.key); go('clients') } }
+  const clickFamille = (row) => { if (row?.key) { setFamilleFilter(row.key); go('clients') } }
+  const clickSousFam = (row) => { if (row?.key) { setSousFamilleFilter(row.key); go('clients') } }
+  const clickGroupe = (row) => {
+    if (!row?.key) return
+    setGroupeFilter(row.key)
+    if (currentImportId) openGroupe(row.key)
+    else go('clients')
+  }
+  const clickCommercial = (row) => {
+    if (!row?.key) return
+    setCommercialFilter((cur) => (cur === row.key ? null : row.key))
+    go('clients')
+  }
+  const clickRegion = (row) => {
+    if (!row?.key) return
+    setSelectedRegions((cur) => (cur.includes(row.key) ? cur : [...cur, row.key]))
+    go('clients')
+  }
+  const clickPlatform = (key) => {
+    if (!key) return
+    setSupplierFilter(supplierFilter === key ? null : key)
+    go('clients')
+  }
+  const scrollPanel = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+  const extraFilters = [
+    commercialFilter && { key: 'commercial', label: `Commercial · ${commercialFilter}`, clear: () => setCommercialFilter(null) },
+    marqueFilter && { key: 'marque', label: `Marque · ${marqueFilter}`, clear: () => setMarqueFilter(null) },
+    familleFilter && { key: 'famille', label: `Famille · ${familleFilter}`, clear: () => setFamilleFilter(null) },
+    sousFamilleFilter && { key: 'sousfam', label: `Sous-famille · ${sousFamilleFilter}`, clear: () => setSousFamilleFilter(null) },
+    groupeFilter && { key: 'groupe', label: `Groupe · ${groupeFilter}`, clear: () => setGroupeFilter(null) },
+  ].filter(Boolean)
+
   const filterBar = (
     <>
       <div className="ud-platseg">
@@ -604,6 +715,36 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
           </button>
         ))}
       </div>
+      {regionOptions.length > 0 && (
+        <div className="ud-platseg ud-regseg">
+          <button type="button" className={`ud-pseg ${!selectedRegions.length ? 'on' : ''}`} onClick={() => setSelectedRegions([])}>Toutes régions</button>
+          {regionOptions.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={`ud-pseg ${selectedRegions.includes(name) ? 'on' : ''}`}
+              title={selectedRegions.includes(name) ? 'Retirer cette région' : 'Ajouter cette région au filtre'}
+              onClick={() => toggleRegion(name)}
+            >
+              {name}
+            </button>
+          ))}
+          {selectedRegions.length > 1 && (
+            <span className="muted" style={{ fontSize: 12, alignSelf: 'center', padding: '0 8px' }}>
+              {selectedRegions.length} régions cumulées
+            </span>
+          )}
+        </div>
+      )}
+      {extraFilters.length > 0 && (
+        <div className="ud-active-filters">
+          {extraFilters.map((f) => (
+            <button key={f.key} type="button" className="ud-af" onClick={f.clear}>
+              {f.label} ×
+            </button>
+          ))}
+        </div>
+      )}
       {Object.keys(platformMonths).length > 0 && (
         <div className="ud-chips">
           {SUPPLIER_KEYS.filter((k) => platformMonths[k]).map((k) => (
@@ -689,6 +830,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
             isAdmin={isAdmin}
             onAcknowledge={acknowledgeLegal}
             onRun={runWatch}
+            onClientClick={(alert) => openClient(alert.code_union, alert.nom_client)}
           />
         )}
 
@@ -700,48 +842,48 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
               sub={`Période : ${periodLabel}${data.year_previous ? ` vs ${data.year_previous}` : ''}${supplierFilter ? ` · ${SUPPLIER_LABELS[supplierFilter]}` : ''}`}
             />
             <div className="ud-kpis">
-              <div className="ud-kpi navy">
+              <button type="button" className="ud-kpi navy ud-click" onClick={() => go('plateformes')}>
                 <div className="lab">CA YTD {data.year_current}</div>
                 <div className="val">{fmtCompact(kpis.ca_ytd)}</div>
                 <div className="sub"><TrendBadge pct={kpis.delta_pct} /> vs N-1</div>
-              </div>
-              <div className={`ud-kpi ${kpis.delta >= 0 ? 'green' : 'red'}`}>
+              </button>
+              <button type="button" className={`ud-kpi ud-click ${kpis.delta >= 0 ? 'green' : 'red'}`} onClick={() => go('evo')}>
                 <div className="lab">Écart vs {data.year_previous}</div>
                 <div className="val">{fmtCompact(kpis.delta)}</div>
                 <div className="sub">{fmtCompact(kpis.ca_n1_same_period)} même période</div>
-              </div>
-              <div className="ud-kpi gold">
+              </button>
+              <button type="button" className="ud-kpi gold ud-click" onClick={() => go('evo')}>
                 <div className="lab">Objectif 2026</div>
                 <div className="val">{fmtCompact(kpis.objectif)}</div>
                 <div className="ud-gauge" style={{ marginTop: 8 }}><i style={{ width: `${objPct}%` }} /></div>
                 <div className="ud-gauge-meta"><span>{fmtPct(kpis.objectif_pct)}</span></div>
-              </div>
-              <div className="ud-kpi">
+              </button>
+              <button type="button" className="ud-kpi ud-click" onClick={() => go('evo')}>
                 <div className="lab">Projection</div>
                 <div className="val">{kpis.projection != null ? fmtCompact(kpis.projection) : '—'}</div>
                 <div className="ud-gauge proj" style={{ marginTop: 8 }}><i style={{ width: `${Math.min(100, projPct)}%` }} /></div>
                 <div className="ud-gauge-meta"><span>{kpis.projection_method || '—'}</span><span>{fmtPct(kpis.projection_pct)}</span></div>
-              </div>
-              <div className="ud-kpi">
+              </button>
+              <button type="button" className="ud-kpi ud-click" onClick={() => go('clients')}>
                 <div className="lab">Adhérents</div>
                 <div className="val">{kpis.nb_clients || 0}</div>
                 <div className="sub">{kpis.nb_marques} marques · {kpis.nb_familles} familles</div>
-              </div>
-              <div className="ud-kpi navy">
+              </button>
+              <button type="button" className="ud-kpi navy ud-click" onClick={() => go('evo')}>
                 <div className="lab">Meilleur mois</div>
                 <div className="val">{MONTH_FR[kpis.best_month] || '—'}</div>
                 <div className="sub">{fmtCompact(kpis.best_month_ca)}</div>
-              </div>
-              <div className="ud-kpi">
+              </button>
+              <button type="button" className="ud-kpi ud-click" onClick={() => go('clients')}>
                 <div className="lab">Panier moyen</div>
                 <div className="val">{kpis.panier_moyen != null ? fmtCompact(kpis.panier_moyen) : '—'}</div>
                 <div className="sub">CA / adhérent actif</div>
-              </div>
+              </button>
             </div>
             <div className="ud-grid2">
               <div className="ud-panel">
                 <h3>Évolution mensuelle</h3>
-                <MonthBars months={monthBars} yearCurrent={data.year_current} yearPrevious={data.year_previous} />
+                <MonthBars months={monthBars} yearCurrent={data.year_current} yearPrevious={data.year_previous} onMonthClick={() => go('evo')} />
               </div>
               <div className="ud-panel">
                 <h3 className="flex items-center gap-2"><Target className="w-4 h-4 text-[var(--ud-red)]" /> Objectif 21 M€</h3>
@@ -769,8 +911,8 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
               ))}
             </div>
             <div className="ud-grid2">
-              <RankList title="Top marques" items={data.top_marques} />
-              <RankList title="Top familles" items={data.top_familles} />
+              <RankList title="Top marques" items={data.top_marques} onRowClick={clickMarque} />
+              <RankList title="Top familles" items={data.top_familles} onRowClick={clickFamille} />
             </div>
           </>
         )}
@@ -784,9 +926,10 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
               error={legalError}
               running={watchRunning}
               isAdmin={isAdmin}
-              onAcknowledge={acknowledgeLegal}
-              onRun={runWatch}
-            />
+            onAcknowledge={acknowledgeLegal}
+            onRun={runWatch}
+            onClientClick={(alert) => openClient(alert.code_union, alert.nom_client)}
+          />
             <div className="ud-alert-ctrl">
               <strong style={{ color: 'var(--ud-navy)' }}>Seuils</strong>
               <label>Baisse/hausse ≥{' '}
@@ -801,12 +944,12 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
               </label>
             </div>
             <div className="ud-insights">
-              <Insight tone="r" label="CA à risque" value={fmtCompact(alertes.ca_risque)} detail={`${alertes.clients_risque?.length || 0} clients ≤ -${alertPct}%`} />
-              <Insight tone="o" label="Décrochages silencieux" value={fmtCompact(alertes.ca_recent)} detail={`${alertes.clients_recent?.length || 0} clients · 2 derniers mois`} />
-              <Insight tone="dark" label="CA perdu (silencieux)" value={fmtCompact(alertes.ca_perdu)} detail={`${alertes.clients_perdus?.length || 0} sans commande ${data.year_current}`} />
-              <Insight tone="g" label="CA opportunités" value={`+${fmtCompact(alertes.ca_opportunites)}`} detail={`${alertes.clients_boom?.length || 0} hausses · ${alertes.clients_new?.length || 0} nouveaux`} />
+              <Insight tone="r" label="CA à risque" value={fmtCompact(alertes.ca_risque)} detail={`${alertes.clients_risque?.length || 0} clients ≤ -${alertPct}%`} onClick={() => scrollPanel('ud-alert-risque')} />
+              <Insight tone="o" label="Décrochages silencieux" value={fmtCompact(alertes.ca_recent)} detail={`${alertes.clients_recent?.length || 0} clients · 2 derniers mois`} onClick={() => scrollPanel('ud-alert-recent')} />
+              <Insight tone="dark" label="CA perdu (silencieux)" value={fmtCompact(alertes.ca_perdu)} detail={`${alertes.clients_perdus?.length || 0} sans commande ${data.year_current}`} onClick={() => scrollPanel('ud-alert-lost')} />
+              <Insight tone="g" label="CA opportunités" value={`+${fmtCompact(alertes.ca_opportunites)}`} detail={`${alertes.clients_boom?.length || 0} hausses · ${alertes.clients_new?.length || 0} nouveaux`} onClick={() => scrollPanel('ud-alert-opp')} />
             </div>
-            <div className="ud-panel" style={{ borderTop: '4px solid #e0a400' }}>
+            <div className="ud-panel" id="ud-alert-recent" style={{ borderTop: '4px solid #e0a400' }}>
               <h3>Décrochages récents (silencieux) <span className="ud-acount o">{alertes.clients_recent?.length || 0}</span></h3>
               <p className="psub">
                 Cumul encore correct (ou baisse récente nettement plus forte), sur les 2 derniers mois
@@ -820,6 +963,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
               </p>
               <AlertTable
                 rows={alertes.clients_recent}
+                onRowClick={clickClient}
                 columns={[
                   { t: 'Client', render: (r) => (
                     <>
@@ -835,11 +979,12 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                 ]}
               />            </div>
             <div className="ud-grid2">
-              <div className="ud-panel">
+              <div className="ud-panel" id="ud-alert-risque">
                 <h3>Clients à risque <span className="ud-acount r">{alertes.clients_risque?.length || 0}</span></h3>
                 <p className="psub">Baisse ≥ {alertPct}%, CA N-1 ≥ {fmtCompact(alertCaMin)}</p>
                 <AlertTable
                   rows={alertes.clients_risque}
+                  onRowClick={clickClient}
                   columns={[
                     { t: 'Client', render: (r) => <><div className="name">{r.key}</div><div className="subcode">{r.code_union}</div></> },
                     { t: 'CA', render: (r) => fmtCompact(r.current) },
@@ -848,11 +993,12 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                   ]}
                 />
               </div>
-              <div className="ud-panel">
+              <div className="ud-panel" id="ud-alert-lost">
                 <h3>Clients perdus / silencieux <span className="ud-acount r">{alertes.clients_perdus?.length || 0}</span></h3>
                 <p className="psub">Actifs N-1, aucune commande {data.year_current}</p>
                 <AlertTable
                   rows={alertes.clients_perdus}
+                  onRowClick={clickClient}
                   columns={[
                     { t: 'Client', render: (r) => <div className="name">{r.key}</div> },
                     { t: `CA ${data.year_previous}`, render: (r) => <span className="neg">{fmtCompact(r.previous)}</span> },
@@ -861,10 +1007,11 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
               </div>
             </div>
             <div className="ud-grid2">
-              <div className="ud-panel">
+              <div className="ud-panel" id="ud-alert-opp">
                 <h3>Opportunités clients <span className="ud-acount g">{(alertes.clients_boom?.length || 0) + (alertes.clients_new?.length || 0)}</span></h3>
                 <AlertTable
                   rows={[...(alertes.clients_boom || []), ...(alertes.clients_new || [])].slice(0, 25)}
+                  onRowClick={clickClient}
                   columns={[
                     { t: 'Client', render: (r) => <div className="name">{r.tag === 'new' ? `NEW · ${r.key}` : r.key}</div> },
                     { t: 'CA', render: (r) => fmtCompact(r.current) },
@@ -877,6 +1024,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                 <h3>Marques en décrochage <span className="ud-acount r">{(alertes.marques_risque?.length || 0) + (alertes.marques_perdues?.length || 0)}</span></h3>
                 <AlertTable
                   rows={[...(alertes.marques_perdues || []).map((m) => ({ ...m, gone: 1 })), ...(alertes.marques_risque || [])].slice(0, 25)}
+                  onRowClick={clickMarque}
                   columns={[
                     { t: 'Marque', render: (r) => <div className="name">{r.key}{r.gone ? ' · STOPPÉE' : ''}</div> },
                     { t: 'CA', render: (r) => fmtCompact(r.current) },
@@ -891,6 +1039,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                 <h3>Marques qui perdent des acheteurs <span className="ud-acount o">{alertes.marques_acheteurs?.length || 0}</span></h3>
                 <AlertTable
                   rows={alertes.marques_acheteurs}
+                  onRowClick={clickMarque}
                   columns={[
                     { t: 'Marque', render: (r) => <div className="name">{r.key}</div> },
                     { t: 'Acheteurs N', render: (r) => r.buyers_current },
@@ -903,6 +1052,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                 <h3>Marques en boom <span className="ud-acount g">{alertes.marques_boom?.length || 0}</span></h3>
                 <AlertTable
                   rows={alertes.marques_boom}
+                  onRowClick={clickMarque}
                   columns={[
                     { t: 'Marque', render: (r) => <div className="name">{r.key}</div> },
                     { t: 'CA', render: (r) => fmtCompact(r.current) },
@@ -919,7 +1069,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
           <>
             <SlideHead ey={navMeta.ey} title="Évolution mensuelle" sub={`${data.year_current} vs ${data.year_previous}`} />
             <div className="ud-panel">
-              <MonthBars months={monthBars} yearCurrent={data.year_current} yearPrevious={data.year_previous} />
+              <MonthBars months={monthBars} yearCurrent={data.year_current} yearPrevious={data.year_previous} onMonthClick={() => go('clients')} />
             </div>
             <div className="ud-panel">
               <table className="ud-table">
@@ -934,7 +1084,7 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                 </thead>
                 <tbody>
                   {monthBars.map((m) => (
-                    <tr key={m.month}>
+                    <tr key={m.month} className="ud-click" onClick={() => go('clients')} title="Voir les clients de cette période">
                       <td className="name">{MONTH_FR[m.month]}</td>
                       <td><b>{fmtCompact(m.current)}</b></td>
                       <td>{fmtCompact(m.previous)}</td>
@@ -952,9 +1102,9 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
           <>
             <SlideHead ey={navMeta.ey} title="Plateformes 360°" sub={`${platforms.length} plateformes · ${fmtCompact(kpis.ca_ytd)} consolidé`} />
             <div className="ud-insights">
-              <Insight label="Plateforme n°1" value={SUPPLIER_LABELS[kpis.platform_leader] || kpis.platform_leader || '—'} detail={platforms[0] ? `${fmtCompact(platforms[0].current)} · ${platforms[0].share_pct || 0}%` : ''} />
-              <Insight tone="g" label="La + dynamique" value={SUPPLIER_LABELS[kpis.platform_star] || kpis.platform_star || '—'} detail={fmtPct(kpis.platform_star_pct)} />
-              <Insight label="Panier moyen réseau" value={kpis.panier_moyen != null ? fmtCompact(kpis.panier_moyen) : '—'} />
+              <Insight label="Plateforme n°1" value={SUPPLIER_LABELS[kpis.platform_leader] || kpis.platform_leader || '—'} detail={platforms[0] ? `${fmtCompact(platforms[0].current)} · ${platforms[0].share_pct || 0}%` : ''} onClick={() => clickPlatform(kpis.platform_leader)} />
+              <Insight tone="g" label="La + dynamique" value={SUPPLIER_LABELS[kpis.platform_star] || kpis.platform_star || '—'} detail={fmtPct(kpis.platform_star_pct)} onClick={() => clickPlatform(kpis.platform_star)} />
+              <Insight label="Panier moyen réseau" value={kpis.panier_moyen != null ? fmtCompact(kpis.panier_moyen) : '—'} onClick={() => go('clients')} />
             </div>
             <div className="ud-pcards">
               {platforms.map((p) => (
@@ -992,19 +1142,29 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
           <>
             <SlideHead ey={navMeta.ey} title="Cross-plateformes" sub="Présence des adhérents sur le réseau" />
             <div className="ud-insights">
-              <Insight tone="r" label="Mono-plateforme" value={cross.mono || 0} detail={`${fmtCompact(cross.mono_ca)} · cibles cross-selling`} />
-              <Insight tone="g" label={`Fidèles aux ${cross.n_platforms || 0} plateformes`} value={cross.loyal || 0} detail={fmtCompact(cross.loyal_ca)} />
-              <Insight label="Moy. plateformes / adhérent" value={cross.avg_platforms ?? '—'} detail={`${cross.relations || 0} relations`} />
+              <Insight tone="r" label="Mono-plateforme" value={cross.mono || 0} detail={`${fmtCompact(cross.mono_ca)} · cibles cross-selling`} onClick={() => scrollPanel('ud-cross-mono')} />
+              <Insight tone="g" label={`Fidèles aux ${cross.n_platforms || 0} plateformes`} value={cross.loyal || 0} detail={fmtCompact(cross.loyal_ca)} onClick={() => scrollPanel('ud-cross-loyal')} />
+              <Insight label="Moy. plateformes / adhérent" value={cross.avg_platforms ?? '—'} detail={`${cross.relations || 0} relations`} onClick={() => go('clients')} />
             </div>
             <div className="ud-grid2">
               <div className="ud-panel">
                 <h3>Répartition par nbre de plateformes</h3>
                 <div className="ud-dist">
                   {(cross.distribution || []).map((d) => (
-                    <div key={d.n} className="ud-dist-col">
+                    <button
+                      type="button"
+                      key={d.n}
+                      className="ud-dist-col ud-click"
+                      title={d.n === 1 ? 'Voir les captifs' : d.n === cross.n_platforms ? 'Voir les fidèles' : 'Voir les clients'}
+                      onClick={() => {
+                        if (d.n === 1) scrollPanel('ud-cross-mono')
+                        else if (d.n === cross.n_platforms) scrollPanel('ud-cross-loyal')
+                        else go('clients')
+                      }}
+                    >
                       <div className="b" style={{ height: `${(d.count / maxDist) * 100}%`, background: d.n === 1 ? 'var(--ud-red)' : d.n === cross.n_platforms ? 'var(--ud-green)' : 'var(--ud-blue)' }} />
                       <div className="l">{d.n} · {d.count}</div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -1014,23 +1174,32 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                   {(cross.distribution || []).map((d) => {
                     const maxCa = Math.max(1, ...(cross.distribution || []).map((x) => x.ca || 0))
                     return (
-                      <div key={d.n} className="ud-dist-col">
+                      <button
+                        type="button"
+                        key={d.n}
+                        className="ud-dist-col ud-click"
+                        onClick={() => {
+                          if (d.n === 1) scrollPanel('ud-cross-mono')
+                          else if (d.n === cross.n_platforms) scrollPanel('ud-cross-loyal')
+                          else go('clients')
+                        }}
+                      >
                         <div className="b" style={{ height: `${(d.ca / maxCa) * 100}%` }} />
                         <div className="l">{fmtCompact(d.ca)}</div>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
               </div>
             </div>
             <div className="ud-grid2">
-              <div className="ud-panel">
+              <div className="ud-panel" id="ud-cross-mono">
                 <h3>Plus gros captifs (1 plateforme)</h3>
                 <table className="ud-table">
                   <thead><tr><th>Adhérent</th><th>Plateforme</th><th>CA</th></tr></thead>
                   <tbody>
                     {(cross.mono_targets || []).map((c) => (
-                      <tr key={c.code_union}>
+                      <tr key={c.code_union} className="ud-click" onClick={() => clickClient(c)}>
                         <td><div className="name">{c.raison_sociale}</div></td>
                         <td>{SUPPLIER_LABELS[c.platform] || c.platform}</td>
                         <td><b>{fmtCompact(c.current)}</b></td>
@@ -1039,13 +1208,13 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
                   </tbody>
                 </table>
               </div>
-              <div className="ud-panel">
+              <div className="ud-panel" id="ud-cross-loyal">
                 <h3>Fidèles {cross.n_platforms}/{cross.n_platforms} plateformes</h3>
                 <table className="ud-table">
                   <thead><tr><th>Adhérent</th><th>Nb</th><th>CA</th></tr></thead>
                   <tbody>
                     {(cross.loyal_clients || []).map((c) => (
-                      <tr key={c.code_union}>
+                      <tr key={c.code_union} className="ud-click" onClick={() => clickClient(c)}>
                         <td><div className="name">{c.raison_sociale}</div></td>
                         <td>{c.n_platforms}/{cross.n_platforms}</td>
                         <td><b>{fmtCompact(c.current)}</b></td>
@@ -1062,36 +1231,38 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
           <>
             <SlideHead ey={navMeta.ey} title="Clients" sub={`${kpis.nb_clients || 0} adhérents · classement CA`} />
             <div className="ud-insights">
-              <Insight label="Concentration Top 10" value={kpis.top10_share_pct != null ? `${kpis.top10_share_pct} %` : '—'} />
-              <Insight tone="g" label={`Nouveaux ${data.year_current}`} value={kpis.nb_clients_new || 0} />
-              <Insight tone="r" label="Clients perdus" value={kpis.nb_clients_lost || 0} />
+              <Insight label="Concentration Top 10" value={kpis.top10_share_pct != null ? `${kpis.top10_share_pct} %` : '—'} onClick={() => scrollPanel('ud-clients-table')} />
+              <Insight tone="g" label={`Nouveaux ${data.year_current}`} value={kpis.nb_clients_new || 0} onClick={() => go('alertes')} />
+              <Insight tone="r" label="Clients perdus" value={kpis.nb_clients_lost || 0} onClick={() => go('alertes')} />
             </div>
             <div className="ud-grid2">
-              <RankList title="Plus fortes progressions" items={data.top_clients_up?.map((c) => ({ ...c, key: c.raison_sociale }))} />
-              <RankList title="Plus fortes baisses" items={data.top_clients_down?.map((c) => ({ ...c, key: c.raison_sociale }))} />
+              <RankList title="Plus fortes progressions" items={data.top_clients_up?.map((c) => ({ ...c, key: c.raison_sociale }))} onRowClick={clickClient} />
+              <RankList title="Plus fortes baisses" items={data.top_clients_down?.map((c) => ({ ...c, key: c.raison_sociale }))} onRowClick={clickClient} />
             </div>
-            <DimTable rows={data.clients} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Client" />
+            <div id="ud-clients-table">
+            <DimTable rows={data.clients} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Client" onRowClick={clickClient} />
+            </div>
           </>
         )}
 
         {data?.available && active === 'groupes' && (
           <>
             <SlideHead ey={navMeta.ey} title="Groupes clients" sub="Classement par groupe" />
-            <DimTable rows={data.groupes} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Groupe" />
+            <DimTable rows={data.groupes} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Groupe" onRowClick={clickGroupe} />
           </>
         )}
 
         {data?.available && active === 'commerciaux' && (
           <>
             <SlideHead ey={navMeta.ey} title="Commerciaux" sub="Portefeuilles CA" />
-            <DimTable rows={data.commerciaux} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Commercial" />
+            <DimTable rows={data.commerciaux} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Commercial" onRowClick={clickCommercial} />
           </>
         )}
 
         {data?.available && active === 'regions' && (
           <>
             <SlideHead ey={navMeta.ey} title="Régions" sub="Territoires commerciaux" />
-            <DimTable rows={data.regions} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Région" />
+            <DimTable rows={data.regions} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Région" onRowClick={clickRegion} />
           </>
         )}
 
@@ -1099,37 +1270,37 @@ export default function UnionDashboardPage({ currentImportId, isCommercial = fal
           <>
             <SlideHead ey={navMeta.ey} title="Marques" sub={`${kpis.nb_marques || 0} marques référencées`} />
             <div className="ud-grid2">
-              <RankList title="Top marques" items={(data.marques || []).slice(0, 8)} />
+              <RankList title="Top marques" items={(data.marques || []).slice(0, 8)} onRowClick={clickMarque} />
               <div className="ud-panel">
                 <h3>Movers</h3>
                 <p className="psub">Tri par écart € (extrait)</p>
                 <table className="ud-table">
                   <tbody>
                     {[...(data.marques || [])].sort((a, b) => b.delta - a.delta).slice(0, 5).map((m) => (
-                      <tr key={`up-${m.key}`}><td className="name">{m.key}</td><td className="pos">{fmtCompact(m.delta)}</td><td><TrendBadge pct={m.delta_pct} /></td></tr>
+                      <tr key={`up-${m.key}`} className="ud-click" onClick={() => clickMarque(m)}><td className="name">{m.key}</td><td className="pos">{fmtCompact(m.delta)}</td><td><TrendBadge pct={m.delta_pct} /></td></tr>
                     ))}
                     {[...(data.marques || [])].sort((a, b) => a.delta - b.delta).slice(0, 5).map((m) => (
-                      <tr key={`dn-${m.key}`}><td className="name">{m.key}</td><td className="neg">{fmtCompact(m.delta)}</td><td><TrendBadge pct={m.delta_pct} /></td></tr>
+                      <tr key={`dn-${m.key}`} className="ud-click" onClick={() => clickMarque(m)}><td className="name">{m.key}</td><td className="neg">{fmtCompact(m.delta)}</td><td><TrendBadge pct={m.delta_pct} /></td></tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-            <DimTable rows={data.marques} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Marque" />
+            <DimTable rows={data.marques} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Marque" onRowClick={clickMarque} />
           </>
         )}
 
         {data?.available && active === 'familles' && (
           <>
             <SlideHead ey={navMeta.ey} title="Familles produits" sub={`${kpis.nb_familles || 0} familles`} />
-            <DimTable rows={data.familles} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Famille" />
+            <DimTable rows={data.familles} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Famille" onRowClick={clickFamille} />
           </>
         )}
 
         {data?.available && active === 'sousfam' && (
           <>
             <SlideHead ey={navMeta.ey} title="Sous-familles" sub="Grain produit détaillé" />
-            <DimTable rows={data.sous_familles} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Sous-famille" />
+            <DimTable rows={data.sous_familles} yearCurrent={data.year_current} yearPrevious={data.year_previous} label="Sous-famille" onRowClick={clickSousFam} />
           </>
         )}
       </div>

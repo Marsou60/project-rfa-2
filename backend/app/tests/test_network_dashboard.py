@@ -77,6 +77,16 @@ def test_build_network_dashboard_kpis_and_platforms(monkeypatch):
     assert payload["regions"]
 
 
+def test_multi_region_filter(monkeypatch):
+    monkeypatch.setattr(dash, "load_evolution_sales_rows", lambda: (_sample_rows(), "cumulative"))
+    idf = build_network_dashboard(year_current=2026, year_previous=2025, region="IDF")
+    both = build_network_dashboard(year_current=2026, year_previous=2025, region="IDF,SUD")
+    assert idf["available"] and both["available"]
+    assert both["kpis"]["ca_ytd"] > idf["kpis"]["ca_ytd"]
+    assert "Idf" in both["filter_options"]["regions"]
+    assert "Sud" in both["filter_options"]["regions"]
+
+
 def test_build_network_dashboard_empty(monkeypatch):
     monkeypatch.setattr(dash, "load_evolution_sales_rows", lambda: ([], ""))
     payload = build_network_dashboard()

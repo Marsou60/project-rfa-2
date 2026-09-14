@@ -24,6 +24,20 @@ def _norm(s: Optional[str]) -> str:
     return (s or "").strip()
 
 
+def _filter_values(value: Optional[str]) -> Optional[Set[str]]:
+    """Accepte une valeur unique ou une liste séparée par des virgules."""
+    if not value:
+        return None
+    parts = {_dim(part).upper() for part in str(value).split(",") if part.strip()}
+    return parts or None
+
+
+def _field_matches(row_value: Optional[str], wanted: Optional[Set[str]]) -> bool:
+    if not wanted:
+        return True
+    return _dim(row_value).upper() in wanted
+
+
 def _filter_rows(
     rows: List[Dict],
     *,
@@ -31,6 +45,9 @@ def _filter_rows(
     commercial: Optional[str] = None,
     region: Optional[str] = None,
     marque: Optional[str] = None,
+    famille: Optional[str] = None,
+    sous_famille: Optional[str] = None,
+    groupe_client: Optional[str] = None,
 ) -> List[Dict]:
     out = rows
     plat = normalize_platform(fournisseur) if fournisseur else None
@@ -39,13 +56,37 @@ def _filter_rows(
     if commercial:
         target = commercial.strip().upper()
         out = [r for r in out if _norm(r.get("commercial")).upper() == target]
-    if region:
-        target = region.strip().upper()
-        out = [r for r in out if _norm(r.get("region_commerciale")).upper() == target]
+    wanted_regions = _filter_values(region)
+    if wanted_regions:
+        out = [r for r in out if _field_matches(r.get("region_commerciale"), wanted_regions)]
     if marque:
         target = marque.strip().upper()
-        out = [r for r in out if _norm(r.get("marque")).upper() == target]
+        out = [r for r in out if _dim(r.get("marque")).upper() == target]
+    wanted_famille = _filter_values(famille)
+    if wanted_famille:
+        out = [r for r in out if _field_matches(r.get("famille"), wanted_famille)]
+    wanted_sous = _filter_values(sous_famille)
+    if wanted_sous:
+        out = [r for r in out if _field_matches(r.get("sous_famille"), wanted_sous)]
+    wanted_groupe = _filter_values(groupe_client)
+    if wanted_groupe:
+        out = [r for r in out if _field_matches(r.get("groupe_client"), wanted_groupe)]
     return out
+
+
+def _filter_options(rows: List[Dict]) -> Dict[str, List[str]]:
+    regions, commerciaux = set(), set()
+    for r in rows:
+        reg = _dim(r.get("region_commerciale"))
+        if reg != EMPTY_DIM:
+            regions.add(reg)
+        comm = _dim(r.get("commercial"))
+        if comm != EMPTY_DIM:
+            commerciaux.add(comm)
+    return {
+        "regions": sorted(regions),
+        "commerciaux": sorted(commerciaux),
+    }
 
 
 def _ca(rows: List[Dict], year: int, month: Optional[int] = None) -> float:
@@ -133,6 +174,9 @@ def build_network_dashboard(
     commercial: Optional[str] = None,
     region: Optional[str] = None,
     marque: Optional[str] = None,
+    famille: Optional[str] = None,
+    sous_famille: Optional[str] = None,
+    groupe_client: Optional[str] = None,
     objectif: Optional[float] = None,
     ca_n1_realise: Optional[float] = None,
     platform_months: Optional[Dict[str, int]] = None,
@@ -141,12 +185,16 @@ def build_network_dashboard(
     full_lists: bool = False,
 ) -> Dict[str, Any]:
     rows, data_source = load_evolution_sales_rows()
+    options = _filter_options(rows)
     rows = _filter_rows(
         rows,
         fournisseur=fournisseur,
         commercial=commercial,
         region=region,
         marque=marque,
+        famille=famille,
+        sous_famille=sous_famille,
+        groupe_client=groupe_client,
     )
 
     if not rows:
@@ -156,6 +204,7 @@ def build_network_dashboard(
             "data_source": data_source or "",
             "year_current": year_current,
             "year_previous": year_previous,
+            "filter_options": options,
         }
 
     months = sorted({int(r["month"]) for r in rows if r.get("month") is not None})
@@ -688,7 +737,11 @@ def build_network_dashboard(
             "commercial": commercial,
             "region": region,
             "marque": marque,
+            "famille": famille,
+            "sous_famille": sous_famille,
+            "groupe_client": groupe_client,
         },
+        "filter_options": options,
         "kpis": {
             "ca_ytd": ca_ytd,
             "ca_n1_same_period": ca_n1_same,

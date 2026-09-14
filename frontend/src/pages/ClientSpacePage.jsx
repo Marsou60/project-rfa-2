@@ -5,18 +5,37 @@ import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
 
+function consumeClientSpaceFocus() {
+  try {
+    const raw = sessionStorage.getItem('client_space_focus')
+    if (!raw) return null
+    sessionStorage.removeItem('client_space_focus')
+    const focus = JSON.parse(raw)
+    if (!focus?.id) return null
+    return {
+      mode: focus.mode === 'group' ? 'group' : 'client',
+      id: String(focus.id),
+      label: focus.label || String(focus.id),
+    }
+  } catch {
+    return null
+  }
+}
+
 function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, isAdmin, onNavigate }) {
   const { supplierFilter, getKeysForCurrentSupplier } = useSupplierFilter()
   const supplierKeys = useMemo(() => getKeysForCurrentSupplier(), [getKeysForCurrentSupplier])
 
-  // Si adhérent avec lien, déterminer le mode automatiquement
-  const getInitialMode = () => {
+  const pendingFocusRef = useRef(undefined)
+  if (pendingFocusRef.current === undefined) {
+    pendingFocusRef.current = isAdherent ? null : consumeClientSpaceFocus()
+  }
+
+  const [mode, setMode] = useState(() => {
     if (linkedCodeUnion) return 'client'
     if (linkedGroupe) return 'group'
-    return 'client'
-  }
-  
-  const [mode, setMode] = useState(getInitialMode())
+    return pendingFocusRef.current?.mode || 'client'
+  })
   const [entities, setEntities] = useState([])
   const [query, setQuery] = useState('')
   const [entity, setEntity] = useState(null)
@@ -99,7 +118,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
       const entityId = linkedCodeUnion || linkedGroupe
       const entityMode = linkedCodeUnion ? 'client' : 'group'
       setMode(entityMode)
-      loadEntity(entityId)
+      loadEntity(entityId, entityMode)
     }
   }, [isAdherent, linkedCodeUnion, linkedGroupe, importId])
 
@@ -119,9 +138,11 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
     }
     if (importId) {
       loadEntities()
-      setEntity(null)
-      setQuery('')
-      setRulesMap({})
+      if (!pendingFocusRef.current) {
+        setEntity(null)
+        setQuery('')
+        setRulesMap({})
+      }
     }
   }, [importId, mode, isAdherent, linkedCodeUnion, linkedGroupe])
 
@@ -200,7 +221,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
     return rate
   }
 
-  const loadEntity = async (entityId) => {
+  const loadEntity = async (entityId, entityMode = mode) => {
     if (!entityId) return
     const myId = entityId
     loadIdRef.current = myId
@@ -211,7 +232,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
     setLoading(true)
     setError(null)
     try {
-      const full = await getEntityFull(importId, mode, entityId)
+      const full = await getEntityFull(importId, entityMode, entityId)
       if (loadIdRef.current !== myId) return
       const detail = full.entity
       setEntity(detail)
@@ -254,11 +275,11 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
       refreshCotisationMap()
 
       // PDF contrat 2026 (commercial + espace adhérent)
-      const eid = mode === 'client'
+      const eid = entityMode === 'client'
         ? (detail.code_union || detail.id || entityId)
         : (detail.groupe_client || detail.id || entityId)
-      const grp = mode === 'client' ? (detail.groupe_client || null) : null
-      getContractPdfMeta(mode, eid, grp)
+      const grp = entityMode === 'client' ? (detail.groupe_client || null) : null
+      getContractPdfMeta(entityMode, eid, grp)
         .then((meta) => {
           if (loadIdRef.current === myId) setContractPdfMeta(meta)
         })
@@ -267,7 +288,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
         })
     } catch (err) {
       if (loadIdRef.current !== myId) return
-      setError(err.response?.data?.detail || `Erreur lors du chargement ${mode === 'client' ? 'du client' : 'du groupe'}`)
+      setError(err.response?.data?.detail || `Erreur lors du chargement ${entityMode === 'client' ? 'du client' : 'du groupe'}`)
       setEntity(null)
       setRulesMap({})
       setSmartPlans([])
@@ -276,6 +297,14 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
       if (loadIdRef.current === myId) setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const focus = pendingFocusRef.current
+    if (!focus || !importId || isAdherent) return
+    pendingFocusRef.current = null
+    setQuery(focus.label)
+    loadEntity(focus.id, focus.mode)
+  }, [importId, isAdherent])
 
   const loadPlansOnce = () => {
     if (plansRequested || loadingPlans || !entity) return
