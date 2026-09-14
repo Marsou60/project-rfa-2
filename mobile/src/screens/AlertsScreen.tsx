@@ -4,7 +4,6 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -14,6 +13,7 @@ import { NetworkClientRow } from '../api/consultation';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
 import { Icon, IconName } from '../components/Icon';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
 
@@ -192,10 +192,14 @@ export function AlertsScreen() {
 
   return (
     <View style={styles.root}>
-      <Text style={styles.title}>Alertes</Text>
-      {!isNetworkFullAccess && commercialScope ? (
-        <Text style={styles.scopeHint}>Portefeuille {commercialScope} uniquement</Text>
-      ) : null}
+      <ScreenHeader
+        title="Alertes"
+        subtitle={
+          !isNetworkFullAccess && commercialScope
+            ? `Portefeuille ${commercialScope} uniquement`
+            : undefined
+        }
+      />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && !dash ? <ActivityIndicator color={colors.orange} style={{ marginTop: 24 }} /> : null}
 
@@ -218,12 +222,7 @@ export function AlertsScreen() {
             </View>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.chipsScroll}
-            contentContainerStyle={styles.chips}
-          >
+          <View style={styles.chips}>
             {available.map((cat) => {
               const isActive = current?.id === cat.id;
               const tint = TONE_COLOR[cat.tone];
@@ -231,6 +230,9 @@ export function AlertsScreen() {
                 <Pressable
                   key={cat.id}
                   onPress={() => setActive(cat.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityLabel={`${cat.label}, ${cat.rows.length}`}
                   style={[
                     styles.chip,
                     isActive && { backgroundColor: tint, borderColor: tint },
@@ -248,7 +250,7 @@ export function AlertsScreen() {
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </View>
 
           {current ? (
             <FlatList
@@ -299,9 +301,7 @@ export function AlertsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-  title: { color: colors.white, fontSize: 26, fontWeight: '800', marginBottom: 4 },
-  scopeHint: { color: colors.orangeSoft, fontSize: 12, fontWeight: '700', marginBottom: 10 },
+  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
   error: { color: colors.red, marginBottom: 8 },
   empty: { color: colors.muted, textAlign: 'center', marginTop: 28 },
   kpiRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
@@ -309,29 +309,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.card,
     borderRadius: 14,
-    padding: 10,
+    padding: 12,
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  kpiLabel: { color: colors.muted2, fontSize: 10, fontWeight: '700' },
-  kpiValue: { fontWeight: '800', fontSize: 14, marginTop: 3 },
-  chipsScroll: { flexGrow: 0, marginBottom: 6 },
+  kpiLabel: { color: colors.muted, fontSize: 12, fontWeight: '700', lineHeight: 16 },
+  kpiValue: { fontWeight: '800', fontSize: 15, marginTop: 4 },
   chips: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-    paddingRight: 12,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     flexShrink: 0,
-    gap: 9,
-    paddingLeft: 16,
-    paddingRight: 12,
-    paddingVertical: 13,
-    minHeight: 46,
+    gap: 8,
+    paddingLeft: 14,
+    paddingRight: 10,
+    minHeight: 48,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.cardBorder,
@@ -364,8 +361,8 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     marginBottom: 10,
   },
-  introTitle: { color: colors.white, fontWeight: '800', fontSize: 14 },
-  introText: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
+  introTitle: { color: colors.white, fontWeight: '800', fontSize: 16 },
+  introText: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 4 },
   row: {
     flexDirection: 'row',
     gap: 10,
@@ -384,8 +381,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowTitle: { color: colors.white, fontWeight: '700', fontSize: 14 },
-  rowCode: { color: colors.muted2, fontSize: 11, marginTop: 1 },
-  rowDetail: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
-  rowLink: { color: colors.orangeSoft, fontSize: 11, fontWeight: '700', marginTop: 5 },
+  rowTitle: { color: colors.white, fontWeight: '700', fontSize: 16 },
+  rowCode: { color: colors.muted, fontSize: 12, marginTop: 1 },
+  rowDetail: { color: colors.muted, fontSize: 13, lineHeight: 18, marginTop: 4 },
+  rowLink: { color: colors.orangeSoft, fontSize: 13, fontWeight: '700', marginTop: 6 },
 });

@@ -174,7 +174,18 @@ export type ClientRfaResponse = {
   } | null;
   rfa_net?: number;
   rfa_projected_net?: number | null;
-  cotisation?: { amount?: number; deducted?: number; source?: string; [key: string]: unknown };
+  cotisation?: {
+    amount?: number;
+    deducted?: number;
+    facturee?: boolean;
+    deduite?: boolean;
+    is_offerte?: boolean;
+    is_facture?: boolean;
+    source?: string;
+    label?: string;
+    billed_at_group?: string;
+    [key: string]: unknown;
+  };
 };
 
 export async function getNetworkDashboard(params?: {
@@ -262,6 +273,56 @@ export type ClientDashboardResponse = {
     updated_at?: string | null;
   };
 };
+
+export type MonthlyPoint = {
+  month: number;
+  current?: number;
+  previous?: number;
+  delta?: number;
+  delta_pct?: number | null;
+};
+
+export type MonthlyPlatform = {
+  platform: string;
+  total_current?: number;
+  total_previous?: number;
+  by_month?: Record<string, { current?: number; previous?: number }>;
+};
+
+export type ClientMonthlyEvolution = {
+  available: boolean;
+  label?: string;
+  code_union?: string | null;
+  groupe_client?: string | null;
+  year_current?: number;
+  year_previous?: number;
+  data_source?: string;
+  totals?: {
+    current?: number;
+    previous?: number;
+    delta?: number;
+    delta_pct?: number | null;
+  };
+  months?: MonthlyPoint[];
+  platforms?: MonthlyPlatform[];
+};
+
+export async function getClientMonthlyEvolution(params: {
+  codeUnion?: string | null;
+  groupeClient?: string | null;
+  yearCurrent?: number;
+  yearPrevious?: number;
+}): Promise<ClientMonthlyEvolution> {
+  const { data } = await api.get('/pure-data/monthly/client-evolution', {
+    params: {
+      code_union: params.codeUnion || undefined,
+      groupe_client: params.groupeClient || undefined,
+      year_current: params.yearCurrent ?? 2026,
+      year_previous: params.yearPrevious ?? 2025,
+    },
+  });
+  return data;
+}
 
 export async function getClientDashboard(params: {
   codeUnion?: string | null;

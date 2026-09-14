@@ -85,6 +85,35 @@ cd "C:\Users\marti\Projet rfa 2\mobile"
 npm run android
 ```
 
+## iPhone / PWA (même app que l’APK)
+
+Un iPhone **ne peut pas installer l’APK**. La PWA est l’app Expo dans Safari, installable sur l’écran d’accueil.
+
+### Essai local
+
+```powershell
+cd "C:\Users\marti\Projet rfa 2\mobile"
+npm run web
+```
+
+Ouvre l’URL (souvent `http://localhost:8081`) **dans Safari** sur l’iPhone (même Wi‑Fi). Puis **Partager → Sur l’écran d’accueil**.
+
+### Build de production
+
+```powershell
+npm run build:web
+```
+
+Ça génère `mobile/dist/`. À héberger en **HTTPS** (Vercel recommandé) :
+
+1. Nouveau projet Vercel, **Root Directory = `mobile`**
+2. Variable `EXPO_PUBLIC_API_URL` = `https://project-rfa-2-production.up.railway.app` (sans `/api`)
+3. Build / output déjà dans `vercel.json`
+
+CORS Railway accepte déjà `*.vercel.app`. Envoie le lien Vercel aux adhérents iPhone.
+
+Compte Apple Developer **pas nécessaire** pour la PWA. Pour une vraie app App Store / TestFlight plus tard : `eas build -p ios`.
+
 ## iPhone / App Store
 
 - **Pas besoin de Mac** pour développer avec Expo Go + builds cloud (EAS) plus tard.

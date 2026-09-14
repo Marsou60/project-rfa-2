@@ -1,3 +1,51 @@
+const MONTHS_SHORT = [
+  '',
+  'janv.',
+  'févr.',
+  'mars',
+  'avr.',
+  'mai',
+  'juin',
+  'juil.',
+  'août',
+  'sept.',
+  'oct.',
+  'nov.',
+  'déc.',
+];
+
+const MONTHS_LONG = [
+  '',
+  'janvier',
+  'février',
+  'mars',
+  'avril',
+  'mai',
+  'juin',
+  'juillet',
+  'août',
+  'septembre',
+  'octobre',
+  'novembre',
+  'décembre',
+];
+
+export function monthShort(month?: number | null): string {
+  const m = Number(month) || 0;
+  return MONTHS_SHORT[m] || '—';
+}
+
+export function monthLong(month?: number | null): string {
+  const m = Number(month) || 0;
+  return MONTHS_LONG[m] || '—';
+}
+
+/** « jusqu’à juin 2026 » — for YTD (“à date”) captions. */
+export function untilMonthLabel(month?: number | null, year = 2026): string | null {
+  if (!month || month < 1 || month > 12) return null;
+  return `jusqu’à ${monthLong(month)} ${year}`;
+}
+
 export function fmtEuro(value?: number | null): string {
   const n = Number(value) || 0;
   return new Intl.NumberFormat('fr-FR', {

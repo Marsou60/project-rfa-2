@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,14 +9,21 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { ClientRfaResponse, getClientRfa } from '../api/consultation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ClientMonthlyEvolution,
+  ClientRfaResponse,
+  getClientMonthlyEvolution,
+  getClientRfa,
+} from '../api/consultation';
 import { useSupplierLogos } from '../api/logos';
 import { useAuth } from '../auth/AuthContext';
+import { BrandHero } from '../components/BrandHero';
 import { HeroCaCard } from '../components/HeroCaCard';
-import { MenuGrid, MenuItem } from '../components/MenuGrid';
+import { MonthlyCaCard } from '../components/MonthlyCaCard';
 import { PlatformGrid } from '../components/PlatformGrid';
 import { colors, spacing } from '../theme';
-import { initials, platformLabel } from '../utils/format';
+import { fmtEuro, fmtPct, platformLabel, untilMonthLabel } from '../utils/format';
 
 function asNum(v: unknown): number {
   if (v == null) return 0;
@@ -32,9 +40,11 @@ export function AdherentHomeScreen() {
   const code = user?.linked_code_union || null;
   const groupe = user?.linked_groupe || null;
   const [data, setData] = useState<ClientRfaResponse | null>(null);
+  const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { logos } = useSupplierLogos();
+  const insets = useSafeAreaInsets();
 
   const load = useCallback(async () => {
     if (!code && !groupe) {
@@ -44,7 +54,15 @@ export function AdherentHomeScreen() {
     setLoading(true);
     setError(null);
     try {
-      setData(await getClientRfa({ codeUnion: code, groupeClient: code ? null : groupe, year: 2026 }));
+      const [rfa, monthRes] = await Promise.all([
+        getClientRfa({ codeUnion: code, groupeClient: code ? null : groupe, year: 2026 }),
+        getClientMonthlyEvolution({
+          codeUnion: code,
+          groupeClient: code ? null : groupe,
+        }).catch(() => null),
+      ]);
+      setData(rfa);
+      setMonthly(monthRes);
     } catch (e: unknown) {
       const msg =
         (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
@@ -64,11 +82,12 @@ export function AdherentHomeScreen() {
   );
 
   const label = data?.label || code || groupe || 'Mon espace';
-  const displayName = user?.display_name || user?.username || label;
   const ca = data?.ca?.totals?.global_total || 0;
   const rfaNet = data?.rfa_net ?? data?.rfa?.totals?.grand_total ?? 0;
+  const rfaYearEnd = data?.rfa_projected_net ?? data?.rfa_projected?.totals?.grand_total ?? null;
   const avgRate = ca > 0 ? rfaNet / ca : null;
-  const deltaPct = data?.comparison_n1?.delta_pct ?? null;
+  const caDeltaPct = monthly?.available ? monthly.totals?.delta_pct ?? null : null;
+  const until = untilMonthLabel(data?.reporting_month);
 
   const platforms = useMemo(() => {
     const global = data?.rfa?.global || {};
@@ -85,62 +104,27 @@ export function AdherentHomeScreen() {
     });
   }, [data]);
 
-  const shortcuts: MenuItem[] = [
-    {
-      key: 'rfa',
-      icon: 'cash-outline',
-      label: 'Ma RFA',
-      sub: 'Paliers & projection',
-      onPress: () => navigation.navigate('RFA', { initialTab: 'rfa' }),
-    },
-    {
-      key: 'marques',
-      icon: 'pricetags-outline',
-      label: 'Mes marques',
-      sub: 'Toutes mes marques',
-      onPress: () => navigation.navigate('RFA', { initialTab: 'marques' }),
-    },
-    {
-      key: 'familles',
-      icon: 'grid-outline',
-      label: 'Mes familles',
-      sub: 'Détail produits',
-      onPress: () => navigation.navigate('RFA', { initialTab: 'familles' }),
-    },
-    {
-      key: 'contrat',
-      icon: 'document-text-outline',
-      label: 'Mon contrat',
-      sub: 'PDF & niveau',
-      onPress: () => navigation.navigate('RFA', { initialTab: 'contrat' }),
-    },
-  ];
-
   return (
     <ScrollView
       style={styles.root}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.orange} />}
     >
-      <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.hello}>BONJOUR 👋</Text>
+      <BrandHero source={require('../../assets/vitrine/equipe.jpeg')}>
+        <View style={{ paddingTop: Math.max(insets.top, 12) }}>
+          <Text style={styles.hello}>Bonjour</Text>
           <Text style={styles.name}>{label}</Text>
+          <Text style={styles.bannerText}>
+            Uniquement l’activité de ce magasin
+            {code ? ` · ${code}` : ''}.
+          </Text>
         </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials(displayName)}</Text>
-        </View>
-      </View>
+      </BrandHero>
 
-      <View style={styles.banner}>
-        <Text style={styles.bannerText}>
-          Connecté en Adhérent — tu vois uniquement tes chiffres
-          {code ? ` (code ${code})` : groupe ? ` (groupe ${groupe})` : ''}.
-        </Text>
-      </View>
+      <View style={styles.body}>
 
       {!code && !groupe ? (
-        <Text style={styles.error}>Aucun client lié à ce compte.</Text>
+        <Text style={styles.error}>Aucun magasin n’est lié à ce compte. Contactez Union.</Text>
       ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && !data ? <ActivityIndicator color={colors.orange} style={{ marginVertical: 20 }} /> : null}
@@ -148,48 +132,60 @@ export function AdherentHomeScreen() {
       {data?.available ? (
         <>
           <HeroCaCard
+            title={until ? `Vos achats 2026 à date (${until})` : 'Vos achats 2026 à date'}
             ca={ca}
             subtitle={label}
-            deltaPct={deltaPct}
+            deltaPct={caDeltaPct}
+            deltaLabel="CA vs 2025 · même période"
+            leftLabel="RFA à date"
             rfaEstimated={rfaNet}
-            avgRate={avgRate}
+            rightLabel="RFA fin d’année"
+            rightValue={rfaYearEnd != null ? fmtEuro(rfaYearEnd) : '—'}
+            note={
+              rfaYearEnd != null
+                ? 'À gauche : RFA déjà calculée sur les mois connus. À droite : estimation au 31 décembre si le rythme se poursuit.'
+                : avgRate != null
+                  ? `Taux moyen à date : ${fmtPct(avgRate)}`
+                  : null
+            }
           />
-          <Text style={styles.section}>ACCÈS RAPIDE</Text>
-          <MenuGrid items={shortcuts} columns={2} />
-          <PlatformGrid items={platforms} logos={logos} />
+          <Pressable
+            style={styles.rfaCta}
+            onPress={() => navigation.navigate('RFA')}
+            accessibilityRole="button"
+            accessibilityLabel="Voir le détail de ma RFA"
+          >
+            <Text style={styles.rfaCtaText}>Voir le détail de ma RFA</Text>
+            <Text style={styles.rfaCtaSub}>Mois par mois, paliers, contrat</Text>
+          </Pressable>
+          {monthly?.available ? <MonthlyCaCard data={monthly} compact /> : null}
+          <PlatformGrid items={platforms} title="Vos plateformes" logos={logos} />
         </>
       ) : data && !data.available ? (
         <Text style={styles.muted}>{data.message || 'Pas encore de données 2026.'}</Text>
       ) : null}
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: 14, paddingBottom: 48 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  hello: { color: colors.muted, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
-  name: { color: colors.white, fontSize: 26, fontWeight: '800', marginTop: 2 },
-  avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+  content: { paddingBottom: 48 },
+  body: { paddingHorizontal: spacing.lg, gap: 14 },
+  hello: { color: 'rgba(248,250,252,0.8)', fontSize: 16, fontWeight: '600' },
+  name: { color: colors.white, fontSize: 32, fontWeight: '800', marginTop: 4, letterSpacing: -0.5, lineHeight: 38 },
+  bannerText: { color: 'rgba(248,250,252,0.82)', fontSize: 14, lineHeight: 20, marginTop: 8 },
+  error: { color: colors.red, fontSize: 15, lineHeight: 22 },
+  muted: { color: colors.muted, fontSize: 15, lineHeight: 22 },
+  rfaCta: {
     backgroundColor: colors.orange,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.md,
+    minHeight: 52,
+    gap: 4,
   },
-  avatarText: { color: colors.white, fontWeight: '800' },
-  banner: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  bannerText: { color: colors.muted, fontSize: 13, lineHeight: 18 },
-  error: { color: colors.red },
-  muted: { color: colors.muted },
-  section: { color: colors.muted2, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  rfaCtaText: { color: colors.white, fontWeight: '800', fontSize: 17 },
+  rfaCtaSub: { color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 18 },
 });

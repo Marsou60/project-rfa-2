@@ -9,12 +9,20 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { ClientRfaResponse, getClientRfa, RfaLine } from '../api/consultation';
+import {
+  ClientMonthlyEvolution,
+  ClientRfaResponse,
+  getClientMonthlyEvolution,
+  getClientRfa,
+  RfaLine,
+} from '../api/consultation';
 import { useSupplierLogos } from '../api/logos';
 import { HeroCaCard } from './HeroCaCard';
+import { MonthlyCaCard } from './MonthlyCaCard';
 import { RfaProgressCard } from './RfaProgressCard';
 import { colors, spacing } from '../theme';
-import { fmtEuro, fmtPct } from '../utils/format';
+import { fmtEuro, fmtPct, untilMonthLabel } from '../utils/format';
+import { describeCotisation } from '../utils/cotisationStatus';
 import { globalProgress, parseTiers, triProgress } from '../utils/rfaProgress';
 
 type Props = {
@@ -43,6 +51,7 @@ function lineAmount(item: RfaLine): number {
 
 export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
   const [data, setData] = useState<ClientRfaResponse | null>(null);
+  const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { logos } = useSupplierLogos();
@@ -50,14 +59,19 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
   const load = useCallback(async () => {
     if (!codeUnion && !groupeClient) {
       setData(null);
+      setMonthly(null);
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const res = await getClientRfa({ codeUnion, groupeClient, year: 2026 });
+      const [res, monthRes] = await Promise.all([
+        getClientRfa({ codeUnion, groupeClient, year: 2026 }),
+        getClientMonthlyEvolution({ codeUnion, groupeClient }).catch(() => null),
+      ]);
       setData(res);
+      setMonthly(monthRes);
     } catch (e: unknown) {
       const msg =
         (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
@@ -160,7 +174,6 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
       contractName: data.contract_applied?.name || '—',
       proj: data.rfa_projected_net ?? data.rfa_projected?.totals?.grand_total,
       projectedLevel: projLevelId,
-      cmp: data.comparison_n1,
       avgRate: caGlobal > 0 ? rfaNet / caGlobal : null,
       globalItems,
       triItems,
@@ -207,6 +220,8 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
   }
 
   const d = derived;
+  const until = untilMonthLabel(data.reporting_month);
+  const cotis = describeCotisation(data.cotisation);
 
   return (
     <ScrollView
@@ -214,12 +229,24 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.orange} />}
     >
       <HeroCaCard
-        title="Chiffre d’affaires RFA cumulé · 2026"
+        title={until ? `Achats 2026 à date (${until})` : 'Achats 2026 à date'}
         ca={d.caGlobal}
         subtitle={`${title || data.label || codeUnion || groupeClient}${d.level ? ` · ${d.level}` : ''}`}
-        deltaPct={d.cmp?.delta_pct}
+        deltaPct={monthly?.available ? monthly.totals?.delta_pct ?? null : null}
+        deltaLabel="CA vs 2025 · même période"
+        leftLabel="RFA à date"
         rfaEstimated={d.rfaNet}
-        avgRate={d.avgRate}
+        rightLabel="RFA fin d’année"
+        rightValue={d.proj != null ? fmtEuro(d.proj) : '—'}
+        note={
+          d.proj != null
+            ? `La RFA à date est déjà acquise sur les achats connus. La RFA fin d’année estime le 31 décembre si le rythme actuel se poursuit — ce n’est pas un versement.${
+                d.projectedLevel ? ` Niveau projeté : ${d.projectedLevel}.` : ''
+              }`
+            : d.avgRate != null
+              ? `Taux moyen à date : ${fmtPct(d.avgRate)}`
+              : null
+        }
       />
 
       <View style={styles.contractRow}>
@@ -230,6 +257,8 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
           </View>
         ) : null}
       </View>
+
+      <MonthlyCaCard data={monthly} />
 
       {d.zeroBecauseBelow ? (
         <View style={styles.whyBox}>
@@ -257,16 +286,6 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         </View>
         <Text style={styles.objPct}>{Math.round(d.nextObjective.progress)} %</Text>
       </View>
-
-      {d.proj != null ? (
-        <View style={styles.banner}>
-          <Text style={styles.bannerLabel}>Projection RFA fin d’année</Text>
-          <Text style={styles.bannerValue}>{fmtEuro(d.proj)}</Text>
-          {d.projectedLevel ? (
-            <Text style={styles.bannerMeta}>Niveau projeté : {d.projectedLevel}</Text>
-          ) : null}
-        </View>
-      ) : null}
 
       <Text style={styles.section}>Plateformes</Text>
       <Text style={styles.sectionHint}>Tap pour ouvrir le barème · jauge = progression vers le prochain palier</Text>
@@ -359,12 +378,33 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         })
       )}
 
-      {data.cotisation?.amount ? (
+      {cotis ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Cotisation</Text>
-          <Text style={styles.rowText}>Montant : {fmtEuro(data.cotisation.amount)}</Text>
-          <Text style={styles.rowText}>Déduite : {fmtEuro(data.cotisation.deducted || 0)}</Text>
-          {d.avgRate != null ? <Text style={styles.rowText}>Taux moyen net : {fmtPct(d.avgRate)}</Text> : null}
+          <Text style={styles.cardTitle}>Cotisation Union 2026</Text>
+          <Text style={styles.cotisAmount}>{fmtEuro(cotis.amount)}</Text>
+          <View
+            style={[
+              styles.cotisBadge,
+              cotis.tone === 'green' && styles.cotisBadgeGreen,
+              cotis.tone === 'sky' && styles.cotisBadgeSky,
+              cotis.tone === 'muted' && styles.cotisBadgeMuted,
+            ]}
+          >
+            <Text
+              style={[
+                styles.cotisBadgeText,
+                cotis.tone === 'green' && { color: '#A7F3D0' },
+                cotis.tone === 'sky' && { color: '#BAE6FD' },
+                cotis.tone === 'muted' && { color: colors.muted },
+              ]}
+            >
+              {cotis.badge}
+            </Text>
+          </View>
+          <Text style={styles.rowText}>{cotis.body}</Text>
+          {d.avgRate != null ? (
+            <Text style={styles.rowText}>Taux moyen net à date : {fmtPct(d.avgRate)}</Text>
+          ) : null}
         </View>
       ) : null}
     </ScrollView>
@@ -430,16 +470,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   gaugeFill: { height: '100%', borderRadius: 999 },
-  banner: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  bannerLabel: { color: colors.muted, fontSize: 12 },
-  bannerValue: { color: colors.white, fontSize: 22, fontWeight: '800', marginTop: 4 },
-  bannerMeta: { color: colors.orangeSoft, marginTop: 4, fontSize: 13, fontWeight: '600' },
   section: { color: colors.white, fontWeight: '800', fontSize: 16, marginTop: 8 },
   sectionHint: { color: colors.muted2, fontSize: 12, marginBottom: 4, marginTop: -4 },
   infoCyan: {
@@ -474,5 +504,17 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   cardTitle: { color: colors.white, fontWeight: '800', fontSize: 16 },
-  rowText: { color: colors.muted, fontSize: 14 },
+  cotisAmount: { color: colors.white, fontSize: 22, fontWeight: '800' },
+  cotisBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(249, 115, 22, 0.2)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  cotisBadgeGreen: { backgroundColor: 'rgba(52, 211, 153, 0.22)' },
+  cotisBadgeSky: { backgroundColor: 'rgba(56, 189, 248, 0.22)' },
+  cotisBadgeMuted: { backgroundColor: 'rgba(148, 163, 184, 0.18)' },
+  cotisBadgeText: { color: colors.orangeSoft, fontWeight: '800', fontSize: 12 },
+  rowText: { color: colors.muted, fontSize: 14, lineHeight: 20 },
 });

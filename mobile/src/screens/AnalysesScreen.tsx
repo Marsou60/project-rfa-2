@@ -11,6 +11,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
 import { MenuGrid, MenuItem } from '../components/MenuGrid';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { RankKind } from './RankDetailScreen';
 import { colors, spacing } from '../theme';
 import { fmtEuro } from '../utils/format';
@@ -50,13 +51,6 @@ export function AnalysesScreen() {
     navigation.navigate('RankDetail', { title, kind, rows, subtitle });
 
   const explorer: MenuItem[] = [
-    {
-      key: 'clients',
-      icon: 'people-outline',
-      label: 'Adhérents',
-      sub: countLabel(clients.length, 'client'),
-      onPress: () => navigation.navigate('Adherents'),
-    },
     {
       key: 'groupes',
       icon: 'git-network-outline',
@@ -220,12 +214,14 @@ export function AnalysesScreen() {
         <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.orange} />
       }
     >
-      <Text style={styles.title}>Analyses</Text>
-      <Text style={styles.subtitle}>
-        {isNetworkFullAccess
-          ? 'Toutes les dimensions du réseau, sans plafond : chaque menu ouvre la liste complète, puis la fiche RFA.'
-          : `Analyses de votre portefeuille${commercialScope ? ` (${commercialScope})` : ''} uniquement.`}
-      </Text>
+      <ScreenHeader
+        title="Analyses"
+        subtitle={
+          isNetworkFullAccess
+            ? 'Chaque menu ouvre la liste complète, puis la fiche RFA.'
+            : `Votre portefeuille${commercialScope ? ` (${commercialScope})` : ''} uniquement.`
+        }
+      />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && !dash ? <ActivityIndicator color={colors.orange} style={{ marginTop: 20 }} /> : null}
@@ -233,16 +229,16 @@ export function AnalysesScreen() {
       {dash ? (
         <>
           <View style={styles.summary}>
+            <Text style={styles.summaryKicker}>{fmtEuro(dash.kpis?.ca_ytd)}</Text>
             <Text style={styles.summaryText}>
-              {clients.length} adhérents · {marques.length} marques · {groupes.length} groupes ·{' '}
-              {fmtEuro(dash.kpis?.ca_ytd)} de CA cumulé
+              {clients.length} adhérents · {marques.length} marques · {groupes.length} groupes
             </Text>
           </View>
 
-          <Text style={styles.section}>EXPLORER</Text>
+          <Text style={styles.section}>Explorer</Text>
           <MenuGrid items={explorer} />
 
-          <Text style={styles.section}>PROGRESSION & POTENTIEL</Text>
+          <Text style={styles.section}>Progression et potentiel</Text>
           <MenuGrid items={progression} columns={2} />
         </>
       ) : null}
@@ -252,23 +248,20 @@ export function AnalysesScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: 12, paddingBottom: 48 },
-  title: { color: colors.white, fontSize: 26, fontWeight: '800' },
-  subtitle: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  content: { paddingHorizontal: spacing.lg, gap: 12, paddingBottom: 48 },
   error: { color: colors.red },
   summary: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
+    backgroundColor: colors.orange,
+    borderRadius: 20,
+    padding: spacing.lg,
+    gap: 4,
   },
-  summaryText: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  summaryKicker: { color: colors.white, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 },
+  summaryText: { color: 'rgba(255,255,255,0.92)', fontSize: 15, lineHeight: 22 },
   section: {
-    color: colors.muted2,
-    fontSize: 12,
+    color: colors.white,
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: 1,
-    marginTop: 6,
+    marginTop: 8,
   },
 });

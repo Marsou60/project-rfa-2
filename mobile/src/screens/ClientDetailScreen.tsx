@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import {
@@ -25,6 +26,8 @@ import { Icon, IconName } from '../components/Icon';
 import { RfaPanel } from '../components/RfaPanel';
 import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
+import { describeCotisation } from '../utils/cotisationStatus';
+import { downloadBlob } from '../utils/downloadBlob';
 
 type TabId = 'rfa' | 'marques' | 'familles' | 'contrat';
 
@@ -33,6 +36,7 @@ type Props = {
   groupeClient?: string | null;
   label?: string;
   initialTab?: TabId;
+  bleedStatusBar?: boolean;
 };
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
@@ -74,6 +78,7 @@ export function ClientDetailScreen({
   groupeClient,
   label,
   initialTab = 'rfa',
+  bleedStatusBar = false,
 }: Props) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [dash, setDash] = useState<ClientDashboardResponse | null>(null);
@@ -82,6 +87,7 @@ export function ClientDetailScreen({
   const [loading, setLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
 
   const entityId = (codeUnion || groupeClient || '').toString();
   const mode: 'client' | 'group' = codeUnion ? 'client' : 'group';
@@ -136,6 +142,7 @@ export function ClientDetailScreen({
   const title = label || dash?.entity_label || rfa?.label || codeUnion || groupeClient || 'Détail';
   const contract = rfa?.contract_applied;
   const level = rfa?.contract_level;
+  const cotis = describeCotisation(rfa?.cotisation);
 
   const openPdf = async () => {
     if (!pdfMeta?.available) return;
@@ -147,6 +154,7 @@ export function ClientDetailScreen({
         id: entityId,
         groupeClient: codeUnion ? null : groupeClient,
       });
+      if (downloadBlob(data, filename)) return;
       const dir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
       if (!dir) throw new Error('Stockage local indisponible');
       const path = `${dir}${filename}`;
@@ -172,11 +180,18 @@ export function ClientDetailScreen({
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
-        <Text style={styles.kicker}>{codeUnion || groupeClient}</Text>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: bleedStatusBar ? Math.max(insets.top, 12) : spacing.md },
+        ]}
+      >
         <Text style={styles.title} numberOfLines={2}>
           {title}
         </Text>
+        {codeUnion || groupeClient ? (
+          <Text style={styles.codeLine}>{codeUnion || groupeClient}</Text>
+        ) : null}
       </View>
 
       <View style={styles.tabs}>
@@ -185,8 +200,11 @@ export function ClientDetailScreen({
             key={t.id}
             style={[styles.tab, tab === t.id && styles.tabActive]}
             onPress={() => setTab(t.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: tab === t.id }}
+            accessibilityLabel={t.label}
           >
-            <Icon name={t.icon} size={14} color={tab === t.id ? colors.white : colors.muted} />
+            <Icon name={t.icon} size={18} color={tab === t.id ? colors.white : colors.muted} />
             <Text style={[styles.tabText, tab === t.id && styles.tabTextActive]}>{t.label}</Text>
           </Pressable>
         ))}
@@ -246,7 +264,7 @@ export function ClientDetailScreen({
 
           {tab === 'contrat' && (
             <View style={styles.contractCard}>
-              <Text style={styles.section}>CONTRAT APPLIQUÉ (RFA 2026)</Text>
+              <Text style={styles.section}>Contrat appliqué · 2026</Text>
               {!rfa?.available ? (
                 <Text style={styles.muted}>
                   {rfa?.message || 'Contrat indisponible sans données RFA.'}
@@ -263,28 +281,31 @@ export function ClientDetailScreen({
                       ? 'activées'
                       : 'selon barème / niveau'}
                   </Text>
-                  {rfa.cotisation?.amount ? (
+                  {cotis ? (
                     <Text style={styles.meta}>
-                      Cotisation : {fmtEuro(rfa.cotisation.amount)}
-                      {rfa.cotisation.deducted
-                        ? ` (déduite ${fmtEuro(rfa.cotisation.deducted)})`
-                        : ''}
+                      Cotisation {fmtEuro(cotis.amount)} · {cotis.badge}
                     </Text>
                   ) : null}
                   <Text style={styles.meta}>
-                    RFA nette : {fmtEuro(rfa.rfa_net ?? rfa.rfa?.totals?.grand_total)}
+                    RFA nette à date : {fmtEuro(rfa.rfa_net ?? rfa.rfa?.totals?.grand_total)}
                   </Text>
                 </>
               )}
 
               <View style={styles.pdfBox}>
-                <Text style={styles.section}>PDF CONTRAT / ANNEXE</Text>
+                <Text style={styles.section}>PDF contrat</Text>
                 {pdfMeta?.available ? (
                   <>
                     <Text style={styles.meta}>{pdfMeta.label || 'Document disponible'}</Text>
-                    <Pressable style={styles.pdfBtn} onPress={openPdf} disabled={pdfBusy}>
+                    <Pressable
+                      style={styles.pdfBtn}
+                      onPress={openPdf}
+                      disabled={pdfBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Ouvrir le PDF du contrat"
+                    >
                       {pdfBusy ? (
-                        <ActivityIndicator color="#fff" />
+                        <ActivityIndicator color={colors.white} />
                       ) : (
                         <Text style={styles.pdfBtnText}>Ouvrir / partager le PDF</Text>
                       )}
@@ -306,30 +327,33 @@ export function ClientDetailScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 8 },
-  kicker: { color: colors.orange, fontWeight: '800', fontSize: 12, letterSpacing: 0.5 },
-  title: { color: colors.white, fontSize: 22, fontWeight: '800', marginTop: 2 },
+  header: { paddingHorizontal: spacing.lg, paddingBottom: 10, gap: 4 },
+  title: { color: colors.white, fontSize: 26, fontWeight: '800', letterSpacing: -0.4, lineHeight: 32 },
+  codeLine: { color: colors.muted, fontSize: 15, fontWeight: '600' },
   tabs: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     marginHorizontal: spacing.lg,
-    marginBottom: 8,
-    backgroundColor: colors.bgElevated,
+    marginBottom: 10,
+    gap: 8,
+  },
+  tab: {
+    width: '48%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minHeight: 48,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     borderRadius: 12,
-    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 4,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabActive: { backgroundColor: colors.orange },
-  tabText: { color: colors.muted, fontWeight: '700', fontSize: 11.5 },
+  tabActive: { backgroundColor: colors.orange, borderColor: colors.orange },
+  tabText: { color: colors.muted, fontWeight: '800', fontSize: 14 },
   tabTextActive: { color: colors.white },
   scroll: { padding: spacing.lg, gap: 12, paddingBottom: 40 },
   error: { color: colors.red, paddingHorizontal: spacing.lg, marginBottom: 6 },
@@ -342,7 +366,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  kpiLabel: { color: colors.muted2, fontSize: 11, fontWeight: '700' },
+  kpiLabel: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   kpiValue: { color: colors.white, fontSize: 18, fontWeight: '800', marginTop: 4 },
   hint: { color: colors.muted, fontSize: 12 },
   muted: { color: colors.muted },
@@ -354,7 +378,7 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
     gap: 8,
   },
-  section: { color: colors.muted2, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  section: { color: colors.white, fontSize: 16, fontWeight: '800' },
   contractName: { color: colors.white, fontSize: 20, fontWeight: '800' },
   meta: { color: colors.muted, fontSize: 14 },
   pdfBox: {
@@ -367,8 +391,10 @@ const styles = StyleSheet.create({
   pdfBtn: {
     backgroundColor: colors.orange,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    minHeight: 48,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  pdfBtnText: { color: '#fff', fontWeight: '800' },
+  pdfBtnText: { color: colors.white, fontWeight: '800' },
 });

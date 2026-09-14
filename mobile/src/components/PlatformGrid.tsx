@@ -18,7 +18,7 @@ type Props = {
   logos?: Record<string, string>;
 };
 
-export function PlatformGrid({ title = 'RÉPARTITION PAR PLATEFORME', items, logos = {} }: Props) {
+export function PlatformGrid({ title = 'Répartition par plateforme', items, logos = {} }: Props) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.section}>{title}</Text>
@@ -50,10 +50,9 @@ export function PlatformGrid({ title = 'RÉPARTITION PAR PLATEFORME', items, log
 const styles = StyleSheet.create({
   wrap: { gap: 10 },
   section: {
-    color: colors.muted2,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
+    color: colors.white,
+    fontSize: 17,
+    fontWeight: '800',
   },
   grid: {
     flexDirection: 'row',

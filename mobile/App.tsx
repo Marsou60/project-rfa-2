@@ -40,6 +40,9 @@ class ErrorBoundary extends Component<{ children: ReactNode }, BoundaryState> {
         <View style={styles.boot}>
           <Text style={styles.errTitle}>Erreur au démarrage</Text>
           <Text style={styles.errBody}>{this.state.error.message}</Text>
+          <Text style={styles.errRetry} onPress={() => this.setState({ error: null })}>
+            Réessayer
+          </Text>
         </View>
       );
     }
@@ -72,4 +75,5 @@ const styles = StyleSheet.create({
   },
   errTitle: { color: colors.orange, fontWeight: '800', fontSize: 18, marginBottom: 8 },
   errBody: { color: colors.white, textAlign: 'center', lineHeight: 20 },
+  errRetry: { color: colors.orange, fontWeight: '800', marginTop: 16, fontSize: 16 },
 });

@@ -1,0 +1,26 @@
+{
+  "name": "RFA Union",
+  "short_name": "RFA Union",
+  "description": "Consultation RFA Groupement Union — mêmes écrans que l’app Android",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B1F3A",
+  "theme_color": "#0B1F3A",
+  "icons": [
+    {
+      "src": "/logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}

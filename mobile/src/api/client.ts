@@ -1,5 +1,6 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import { storageDelete, storageGet, storageSet } from '../utils/storage';
 
 const TOKEN_KEY = 'rfa_auth_token';
 const USER_KEY = 'rfa_auth_user';
@@ -16,14 +17,15 @@ export type AuthUser = {
   [key: string]: unknown;
 };
 
+const PRODUCTION_API = 'https://project-rfa-2-production.up.railway.app';
+
 function getApiRoot(): string {
   const base = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '');
-  if (!base) {
-    throw new Error(
-      'EXPO_PUBLIC_API_URL manquant. Copie mobile/.env.example vers mobile/.env et renseigne l’URL Railway.',
-    );
-  }
-  return `${base}/api`;
+  if (base) return `${base}/api`;
+  if (Platform.OS === 'web') return `${PRODUCTION_API}/api`;
+  throw new Error(
+    'EXPO_PUBLIC_API_URL manquant. Copie mobile/.env.example vers mobile/.env et renseigne l’URL Railway.',
+  );
 }
 
 export const api = axios.create({
@@ -33,7 +35,7 @@ export const api = axios.create({
 
 api.interceptors.request.use(async (config) => {
   config.baseURL = getApiRoot();
-  const token = await SecureStore.getItemAsync(TOKEN_KEY);
+  const token = await storageGet(TOKEN_KEY);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -47,7 +49,7 @@ export async function login(username: string, password: string) {
   if (!token) {
     throw new Error('Réponse login sans token');
   }
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
+  await storageSet(TOKEN_KEY, token);
   const user: AuthUser = data.user || {
     id: data.user_id,
     username: data.username,
@@ -59,7 +61,7 @@ export async function login(username: string, password: string) {
     network_full_access: data.network_full_access,
     commercial_scope: data.commercial_scope,
   };
-  await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+  await storageSet(USER_KEY, JSON.stringify(user));
   return { token, user };
 }
 
@@ -70,8 +72,8 @@ export async function getMe(token?: string): Promise<AuthUser> {
 }
 
 export async function loadStoredSession(): Promise<{ token: string; user: AuthUser } | null> {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY);
-  const raw = await SecureStore.getItemAsync(USER_KEY);
+  const token = await storageGet(TOKEN_KEY);
+  const raw = await storageGet(USER_KEY);
   if (!token || !raw) return null;
   try {
     return { token, user: JSON.parse(raw) as AuthUser };
@@ -81,8 +83,8 @@ export async function loadStoredSession(): Promise<{ token: string; user: AuthUs
 }
 
 export async function logout() {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
-  await SecureStore.deleteItemAsync(USER_KEY);
+  await storageDelete(TOKEN_KEY);
+  await storageDelete(USER_KEY);
 }
 
 export function isUnionRole(role?: string | null): boolean {

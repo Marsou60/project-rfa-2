@@ -14,6 +14,7 @@ import { NetworkClientRow } from '../api/consultation';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
 import { Icon } from '../components/Icon';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
 
@@ -86,19 +87,24 @@ export function ClientsScreen() {
 
   return (
     <View style={styles.root}>
-      <Text style={styles.title}>{mode === 'clients' ? 'Adhérents' : 'Groupes'}</Text>
-      <Text style={styles.subtitle}>
-        {mode === 'clients'
-          ? `${rows.length} adhérents${
-              !isNetworkFullAccess && commercialScope ? ` · portefeuille ${commercialScope}` : ''
-            } · tri ${sort === 'ca' ? 'par CA' : 'alphabétique'}`
-          : `${groupes.length} groupes · RFA / marques / contrat`}
-      </Text>
+      <ScreenHeader
+        title={mode === 'clients' ? 'Adhérents' : 'Groupes'}
+        subtitle={
+          mode === 'clients'
+            ? `${rows.length} adhérents${
+                !isNetworkFullAccess && commercialScope ? ` · portefeuille ${commercialScope}` : ''
+              } · tri ${sort === 'ca' ? 'par CA' : 'A → Z'}`
+            : `${groupes.length} groupes · RFA, marques, contrat`
+        }
+      />
 
       <View style={styles.modeToggle}>
         <Pressable
           style={[styles.modePill, mode === 'clients' && styles.modePillActive]}
           onPress={() => setMode('clients')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mode === 'clients' }}
+          accessibilityLabel={`Adhérents, ${rows.length}`}
         >
           <Text style={mode === 'clients' ? styles.modeTextActive : styles.modeText}>
             Adhérents ({rows.length})
@@ -107,6 +113,9 @@ export function ClientsScreen() {
         <Pressable
           style={[styles.modePill, mode === 'groupes' && styles.modePillActive]}
           onPress={() => setMode('groupes')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: mode === 'groupes' }}
+          accessibilityLabel={`Groupes, ${groupes.length}`}
         >
           <Text style={mode === 'groupes' ? styles.modeTextActive : styles.modeText}>
             Groupes ({groupes.length})
@@ -118,6 +127,9 @@ export function ClientsScreen() {
         <Pressable
           style={[styles.sortChip, sort === 'ca' && styles.sortChipActive]}
           onPress={() => setSort('ca')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: sort === 'ca' }}
+          accessibilityLabel="Trier par chiffre d’affaires"
         >
           <Icon name="podium-outline" size={13} color={sort === 'ca' ? colors.orange : colors.muted} />
           <Text style={sort === 'ca' ? styles.sortTextActive : styles.sortText}>CA décroissant</Text>
@@ -125,6 +137,9 @@ export function ClientsScreen() {
         <Pressable
           style={[styles.sortChip, sort === 'alpha' && styles.sortChipActive]}
           onPress={() => setSort('alpha')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: sort === 'alpha' }}
+          accessibilityLabel="Trier de A à Z"
         >
           <Icon name="text-outline" size={13} color={sort === 'alpha' ? colors.orange : colors.muted} />
           <Text style={sort === 'alpha' ? styles.sortTextActive : styles.sortText}>A → Z</Text>
@@ -138,7 +153,8 @@ export function ClientsScreen() {
             ? 'Rechercher ou saisir un code (ex. M0024)'
             : 'Rechercher un groupe (ex. CODIFA)'
         }
-        placeholderTextColor={colors.muted2}
+        placeholderTextColor={colors.muted}
+        accessibilityLabel={mode === 'clients' ? 'Rechercher un adhérent' : 'Rechercher un groupe'}
         value={query}
         onChangeText={setQuery}
         autoCapitalize="characters"
@@ -148,7 +164,12 @@ export function ClientsScreen() {
       />
 
       {query.trim() ? (
-        <Pressable style={styles.openDirect} onPress={openTyped}>
+        <Pressable
+          style={styles.openDirect}
+          onPress={openTyped}
+          accessibilityRole="button"
+          accessibilityLabel={`Ouvrir ${query.trim().toUpperCase()}`}
+        >
           <Text style={styles.openDirectText}>
             Ouvrir {mode === 'clients' ? 'RFA de' : 'groupe'} {query.trim().toUpperCase()}
           </Text>
@@ -173,6 +194,8 @@ export function ClientsScreen() {
             <Pressable
               style={styles.row}
               onPress={() => openClient(item.code_union, item.raison_sociale || item.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.raison_sociale || item.key}, ${item.code_union}`}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowCode}>{item.code_union}</Text>
@@ -204,7 +227,12 @@ export function ClientsScreen() {
             !loading ? <Text style={styles.empty}>Aucun groupe dans la liste filtrée.</Text> : null
           }
           renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => openGroupe(item.key)}>
+            <Pressable
+              style={styles.row}
+              onPress={() => openGroupe(item.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`Groupe ${item.key}`}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowCode}>GROUPE</Text>
                 <Text style={styles.rowName} numberOfLines={1}>
@@ -231,9 +259,7 @@ export function ClientsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-  title: { fontSize: 26, fontWeight: '800', color: colors.white },
-  subtitle: { color: colors.muted, marginBottom: 12 },
+  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
   modeToggle: {
     flexDirection: 'row',
     backgroundColor: colors.bgElevated,
@@ -243,7 +269,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  modePill: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  modePill: { flex: 1, paddingVertical: 12, minHeight: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   modePillActive: { backgroundColor: colors.orange },
   modeText: { color: colors.muted, fontWeight: '700' },
   modeTextActive: { color: colors.white, fontWeight: '800' },
@@ -253,34 +279,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 12,
+    minHeight: 48,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.cardBorder,
     backgroundColor: colors.bgElevated,
   },
   sortChipActive: { borderColor: colors.orange, backgroundColor: colors.orangeMuted },
-  sortText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
-  sortTextActive: { color: colors.white, fontSize: 12, fontWeight: '800' },
+  sortText: { color: colors.muted, fontSize: 13, fontWeight: '700' },
+  sortTextActive: { color: colors.white, fontSize: 13, fontWeight: '800' },
   search: {
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.cardBorder,
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
+    paddingVertical: 14,
     color: colors.white,
     marginBottom: 10,
   },
   openDirect: {
     backgroundColor: colors.orange,
     borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
+    paddingVertical: 14,
+    minHeight: 48,
     marginBottom: 10,
   },
-  openDirectText: { color: '#fff', fontWeight: '800' },
+  openDirectText: { color: colors.white, fontWeight: '800' },
   error: { color: colors.red, marginBottom: 8 },
   empty: { color: colors.muted, textAlign: 'center', marginTop: 24 },
   row: {
@@ -289,6 +315,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: 14,
     padding: 14,
+    minHeight: 56,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: colors.cardBorder,

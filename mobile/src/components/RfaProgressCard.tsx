@@ -115,7 +115,7 @@ export function RfaProgressCard({
           ) : null}
         </Text>
         <Text style={[styles.rfaAmt, (prog.currentValue || 0) <= 0 && { color: colors.muted }]}>
-          {locked && !projectedUnlock ? '0 € à date' : `${fmtEuro(prog.currentValue)} RFA`}
+          {locked && !projectedUnlock ? '0 € à date' : `${fmtEuro(prog.currentValue)} à date`}
         </Text>
       </View>
 
@@ -143,9 +143,9 @@ export function RfaProgressCard({
 
       {proj && (proj.value != null || proj.ca) ? (
         <View style={styles.projBox}>
-          <Text style={styles.projTitle}>Projection fin d’année</Text>
+          <Text style={styles.projTitle}>RFA estimée au 31 décembre</Text>
           <Text style={styles.projLine}>
-            CA {fmtEuro(proj.ca)} · {fmtPct(proj.rate)} · RFA {fmtEuro(proj.value)}
+            CA {fmtEuro(proj.ca)} · {fmtPct(proj.rate)} · {fmtEuro(proj.value)}
           </Text>
         </View>
       ) : null}

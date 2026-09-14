@@ -31,6 +31,7 @@ export function AdherentRfaScreen() {
         groupeClient={code ? null : groupe}
         label={user?.display_name || code || groupe || undefined}
         initialTab={route.params?.initialTab || 'rfa'}
+        bleedStatusBar
       />
     </View>
   );

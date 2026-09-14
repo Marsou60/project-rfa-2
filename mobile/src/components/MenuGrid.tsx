@@ -23,7 +23,7 @@ const TONE_COLOR: Record<NonNullable<MenuItem['tone']>, string> = {
   success: colors.green,
 };
 
-export function MenuGrid({ items, columns = 3 }: Props) {
+export function MenuGrid({ items, columns = 2 }: Props) {
   const basis = columns === 2 ? '48%' : '31%';
   return (
     <View style={styles.grid}>
@@ -33,6 +33,8 @@ export function MenuGrid({ items, columns = 3 }: Props) {
           <Pressable
             key={item.key}
             onPress={item.onPress}
+            accessibilityRole="button"
+            accessibilityLabel={item.sub ? `${item.label}, ${item.sub}` : item.label}
             style={({ pressed }) => [styles.tile, { flexBasis: basis }, pressed && styles.tilePressed]}
           >
             <View style={[styles.iconWrap, { backgroundColor: `${tint}22`, borderColor: `${tint}55` }]}>
@@ -57,24 +59,25 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: {
     flexGrow: 1,
+    minHeight: 48,
     backgroundColor: colors.card,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   tilePressed: { borderColor: colors.orange, opacity: 0.85 },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  label: { color: colors.white, fontWeight: '700', fontSize: 12, textAlign: 'center' },
-  sub: { color: colors.muted2, fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  label: { color: colors.white, fontWeight: '800', fontSize: 14, textAlign: 'center', lineHeight: 18 },
+  sub: { color: colors.muted, fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
 });

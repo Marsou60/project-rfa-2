@@ -2,7 +2,7 @@
   "expo": {
     "name": "RFA Union",
     "slug": "rfa-union",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.groupement.rfa.mobile",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#0B1F3A",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,7 +27,17 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "RFA Union",
+      "shortName": "RFA Union",
+      "description": "Consultation RFA Groupement Union",
+      "themeColor": "#0B1F3A",
+      "backgroundColor": "#0B1F3A",
+      "display": "standalone",
+      "orientation": "portrait",
+      "lang": "fr"
     },
     "plugins": [
       "expo-secure-store",

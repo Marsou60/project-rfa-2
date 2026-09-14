@@ -9,6 +9,9 @@ import { useNetworkDashboard } from '../api/networkStore';
 import { Icon, IconName } from '../components/Icon';
 import { colors } from '../theme';
 import { LoginScreen } from '../screens/LoginScreen';
+import { VitrineHomeScreen } from '../screens/VitrineHomeScreen';
+import { VitrineNetworkScreen } from '../screens/VitrineNetworkScreen';
+import { VitrineContactScreen } from '../screens/VitrineContactScreen';
 import { AccountScreen } from '../screens/AccountScreen';
 import { UnionHomeScreen } from '../screens/UnionHomeScreen';
 import { ClientsScreen } from '../screens/ClientsScreen';
@@ -45,22 +48,78 @@ function useTabScreenOptions() {
     headerTintColor: colors.white,
     headerShadowVisible: false,
     tabBarStyle: {
-      backgroundColor: colors.bgElevated,
-      borderTopColor: colors.cardBorder,
-      height: 54 + bottomPad,
-      paddingTop: 6,
+      backgroundColor: colors.bg,
+      borderTopColor: colors.orange,
+      borderTopWidth: 1,
+      height: 62 + bottomPad,
+      paddingTop: 8,
       paddingBottom: bottomPad,
     },
     tabBarActiveTintColor: colors.orange,
-    tabBarInactiveTintColor: colors.muted2,
-    tabBarLabelStyle: { fontSize: 10.5, fontWeight: '700' as const },
+    tabBarInactiveTintColor: colors.muted,
+    tabBarLabelStyle: { fontSize: 12, fontWeight: '800' as const },
     tabBarBadgeStyle: { backgroundColor: colors.red, fontSize: 10, color: colors.white },
   } as const;
 }
 
 function tabIcon(active: IconName, inactive: IconName) {
   return ({ focused, color }: { focused: boolean; color: string }) => (
-    <Icon name={focused ? active : inactive} size={22} color={color} />
+    <Icon name={focused ? active : inactive} size={24} color={color} />
+  );
+}
+
+const detailScreenOptions = {
+  headerStyle: { backgroundColor: colors.bgElevated },
+  headerTintColor: colors.white,
+  headerShadowVisible: false,
+};
+
+function PublicTabs() {
+  const screenOptions = useTabScreenOptions();
+
+  return (
+    <Tab.Navigator screenOptions={screenOptions}>
+      <Tab.Screen
+        name="Accueil"
+        component={VitrineHomeScreen}
+        options={{
+          headerShown: false,
+          tabBarLabel: 'Accueil',
+          tabBarIcon: tabIcon('home', 'home-outline'),
+        }}
+      />
+      <Tab.Screen
+        name="Reseau"
+        component={VitrineNetworkScreen}
+        options={{
+          headerShown: false,
+          tabBarLabel: 'Réseau',
+          tabBarIcon: tabIcon('grid', 'grid-outline'),
+        }}
+      />
+      <Tab.Screen
+        name="Rejoindre"
+        component={VitrineContactScreen}
+        options={{
+          headerShown: false,
+          tabBarLabel: 'Rejoindre',
+          tabBarIcon: tabIcon('mail', 'mail-outline'),
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
+
+function PublicStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="PublicTabs" component={PublicTabs} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="Connexion"
+        component={LoginScreen}
+        options={{ headerShown: false }}
+      />
+    </Stack.Navigator>
   );
 }
 
@@ -75,7 +134,7 @@ function UnionTabs() {
         name="Accueil"
         component={UnionHomeScreen}
         options={{
-          title: 'Union',
+          headerShown: false,
           tabBarLabel: 'Accueil',
           tabBarIcon: tabIcon('home', 'home-outline'),
         }}
@@ -84,7 +143,7 @@ function UnionTabs() {
         name="Adherents"
         component={ClientsScreen}
         options={{
-          title: 'Adhérents',
+          headerShown: false,
           tabBarLabel: 'Adhérents',
           tabBarIcon: tabIcon('people', 'people-outline'),
         }}
@@ -93,7 +152,7 @@ function UnionTabs() {
         name="Analyses"
         component={AnalysesScreen}
         options={{
-          title: 'Analyses',
+          headerShown: false,
           tabBarLabel: 'Analyses',
           tabBarIcon: tabIcon('stats-chart', 'stats-chart-outline'),
         }}
@@ -102,7 +161,7 @@ function UnionTabs() {
         name="Alertes"
         component={AlertsScreen}
         options={{
-          title: 'Alertes',
+          headerShown: false,
           tabBarLabel: 'Alertes',
           tabBarBadge: nCrit ? nCrit : undefined,
           tabBarIcon: tabIcon('notifications', 'notifications-outline'),
@@ -112,6 +171,7 @@ function UnionTabs() {
         name="Compte"
         component={AccountScreen}
         options={{
+          headerShown: false,
           tabBarLabel: 'Compte',
           tabBarIcon: tabIcon('person-circle', 'person-circle-outline'),
         }}
@@ -129,7 +189,7 @@ function AdherentTabs() {
         name="Accueil"
         component={AdherentHomeScreen}
         options={{
-          title: 'Mon espace',
+          headerShown: false,
           tabBarLabel: 'Accueil',
           tabBarIcon: tabIcon('home', 'home-outline'),
         }}
@@ -138,7 +198,7 @@ function AdherentTabs() {
         name="RFA"
         component={AdherentRfaScreen}
         options={{
-          title: 'Ma RFA',
+          headerShown: false,
           tabBarLabel: 'Ma RFA',
           tabBarIcon: tabIcon('cash', 'cash-outline'),
         }}
@@ -147,6 +207,7 @@ function AdherentTabs() {
         name="Compte"
         component={AccountScreen}
         options={{
+          headerShown: false,
           tabBarLabel: 'Compte',
           tabBarIcon: tabIcon('person-circle', 'person-circle-outline'),
         }}
@@ -154,12 +215,6 @@ function AdherentTabs() {
     </Tab.Navigator>
   );
 }
-
-const detailScreenOptions = {
-  headerStyle: { backgroundColor: colors.bgElevated },
-  headerTintColor: colors.white,
-  headerShadowVisible: false,
-};
 
 function UnionStack() {
   return (
@@ -200,7 +255,13 @@ export function RootNavigator() {
       </View>
     );
   }
-  if (!user) return <LoginScreen />;
+  if (!user) {
+    return (
+      <NavigationContainer theme={navTheme}>
+        <PublicStack />
+      </NavigationContainer>
+    );
+  }
 
   return (
     <NavigationContainer theme={navTheme}>

@@ -47,6 +47,8 @@ mobile/dist/
 !mobile/tsconfig.json
 !mobile/app.json
 !mobile/eas.json
+!mobile/vercel.json
+!mobile/public/manifest.json
 
 # ── Tauri ─────────────────────────────────────────────────────
 frontend/src-tauri/target/

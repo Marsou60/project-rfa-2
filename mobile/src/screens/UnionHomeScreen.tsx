@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,17 +9,18 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NetworkClientRow } from '../api/consultation';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
 import { useSupplierLogos } from '../api/logos';
+import { BrandHero } from '../components/BrandHero';
 import { HeroCaCard } from '../components/HeroCaCard';
 import { Icon } from '../components/Icon';
-import { MenuGrid, MenuItem } from '../components/MenuGrid';
 import { PlatformGrid } from '../components/PlatformGrid';
 import { RankKind } from './RankDetailScreen';
 import { colors, spacing } from '../theme';
-import { fmtDeltaPct, fmtEuro, initials } from '../utils/format';
+import { fmtDeltaPct, fmtEuro } from '../utils/format';
 
 const MONTHS = [
   '',
@@ -54,7 +54,12 @@ function AlertPreview({
   const tagStyle =
     tone === 'red' ? styles.alertTagRed : tone === 'amber' ? styles.alertTagAmber : styles.alertTagGreen;
   return (
-    <Pressable style={styles.alertRow} onPress={onPress}>
+    <Pressable
+      style={styles.alertRow}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${tag} : ${title}`}
+    >
       <Text style={[styles.alertTag, tagStyle]}>{tag}</Text>
       <View style={{ flex: 1 }}>
         <Text style={styles.alertTitle} numberOfLines={1}>
@@ -74,6 +79,7 @@ export function UnionHomeScreen() {
   const navigation = useNavigation<any>();
   const { dash, loading, error, refresh } = useNetworkDashboard();
   const { logos } = useSupplierLogos();
+  const insets = useSafeAreaInsets();
 
   const kpis = dash?.kpis;
   const platforms = useMemo(
@@ -129,80 +135,6 @@ export function UnionHomeScreen() {
     return out;
   }, [alertes, thr]);
 
-  const shortcuts: MenuItem[] = [
-    {
-      key: 'adherents',
-      icon: 'people-outline',
-      label: 'Adhérents',
-      sub: `${(dash?.clients || []).length || '—'}`,
-      onPress: () => navigation.navigate('Adherents'),
-    },
-    {
-      key: 'groupes',
-      icon: 'git-network-outline',
-      label: 'Groupes',
-      sub: `${(dash?.groupes || []).length || '—'}`,
-      onPress: () =>
-        openRank(
-          'Tous les groupes',
-          'groupes',
-          dash?.groupes || [],
-          'Tous les groupes Pure Data. Tapez pour ouvrir la fiche RFA / contrat.',
-        ),
-    },
-    {
-      key: 'marques',
-      icon: 'pricetags-outline',
-      label: 'Marques',
-      sub: `${(dash?.marques || []).length || '—'}`,
-      onPress: () =>
-        openRank(
-          'Toutes les marques',
-          'marques',
-          dash?.marques || dash?.top_marques || [],
-          'Toutes les marques du réseau. Tapez une marque pour voir les clients acheteurs.',
-        ),
-    },
-    ...(isNetworkFullAccess
-      ? ([
-          {
-            key: 'commerciaux',
-            icon: 'briefcase-outline',
-            label: 'Commerciaux',
-            sub: `${(dash?.commerciaux || []).length || '—'}`,
-            onPress: () =>
-              openRank(
-                'Tous les commerciaux',
-                'commerciaux',
-                dash?.commerciaux || [],
-                'Tapez un commercial pour voir son portefeuille complet.',
-              ),
-          },
-        ] as MenuItem[])
-      : []),
-    {
-      key: 'regions',
-      icon: 'map-outline',
-      label: 'Régions',
-      sub: `${(dash?.regions || []).length || '—'}`,
-      onPress: () =>
-        openRank(
-          'Toutes les régions',
-          'regions',
-          dash?.regions || [],
-          'Tapez une région pour voir tous ses clients.',
-        ),
-    },
-    {
-      key: 'alertes',
-      icon: 'notifications-outline',
-      label: 'Alertes',
-      sub: nCrit ? `${nCrit} critiques` : 'Dans les seuils',
-      tone: nCrit ? 'danger' : 'success',
-      onPress: () => navigation.navigate('Alertes'),
-    },
-  ];
-
   const displayName = user?.display_name || user?.username || 'Union';
 
   return (
@@ -213,25 +145,19 @@ export function UnionHomeScreen() {
         <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.orange} />
       }
     >
-      <View style={styles.headerRow}>
-        <Image source={require('../../assets/union-mark.png')} style={styles.brandMark} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.hello}>BONJOUR</Text>
+      <BrandHero source={require('../../assets/vitrine/convention.jpeg')}>
+        <View style={{ paddingTop: Math.max(insets.top, 12) }}>
+          <Text style={styles.hello}>Bonjour</Text>
           <Text style={styles.name}>{displayName}</Text>
+          <Text style={styles.bannerText}>
+            {isNetworkFullAccess
+              ? 'Pilotage réseau · lecture seule'
+              : `Portefeuille ${commercialScope || ''} · vos alertes`}
+          </Text>
         </View>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials(displayName)}</Text>
-        </View>
-      </View>
+      </BrandHero>
 
-      <View style={styles.banner}>
-        <Text style={styles.bannerText}>
-          {isNetworkFullAccess
-            ? 'Connecté en Union — pilotage réseau complet (lecture seule).'
-            : `Portefeuille ${commercialScope || 'commercial'} — vos clients, vos alertes uniquement.`}
-        </Text>
-      </View>
-
+      <View style={styles.body}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading && !dash ? <ActivityIndicator color={colors.orange} style={{ marginVertical: 20 }} /> : null}
 
@@ -250,6 +176,7 @@ export function UnionHomeScreen() {
                 : `${kpis.nb_clients || 0} clients de votre portefeuille`
             }
             deltaPct={kpis.delta_pct}
+            deltaLabel="CA vs 2025 · même période"
             leftLabel="Projection"
             leftValue={fmtEuro(kpis.projection || 0)}
             rightLabel={isNetworkFullAccess ? 'Avancement' : 'vs N-1'}
@@ -262,8 +189,35 @@ export function UnionHomeScreen() {
             }
           />
 
-          <Text style={styles.section}>ACCÈS RAPIDE</Text>
-          <MenuGrid items={shortcuts} />
+          {preview.length ? (
+            <View style={styles.block}>
+              <Pressable
+                style={styles.sectionRow}
+                onPress={() => navigation.navigate('Alertes')}
+                accessibilityRole="button"
+                accessibilityLabel="Voir toutes les alertes"
+              >
+                <Text style={styles.section}>
+                  {nCrit ? `${nCrit} alerte${nCrit > 1 ? 's' : ''} à traiter` : 'Alertes du réseau'}
+                </Text>
+                <Text style={styles.seeAll}>Tout voir ›</Text>
+              </Pressable>
+              <Text style={styles.alertIntro}>
+                Seuil de baisse : {thr} %. Les décrochages récents comparent les 2 derniers mois
+                facturés{recentMonthsLabel ? ` (${recentMonthsLabel})` : ''} à la même période N-1.
+              </Text>
+              {preview.slice(0, 3).map((p, i) => (
+                <AlertPreview
+                  key={`${p.tag}-${p.row.code_union}-${i}`}
+                  tag={p.tag}
+                  tone={p.tone}
+                  title={p.row.raison_sociale || p.row.code_union}
+                  detail={p.detail}
+                  onPress={() => openClient(p.row.code_union, p.row.raison_sociale)}
+                />
+              ))}
+            </View>
+          ) : null}
 
           <View style={styles.kpiStrip}>
             <View style={styles.kpiChip}>
@@ -287,30 +241,7 @@ export function UnionHomeScreen() {
             </Text>
           ) : null}
 
-          <PlatformGrid items={platforms} title="CA PAR PLATEFORME" logos={logos} />
-
-          {preview.length ? (
-            <View style={styles.block}>
-              <Pressable style={styles.sectionRow} onPress={() => navigation.navigate('Alertes')}>
-                <Text style={styles.section}>ALERTES PRIORITAIRES</Text>
-                <Text style={styles.seeAll}>Tout voir ›</Text>
-              </Pressable>
-              <Text style={styles.alertIntro}>
-                Seuil de baisse : {thr} %. Les décrochages récents comparent les 2 derniers mois
-                facturés{recentMonthsLabel ? ` (${recentMonthsLabel})` : ''} à la même période N-1.
-              </Text>
-              {preview.map((p, i) => (
-                <AlertPreview
-                  key={`${p.tag}-${p.row.code_union}-${i}`}
-                  tag={p.tag}
-                  tone={p.tone}
-                  title={p.row.raison_sociale || p.row.code_union}
-                  detail={p.detail}
-                  onPress={() => openClient(p.row.code_union, p.row.raison_sociale)}
-                />
-              ))}
-            </View>
-          ) : null}
+          <PlatformGrid items={platforms} title="CA par plateforme" logos={logos} />
 
           <View style={styles.block}>
             <Pressable
@@ -324,10 +255,10 @@ export function UnionHomeScreen() {
                 )
               }
             >
-              <Text style={styles.section}>TOP ADHÉRENTS</Text>
+              <Text style={styles.section}>Top adhérents</Text>
               <Text style={styles.seeAll}>Tout voir ›</Text>
             </Pressable>
-            {(dash?.clients || []).slice(0, 5).map((c, idx) => (
+            {(dash?.clients || []).slice(0, 3).map((c, idx) => (
               <Pressable
                 key={`${c.code_union}-${idx}`}
                 style={styles.rankRow}
@@ -353,35 +284,18 @@ export function UnionHomeScreen() {
           </View>
         </>
       ) : null}
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: 12, paddingBottom: 48 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
-  brandMark: { width: 42, height: 42, borderRadius: 10 },
-  hello: { color: colors.muted, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
-  name: { color: colors.white, fontSize: 24, fontWeight: '800', marginTop: 2 },
-  banner: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-  },
-  bannerText: { color: colors.muted, fontSize: 13, lineHeight: 18 },
-  avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: colors.orange,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { color: colors.white, fontWeight: '800' },
+  content: { paddingBottom: 48 },
+  body: { paddingHorizontal: spacing.lg, gap: 12 },
+  hello: { color: 'rgba(248,250,252,0.8)', fontSize: 16, fontWeight: '600' },
+  name: { color: colors.white, fontSize: 32, fontWeight: '800', marginTop: 4, letterSpacing: -0.5, lineHeight: 38 },
+  bannerText: { color: 'rgba(248,250,252,0.82)', fontSize: 14, lineHeight: 20, marginTop: 8 },
   error: { color: colors.red },
   kpiStrip: { flexDirection: 'row', gap: 8 },
   kpiChip: {
@@ -392,18 +306,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  kpiChipLabel: { color: colors.muted2, fontSize: 11, fontWeight: '600' },
+  kpiChipLabel: { color: colors.muted, fontSize: 12, fontWeight: '600' },
   kpiChipValue: { color: colors.white, fontWeight: '800', fontSize: 15, marginTop: 4 },
   metaLine: { color: colors.muted, fontSize: 13 },
   block: { gap: 8 },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   section: {
-    color: colors.muted2,
-    fontSize: 12,
+    color: colors.white,
+    fontSize: 17,
     fontWeight: '800',
-    letterSpacing: 1,
   },
-  seeAll: { color: colors.orangeSoft, fontSize: 12, fontWeight: '800' },
+  seeAll: { color: colors.orangeSoft, fontSize: 14, fontWeight: '700' },
   rankRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -416,10 +329,10 @@ const styles = StyleSheet.create({
   },
   rankIdx: { color: colors.orange, fontWeight: '800', width: 18 },
   rankTitle: { color: colors.white, fontWeight: '700' },
-  rankSub: { color: colors.muted2, fontSize: 11, marginTop: 2 },
+  rankSub: { color: colors.muted, fontSize: 12, marginTop: 2 },
   rankCa: { color: colors.white, fontWeight: '700' },
-  rankDelta: { color: colors.green, fontSize: 11, marginTop: 2, fontWeight: '700' },
-  alertIntro: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  rankDelta: { color: colors.green, fontSize: 12, marginTop: 2, fontWeight: '700' },
+  alertIntro: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   alertRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -431,7 +344,7 @@ const styles = StyleSheet.create({
     borderColor: colors.cardBorder,
   },
   alertTag: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     paddingHorizontal: 8,
     paddingVertical: 4,

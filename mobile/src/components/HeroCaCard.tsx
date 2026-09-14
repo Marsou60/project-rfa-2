@@ -9,27 +9,32 @@ type Props = {
   ca: number;
   subtitle?: string;
   deltaPct?: number | null;
+  /** Caption after the % — must name CA vs même période, never a taux RFA. */
+  deltaLabel?: string;
   leftLabel?: string;
   leftValue?: string;
   rightLabel?: string;
   rightValue?: string;
   rfaEstimated?: number | null;
   avgRate?: number | null;
+  note?: string | null;
 };
 
 export function HeroCaCard({
-  title = 'Chiffre d’affaires RFA cumulé · 2026',
+  title = 'Chiffre d’affaires cumulé · 2026',
   ca,
   subtitle,
   deltaPct,
+  deltaLabel,
   leftLabel,
   leftValue,
   rightLabel,
   rightValue,
   rfaEstimated,
   avgRate,
+  note,
 }: Props) {
-  const leftL = leftLabel || 'RFA estimée';
+  const leftL = leftLabel || 'RFA à date';
   const leftV = leftValue || fmtEuro(rfaEstimated || 0);
   const rightL = rightLabel || 'Taux moyen';
   const rightV = rightValue || (avgRate != null ? fmtPct(avgRate) : '—');
@@ -47,7 +52,8 @@ export function HeroCaCard({
       {deltaPct != null ? (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>
-            {deltaPct >= 0 ? '▲' : '▼'} {fmtDeltaPct(deltaPct)} vs 2025
+            {deltaPct >= 0 ? '▲' : '▼'} {fmtDeltaPct(deltaPct)}{' '}
+            {deltaLabel || 'CA vs 2025 · même période'}
           </Text>
         </View>
       ) : null}
@@ -62,6 +68,7 @@ export function HeroCaCard({
           <Text style={styles.footerValue}>{rightV}</Text>
         </View>
       </View>
+      {note ? <Text style={styles.note}>{note}</Text> : null}
     </LinearGradient>
   );
 }
@@ -79,9 +86,9 @@ const styles = StyleSheet.create({
   },
   ca: {
     color: colors.white,
-    fontSize: 34,
+    fontSize: 44,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: -1,
     marginTop: 4,
   },
   subtitle: {
@@ -96,11 +103,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    maxWidth: '100%',
   },
   badgeText: {
     color: colors.white,
     fontWeight: '700',
     fontSize: 12,
+    lineHeight: 16,
   },
   footer: {
     marginTop: 16,
@@ -117,7 +126,13 @@ const styles = StyleSheet.create({
   },
   footerValue: {
     color: colors.white,
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
+  },
+  note: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 10,
   },
 });
