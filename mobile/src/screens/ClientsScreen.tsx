@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,10 +10,11 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { NetworkClientRow } from '../api/consultation';
+import { getImpayesFlags, ImpayeFlag, NetworkClientRow } from '../api/consultation';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
 import { Icon } from '../components/Icon';
+import { ImpayeListBadge } from '../components/ImpayesBanner';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
@@ -36,6 +37,21 @@ export function ClientsScreen() {
   const [sort, setSort] = useState<Sort>('ca');
   const [query, setQuery] = useState('');
   const { dash, loading, error, refresh } = useNetworkDashboard();
+  const [flags, setFlags] = useState<Record<string, ImpayeFlag>>({});
+
+  useEffect(() => {
+    let cancel = false;
+    getImpayesFlags()
+      .then((next) => {
+        if (!cancel) setFlags(next);
+      })
+      .catch(() => {
+        if (!cancel) setFlags({});
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   const rows = useMemo<NetworkClientRow[]>(() => dash?.clients || [], [dash]);
   const groupes = useMemo<GroupRow[]>(() => (dash?.groupes || []) as GroupRow[], [dash]);
@@ -202,6 +218,11 @@ export function ClientsScreen() {
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.raison_sociale || item.key}
                 </Text>
+                <ImpayeListBadge
+                  actifsNb={flags[(item.code_union || '').toUpperCase()]?.actifs_nb}
+                  amount={flags[(item.code_union || '').toUpperCase()]?.actifs_montant}
+                  contentieux={flags[(item.code_union || '').toUpperCase()]?.worst_statut === 'contentieux'}
+                />
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.rowCa}>{fmtEuro(item.current)}</Text>

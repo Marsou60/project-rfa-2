@@ -7,6 +7,22 @@ import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
 
+function ProdexFicheNote({ onOpen }) {
+  return (
+    <p className="text-[12px] leading-snug text-slate-900">
+      <strong>Cette décision, prise indépendamment de notre volonté, nous contraint de déduire le chiffre d’affaires PRODEX du calcul de la RFA finale.</strong>
+      {' '}
+      <button
+        type="button"
+        onClick={(event) => { event.stopPropagation(); onOpen() }}
+        className="text-[11px] font-medium text-indigo-600 underline underline-offset-2"
+      >
+        voir le communiqué
+      </button>
+    </p>
+  )
+}
+
 function ProdexNoticeModal({ logoUrl, onClose }) {
   useEffect(() => {
     const onKey = (event) => {
@@ -1362,6 +1378,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
               codeUnion={mode === 'client' ? entity?.code_union : null}
               groupeClient={mode === 'group' ? entity?.groupe_client : null}
               isAdherent={isAdherent}
+              onShowProdexNotice={() => setShowProdexNotice(true)}
             />
           )}
 
@@ -1374,6 +1391,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
               isAdherent={isAdherent}
               onCotisationChanged={refreshCotisationMap}
               fusionTick={fusionTick}
+              onShowProdexNotice={() => setShowProdexNotice(true)}
             />
           )}
 
@@ -1456,7 +1474,7 @@ function CmsGroupedBars({ months, yearN, yearN1, height = 150 }) {
   )
 }
 
-function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
+function ClientMonthlySection({ codeUnion, groupeClient, isAdherent, onShowProdexNotice }) {
   const { supplierFilter } = useSupplierFilter()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -1575,6 +1593,11 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
                       </span>
                       <svg className={`w-4 h-4 shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                     </button>
+                    {String(p.platform || '').toUpperCase() === 'EXADIS' && onShowProdexNotice && (
+                      <div className="px-4 pb-3">
+                        <ProdexFicheNote onOpen={onShowProdexNotice} />
+                      </div>
+                    )}
                     {isOpen && p.months?.length > 0 && (
                       <div className="border-t border-gray-100 px-4 py-3 bg-gray-50/50">
                         <CmsGroupedBars months={p.months} yearN={yearN} yearN1={yearN1} height={110} />
@@ -2236,6 +2259,7 @@ function Rfa26ProgressCard({
   tierGroups = [],
   proj = null,
   exclusion = null,
+  onOpenNotice = null,
   fmt,
   fmtPct,
   locked = false,
@@ -2385,6 +2409,11 @@ function Rfa26ProgressCard({
           Dont {fmt(exclusion.exclu)} Prodex non rémunéré. Palier sur {fmt(ca)}, RFA sur {fmt(exclusion.remunere)}.
         </p>
       )}
+      {onOpenNotice && (
+        <div className="mb-2">
+          <ProdexFicheNote onOpen={onOpenNotice} />
+        </div>
+      )}
 
       <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
         <div
@@ -2438,6 +2467,7 @@ function ClientRfa2026Section({
   isAdherent = false,
   onCotisationChanged = null,
   fusionTick = 0,
+  onShowProdexNotice = null,
 }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2984,6 +3014,7 @@ function ClientRfa2026Section({
                       tierGroups={[{ label: 'Paliers RFA', tiers: tRfa }, { label: 'Paliers Bonus', tiers: tBonus }]}
                       proj={proj}
                       exclusion={exclusion}
+                      onOpenNotice={key === 'GLOBAL_EXADIS' ? onShowProdexNotice : null}
                       fmt={fmt}
                       fmtPct={fmtPct}
                       levelLabel={levelId ? `Barème ${levelId}` : null}

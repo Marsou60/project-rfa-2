@@ -9,7 +9,7 @@ type Params = {
     codeUnion?: string;
     groupeClient?: string;
     label?: string;
-    initialTab?: 'rfa' | 'marques' | 'familles' | 'contrat';
+    initialTab?: 'rfa' | 'mois' | 'marques' | 'familles' | 'contrat';
   };
 };
 
@@ -24,6 +24,7 @@ export function ClientRfaScreen() {
         groupeClient={groupeClient}
         label={label}
         initialTab={initialTab || 'rfa'}
+        showBack
       />
     </View>
   );

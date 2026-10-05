@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ProdexFicheNote } from './ProdexNoticeModal';
 import { SupplierLogoBadge } from './SupplierLogoBadge';
 import { colors, spacing } from '../theme';
 import { fmtEuro, fmtPct } from '../utils/format';
@@ -21,6 +22,8 @@ type Props = {
   lockHint?: string | null;
   levelLabel?: string | null;
   proj?: { ca?: number; rate?: number; value?: number } | null;
+  note?: string | null;
+  onOpenNotice?: (() => void) | null;
 };
 
 function Gauge({ progress, tone }: { progress: number; tone: 'green' | 'amber' | 'orange' | 'cyan' | 'muted' }) {
@@ -55,6 +58,8 @@ export function RfaProgressCard({
   lockHint,
   levelLabel,
   proj,
+  note = null,
+  onOpenNotice = null,
 }: Props) {
   const [open, setOpen] = useState(false);
   const hasRfaBonus = tiersRfa.length > 0 || tiersBonus.length > 0;
@@ -84,12 +89,14 @@ export function RfaProgressCard({
         </View>
         <Text style={styles.badgeNoTier}>Non éligible — aucun palier sur ce contrat</Text>
         <Text style={styles.hint}>RFA à date : 0 € (pas de barème applicable)</Text>
+        {onOpenNotice ? <ProdexFicheNote onOpen={onOpenNotice} /> : null}
       </View>
     );
   }
 
   return (
-    <Pressable style={[styles.card, locked && !projectedUnlock && styles.cardLocked]} onPress={() => setOpen((v) => !v)}>
+    <View style={[styles.card, locked && !projectedUnlock && styles.cardLocked]}>
+    <Pressable onPress={() => setOpen((v) => !v)}>
       <View style={styles.row}>
         {platformKey ? <SupplierLogoBadge platformKey={platformKey} logos={logos || {}} size={28} /> : null}
         <Text style={[styles.label, { flex: 1 }]} numberOfLines={1}>
@@ -119,7 +126,10 @@ export function RfaProgressCard({
         </Text>
       </View>
 
+      {note ? <Text style={styles.hint}>{note}</Text> : null}
+
       <Gauge progress={prog.progress} tone={tone} />
+      <Text style={styles.gaugeCaption}>Palier RFA · {Math.round(prog.progress)} %</Text>
 
       {prog.achieved ? (
         <Text style={styles.statusOk}>Palier maximal atteint</Text>
@@ -189,6 +199,8 @@ export function RfaProgressCard({
         </View>
       ) : null}
     </Pressable>
+    {onOpenNotice ? <ProdexFicheNote onOpen={onOpenNotice} /> : null}
+    </View>
   );
 }
 
@@ -247,6 +259,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   gaugeFill: { height: '100%', borderRadius: 999 },
+  gaugeCaption: { color: colors.muted2, fontSize: 11, fontWeight: '700', alignSelf: 'flex-end' },
   statusOk: { color: colors.green, fontSize: 12, fontWeight: '700' },
   statusNext: { color: colors.muted, fontSize: 12, lineHeight: 17 },
   whyZero: { color: '#FBBF24', fontSize: 12, fontWeight: '600', lineHeight: 17 },

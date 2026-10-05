@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,7 +10,9 @@ import {
   View,
 } from 'react-native';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { getNetworkDashboard, NetworkClientRow } from '../api/consultation';
+import { BackHeader } from '../components/BackHeader';
+import { ImpayeListBadge } from '../components/ImpayesBanner';
+import { getImpayesFlags, getNetworkDashboard, ImpayeFlag, NetworkClientRow } from '../api/consultation';
 import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
 
@@ -20,6 +22,7 @@ type Params = {
   kind: FilterKind;
   value: string;
   title?: string;
+  fournisseur?: string;
 };
 
 const KIND_LABEL: Record<FilterKind, string> = {
@@ -32,13 +35,28 @@ const KIND_LABEL: Record<FilterKind, string> = {
 export function FilteredClientsScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<{ FilteredClients: Params }, 'FilteredClients'>>();
-  const { kind, value, title } = route.params || { kind: 'region' as FilterKind, value: '' };
+  const { kind, value, title, fournisseur } = route.params || { kind: 'region' as FilterKind, value: '' };
 
   const [rows, setRows] = useState<NetworkClientRow[]>([]);
   const [query, setQuery] = useState('');
   const [caTotal, setCaTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [flags, setFlags] = useState<Record<string, ImpayeFlag>>({});
+
+  useEffect(() => {
+    let cancel = false;
+    getImpayesFlags()
+      .then((next) => {
+        if (!cancel) setFlags(next);
+      })
+      .catch(() => {
+        if (!cancel) setFlags({});
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     if (!value) {
@@ -53,7 +71,7 @@ export function FilteredClientsScreen() {
         region: kind === 'region' ? value : null,
         commercial: kind === 'commercial' ? value : null,
         marque: kind === 'marque' ? value : null,
-        fournisseur: kind === 'plateforme' ? value : null,
+        fournisseur: kind === 'plateforme' ? value : fournisseur || null,
         full: true,
       });
       const clients = (dash.clients || []).filter((c) => c.code_union && (c.current || 0) > 0);
@@ -70,7 +88,7 @@ export function FilteredClientsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [kind, value]);
+  }, [kind, value, fournisseur]);
 
   useFocusEffect(
     useCallback(() => {
@@ -88,11 +106,13 @@ export function FilteredClientsScreen() {
           ? `Tous les clients Pure Data de la région « ${value} ». Tapez un client pour ouvrir sa fiche RFA.`
           : kind === 'commercial'
             ? `Portefeuille complet du commercial « ${value} ». Tapez un client pour sa fiche RFA.`
-            : kind === 'plateforme'
+              : kind === 'plateforme'
               ? `Tous les clients avec du CA sur la plateforme « ${value} ».`
-              : `Tous les clients ayant du CA sur la marque « ${value} ». Tapez pour ouvrir la fiche.`,
+              : `Tous les clients ayant du CA sur la marque « ${value} »${
+                  fournisseur ? ` · ${fournisseur}` : ''
+                }. Tapez pour ouvrir la fiche.`,
     };
-  }, [kind, value, title, rows.length, caTotal]);
+  }, [kind, value, title, rows.length, caTotal, fournisseur]);
 
   const visible = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -103,9 +123,9 @@ export function FilteredClientsScreen() {
   }, [rows, query]);
 
   return (
-    <View style={styles.root}>
-      <Text style={styles.kicker}>{KIND_LABEL[kind]}</Text>
-      <Text style={styles.title}>{header.title}</Text>
+    <View style={styles.screen}>
+      <BackHeader title={header.title} subtitle={KIND_LABEL[kind]} />
+      <View style={styles.root}>
       <Text style={styles.subtitle}>{header.subtitle}</Text>
       <Text style={styles.help}>{header.help}</Text>
 
@@ -151,6 +171,11 @@ export function FilteredClientsScreen() {
               <Text style={styles.name} numberOfLines={1}>
                 {item.raison_sociale || item.key}
               </Text>
+              <ImpayeListBadge
+                actifsNb={flags[(item.code_union || '').toUpperCase()]?.actifs_nb}
+                amount={flags[(item.code_union || '').toUpperCase()]?.actifs_montant}
+                contentieux={flags[(item.code_union || '').toUpperCase()]?.worst_statut === 'contentieux'}
+              />
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={styles.ca}>{fmtEuro(item.current)}</Text>
@@ -167,12 +192,14 @@ export function FilteredClientsScreen() {
           </Pressable>
         )}
       />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   kicker: { color: colors.orangeSoft, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   title: { color: colors.white, fontSize: 22, fontWeight: '800', marginTop: 2 },
   subtitle: { color: colors.muted, fontSize: 13, marginTop: 4 },

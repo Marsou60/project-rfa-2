@@ -12,13 +12,14 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   ClientMonthlyEvolution,
   ClientRfaResponse,
+  caDeltaPct,
   getClientMonthlyEvolution,
   getClientRfa,
   RfaLine,
 } from '../api/consultation';
 import { useSupplierLogos } from '../api/logos';
 import { HeroCaCard } from './HeroCaCard';
-import { MonthlyCaCard } from './MonthlyCaCard';
+import { ProdexNoticeModal } from './ProdexNoticeModal';
 import { RfaProgressCard } from './RfaProgressCard';
 import { colors, spacing } from '../theme';
 import { fmtEuro, fmtPct, untilMonthLabel } from '../utils/format';
@@ -54,6 +55,7 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
   const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [prodexNotice, setProdexNotice] = useState(false);
   const { logos } = useSupplierLogos();
 
   const load = useCallback(async () => {
@@ -117,7 +119,7 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
       .map(([key, it]) => {
         const tRfa = parseTiers(it.tiers_rfa);
         const tBonus = parseTiers(it.tiers_bonus);
-        const prog = globalProgress(it.ca || 0, tRfa, tBonus);
+        const prog = globalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null);
         return { key, label: it.label || key, prog };
       })
       .filter((x) => x.prog.nextMin != null && x.prog.projectedGain > 0)
@@ -228,11 +230,12 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
       contentContainerStyle={styles.scroll}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.orange} />}
     >
+      <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
       <HeroCaCard
         title={until ? `Achats 2026 à date (${until})` : 'Achats 2026 à date'}
         ca={d.caGlobal}
         subtitle={`${title || data.label || codeUnion || groupeClient}${d.level ? ` · ${d.level}` : ''}`}
-        deltaPct={monthly?.available ? monthly.totals?.delta_pct ?? null : null}
+        deltaPct={caDeltaPct({ comparison: data.comparison_n1, monthly })}
         deltaLabel="CA vs 2025 · même période"
         leftLabel="RFA à date"
         rfaEstimated={d.rfaNet}
@@ -258,8 +261,6 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         ) : null}
       </View>
 
-      <MonthlyCaCard data={monthly} />
-
       {d.zeroBecauseBelow ? (
         <View style={styles.whyBox}>
           <Text style={styles.whyTitle}>Pourquoi 0 € de RFA ?</Text>
@@ -271,6 +272,7 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
       ) : null}
 
       <View style={[styles.objCard, d.nextObjective.done && styles.objDone]}>
+        <Text style={styles.objKicker}>Palier RFA — pas la progression du CA</Text>
         <Text style={styles.objTitle}>{d.nextObjective.title}</Text>
         <Text style={styles.objBody}>{d.nextObjective.body}</Text>
         <View style={styles.gaugeTrack}>
@@ -284,7 +286,7 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
             ]}
           />
         </View>
-        <Text style={styles.objPct}>{Math.round(d.nextObjective.progress)} %</Text>
+        <Text style={styles.objPct}>{Math.round(d.nextObjective.progress)} % du palier</Text>
       </View>
 
       <Text style={styles.section}>Plateformes</Text>
@@ -295,7 +297,8 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         d.globalItems.map(([key, it]) => {
           const tRfa = parseTiers(it.tiers_rfa);
           const tBonus = parseTiers(it.tiers_bonus);
-          const prog = globalProgress(it.ca || 0, tRfa, tBonus);
+          const prog = globalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null);
+          if (it.ca_exclu) prog.currentValue = lineAmount(it);
           const pj = d.projected?.global?.[key];
           const pjRate =
             pj && typeof pj.total === 'object' && pj.total && 'rate' in pj.total
@@ -321,6 +324,12 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
                     }
                   : null
               }
+              note={
+                it.ca_exclu
+                  ? `Dont ${fmtEuro(it.ca_exclu)} Prodex non rémunéré. Palier sur ${fmtEuro(it.ca || 0)}, RFA sur ${fmtEuro(it.ca_remunere || 0)}.`
+                  : null
+              }
+              onOpenNotice={key === 'GLOBAL_EXADIS' ? () => setProdexNotice(true) : null}
             />
           );
         })
@@ -350,7 +359,8 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
       ) : (
         d.triItems.map(([key, it]) => {
           const tiers = parseTiers(it.tiers);
-          const prog = triProgress(it.ca || 0, tiers);
+          const prog = triProgress(it.ca || 0, tiers, it.ca_exclu ? it.ca_remunere : null);
+          if (it.ca_exclu) prog.currentValue = lineAmount(it);
           const pjt = d.projected?.tri?.[key];
           return (
             <RfaProgressCard
@@ -371,6 +381,11 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
                       rate: typeof pjt.rate === 'number' ? pjt.rate : 0,
                       value: lineAmount(pjt),
                     }
+                  : null
+              }
+              note={
+                it.ca_exclu
+                  ? `Dont ${fmtEuro(it.ca_exclu)} Prodex non rémunéré. Palier sur ${fmtEuro(it.ca || 0)}, RFA sur ${fmtEuro(it.ca_remunere || 0)}.`
                   : null
               }
             />
@@ -458,6 +473,13 @@ const styles = StyleSheet.create({
   objDone: {
     backgroundColor: 'rgba(52, 211, 153, 0.1)',
     borderColor: 'rgba(52, 211, 153, 0.35)',
+  },
+  objKicker: {
+    color: '#FBBF24',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   objTitle: { color: colors.white, fontWeight: '800', fontSize: 15 },
   objBody: { color: colors.muted, fontSize: 13, lineHeight: 18 },

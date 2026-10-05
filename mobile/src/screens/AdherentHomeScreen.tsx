@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ClientMonthlyEvolution,
   ClientRfaResponse,
+  caDeltaPct,
   getClientMonthlyEvolution,
   getClientRfa,
 } from '../api/consultation';
@@ -20,10 +21,12 @@ import { useSupplierLogos } from '../api/logos';
 import { useAuth } from '../auth/AuthContext';
 import { BrandHero } from '../components/BrandHero';
 import { HeroCaCard } from '../components/HeroCaCard';
+import { ImpayesBanner } from '../components/ImpayesBanner';
 import { MonthlyCaCard } from '../components/MonthlyCaCard';
 import { PlatformGrid } from '../components/PlatformGrid';
+import { ProdexNoticeModal } from '../components/ProdexNoticeModal';
 import { colors, spacing } from '../theme';
-import { fmtEuro, fmtPct, platformLabel, untilMonthLabel } from '../utils/format';
+import { canonPlatform, fmtEuro, fmtPct, platformLabel, untilMonthLabel } from '../utils/format';
 
 function asNum(v: unknown): number {
   if (v == null) return 0;
@@ -45,6 +48,7 @@ export function AdherentHomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const { logos } = useSupplierLogos();
   const insets = useSafeAreaInsets();
+  const [prodexNotice, setProdexNotice] = useState(true);
 
   const load = useCallback(async () => {
     if (!code && !groupe) {
@@ -86,7 +90,7 @@ export function AdherentHomeScreen() {
   const rfaNet = data?.rfa_net ?? data?.rfa?.totals?.grand_total ?? 0;
   const rfaYearEnd = data?.rfa_projected_net ?? data?.rfa_projected?.totals?.grand_total ?? null;
   const avgRate = ca > 0 ? rfaNet / ca : null;
-  const caDeltaPct = monthly?.available ? monthly.totals?.delta_pct ?? null : null;
+  const caDeltaPctValue = caDeltaPct({ comparison: data?.comparison_n1, monthly });
   const until = untilMonthLabel(data?.reporting_month);
 
   const platforms = useMemo(() => {
@@ -100,6 +104,8 @@ export function AdherentHomeScreen() {
         label: platformLabel(key),
         ca: Number(item.ca) || 0,
         rfa: asNum(item.total) || asNum(item.rfa) + asNum(item.bonus),
+        caExclu: Number(item.ca_exclu) || 0,
+        caRemunere: Number(item.ca_remunere) || 0,
       };
     });
   }, [data]);
@@ -122,6 +128,8 @@ export function AdherentHomeScreen() {
       </BrandHero>
 
       <View style={styles.body}>
+      <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
+      {code ? <ImpayesBanner codeUnion={code} /> : null}
 
       {!code && !groupe ? (
         <Text style={styles.error}>Aucun magasin n’est lié à ce compte. Contactez Union.</Text>
@@ -135,7 +143,7 @@ export function AdherentHomeScreen() {
             title={until ? `Vos achats 2026 à date (${until})` : 'Vos achats 2026 à date'}
             ca={ca}
             subtitle={label}
-            deltaPct={caDeltaPct}
+            deltaPct={caDeltaPctValue}
             deltaLabel="CA vs 2025 · même période"
             leftLabel="RFA à date"
             rfaEstimated={rfaNet}
@@ -156,10 +164,32 @@ export function AdherentHomeScreen() {
             accessibilityLabel="Voir le détail de ma RFA"
           >
             <Text style={styles.rfaCtaText}>Voir le détail de ma RFA</Text>
-            <Text style={styles.rfaCtaSub}>Mois par mois, paliers, contrat</Text>
+            <Text style={styles.rfaCtaSub}>Paliers, contrat, marques</Text>
           </Pressable>
-          {monthly?.available ? <MonthlyCaCard data={monthly} compact /> : null}
-          <PlatformGrid items={platforms} title="Vos plateformes" logos={logos} />
+          <Pressable
+            style={styles.monthCta}
+            onPress={() => navigation.navigate('RFA', { initialTab: 'mois' })}
+            accessibilityRole="button"
+            accessibilityLabel="Voir la vision mensuelle"
+          >
+            <Text style={styles.monthCtaText}>Vision mensuelle</Text>
+            <Text style={styles.monthCtaSub}>Achats mois par mois vs 2025</Text>
+          </Pressable>
+          {monthly?.available ? <MonthlyCaCard data={monthly} /> : null}
+          <PlatformGrid
+            items={platforms}
+            title="Vos plateformes"
+            logos={logos}
+            onOpenProdexNotice={() => setProdexNotice(true)}
+            onPress={(item) =>
+              navigation.navigate('SliceDetail', {
+                fournisseur: canonPlatform(item.key),
+                title: item.label,
+                codeUnion: code,
+                groupeClient: code ? null : groupe,
+              })
+            }
+          />
         </>
       ) : data && !data.available ? (
         <Text style={styles.muted}>{data.message || 'Pas encore de données 2026.'}</Text>
@@ -188,4 +218,16 @@ const styles = StyleSheet.create({
   },
   rfaCtaText: { color: colors.white, fontWeight: '800', fontSize: 17 },
   rfaCtaSub: { color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 18 },
+  monthCta: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.md,
+    minHeight: 52,
+    gap: 4,
+  },
+  monthCtaText: { color: colors.white, fontWeight: '800', fontSize: 17 },
+  monthCtaSub: { color: colors.muted, fontSize: 13, lineHeight: 18 },
 });

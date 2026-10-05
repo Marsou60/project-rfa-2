@@ -70,6 +70,10 @@ export type NetworkDashboard = {
     best_month_ca?: number | null;
     platform_star?: string | null;
   };
+  available?: boolean;
+  year_current?: number;
+  year_previous?: number;
+  months?: MonthlyPoint[];
   platforms?: Array<{
     platform: string;
     current?: number;
@@ -78,6 +82,7 @@ export type NetworkDashboard = {
     delta_pct?: number | null;
     share_pct?: number | null;
     nb_clients?: number;
+    nb_marques?: number;
   }>;
   clients?: NetworkClientRow[];
   top_clients_up?: NetworkClientRow[];
@@ -127,6 +132,9 @@ export type RfaLine = {
   tiers?: unknown;
   tiers_rfa?: unknown;
   tiers_bonus?: unknown;
+  ca_exclu?: number;
+  ca_remunere?: number;
+  exclusion_marque?: string;
 };
 
 export type ClientRfaResponse = {
@@ -312,6 +320,7 @@ export async function getClientMonthlyEvolution(params: {
   groupeClient?: string | null;
   yearCurrent?: number;
   yearPrevious?: number;
+  fournisseur?: string | null;
 }): Promise<ClientMonthlyEvolution> {
   const { data } = await api.get('/pure-data/monthly/client-evolution', {
     params: {
@@ -319,9 +328,48 @@ export async function getClientMonthlyEvolution(params: {
       groupe_client: params.groupeClient || undefined,
       year_current: params.yearCurrent ?? 2026,
       year_previous: params.yearPrevious ?? 2025,
+      fournisseur: params.fournisseur || undefined,
     },
   });
   return data;
+}
+
+/** Progression CA vs N-1 (jamais un palier RFA). Priorité : même période YTD. */
+export function caDeltaPct(opts: {
+  comparison?: ClientRfaResponse['comparison_n1'] | null;
+  monthly?: ClientMonthlyEvolution | null;
+  kpis?: NetworkDashboard['kpis'] | null;
+}): number | null {
+  const v =
+    (opts.monthly?.available ? opts.monthly.totals?.delta_pct : null) ??
+    opts.kpis?.delta_pct ??
+    opts.comparison?.delta_pct ??
+    null;
+  if (v == null || Number.isNaN(Number(v))) return null;
+  return Number(v);
+}
+
+export function networkDashboardToMonthly(
+  dash: NetworkDashboard | null | undefined,
+): ClientMonthlyEvolution | null {
+  if (!dash) return null;
+  const months = (dash.months || []).filter(
+    (m) => (Number(m.current) || 0) > 0 || (Number(m.previous) || 0) > 0,
+  );
+  if (!months.length) return { available: false };
+  return {
+    available: true,
+    year_current: dash.year_current ?? 2026,
+    year_previous: dash.year_previous ?? 2025,
+    totals: {
+      current: dash.kpis?.ca_ytd,
+      previous: dash.kpis?.ca_n1_same_period ?? undefined,
+      delta: dash.kpis?.delta ?? undefined,
+      delta_pct: dash.kpis?.delta_pct ?? null,
+    },
+    months,
+    platforms: [],
+  };
 }
 
 export async function getClientDashboard(params: {
@@ -364,6 +412,40 @@ export async function getContractPdfMeta(params: {
 }
 
 /** Download contract PDF bytes (auth required). */
+export type ImpayeItem = {
+  id: string;
+  plateforme?: string;
+  montant?: number;
+  statut?: string;
+  actif?: boolean;
+  date_facture_label?: string;
+  motif?: string;
+  commentaires?: string;
+};
+
+export type ImpayeFlag = {
+  code_union: string;
+  nb?: number;
+  montant?: number;
+  actifs_nb?: number;
+  actifs_montant?: number;
+  worst_statut?: string;
+  has_impaye?: boolean;
+};
+
+export async function getImpayesByAdherent(codeUnion: string): Promise<{
+  items: ImpayeItem[];
+  summary?: { actifs_montant?: number };
+}> {
+  const { data } = await api.get(`/impayes/by-adherent/${encodeURIComponent(codeUnion)}`);
+  return data;
+}
+
+export async function getImpayesFlags(): Promise<Record<string, ImpayeFlag>> {
+  const { data } = await api.get('/impayes/flags');
+  return (data?.flags || {}) as Record<string, ImpayeFlag>;
+}
+
 export async function fetchContractPdfBlob(params: {
   mode: 'client' | 'group';
   id: string;

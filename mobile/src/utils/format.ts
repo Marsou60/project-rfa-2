@@ -82,8 +82,16 @@ export function fmtDeltaPct(pct?: number | null): string {
   return `${sign}${n.toFixed(1).replace('.', ',')} %`;
 }
 
+export function canonPlatform(key: string): string {
+  return String(key || '')
+    .replace(/^GLOBAL_/i, '')
+    .replace(/^TRI_/i, '')
+    .trim()
+    .toUpperCase();
+}
+
 export function platformLabel(key: string): string {
-  const k = (key || '').replace(/^GLOBAL_/, '').toUpperCase();
+  const k = canonPlatform(key);
   const map: Record<string, string> = {
     ACR: 'ACR',
     DCA: 'DCA',

@@ -14,22 +14,28 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import {
   ClientDashboardResponse,
+  ClientMonthlyEvolution,
   ClientRfaResponse,
   ContractPdfMeta,
   fetchContractPdfBlob,
   getClientDashboard,
+  getClientMonthlyEvolution,
   getClientRfa,
   getContractPdfMeta,
 } from '../api/consultation';
+import { BackHeader } from '../components/BackHeader';
+import { ImpayesBanner } from '../components/ImpayesBanner';
+import { ProdexNoticeModal } from '../components/ProdexNoticeModal';
 import { HierarchyList } from '../components/HierarchyList';
 import { Icon, IconName } from '../components/Icon';
+import { MonthlyCaCard } from '../components/MonthlyCaCard';
 import { RfaPanel } from '../components/RfaPanel';
 import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
 import { describeCotisation } from '../utils/cotisationStatus';
 import { downloadBlob } from '../utils/downloadBlob';
 
-type TabId = 'rfa' | 'marques' | 'familles' | 'contrat';
+type TabId = 'rfa' | 'mois' | 'marques' | 'familles' | 'contrat';
 
 type Props = {
   codeUnion?: string | null;
@@ -37,10 +43,12 @@ type Props = {
   label?: string;
   initialTab?: TabId;
   bleedStatusBar?: boolean;
+  showBack?: boolean;
 };
 
 const TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: 'rfa', label: 'RFA', icon: 'cash-outline' },
+  { id: 'mois', label: 'Mensuel', icon: 'calendar-outline' },
   { id: 'marques', label: 'Marques', icon: 'pricetags-outline' },
   { id: 'familles', label: 'Familles', icon: 'grid-outline' },
   { id: 'contrat', label: 'Contrat', icon: 'document-text-outline' },
@@ -79,14 +87,17 @@ export function ClientDetailScreen({
   label,
   initialTab = 'rfa',
   bleedStatusBar = false,
+  showBack = false,
 }: Props) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [dash, setDash] = useState<ClientDashboardResponse | null>(null);
   const [rfa, setRfa] = useState<ClientRfaResponse | null>(null);
+  const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(null);
   const [pdfMeta, setPdfMeta] = useState<ContractPdfMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [prodexNotice, setProdexNotice] = useState(true);
   const insets = useSafeAreaInsets();
 
   const entityId = (codeUnion || groupeClient || '').toString();
@@ -104,12 +115,14 @@ export function ClientDetailScreen({
     setLoading(true);
     setError(null);
     try {
-      const [d, r] = await Promise.all([
+      const [d, r, m] = await Promise.all([
         getClientDashboard({ codeUnion, groupeClient }),
         getClientRfa({ codeUnion, groupeClient, year: 2026 }),
+        getClientMonthlyEvolution({ codeUnion, groupeClient }).catch(() => null),
       ]);
       setDash(d);
       setRfa(r);
+      setMonthly(m);
       try {
         setPdfMeta(
           await getContractPdfMeta({
@@ -180,21 +193,30 @@ export function ClientDetailScreen({
 
   return (
     <View style={styles.root}>
-      <View
-        style={[
-          styles.header,
-          { paddingTop: bleedStatusBar ? Math.max(insets.top, 12) : spacing.md },
-        ]}
-      >
-        <Text style={styles.title} numberOfLines={2}>
-          {title}
-        </Text>
-        {codeUnion || groupeClient ? (
-          <Text style={styles.codeLine}>{codeUnion || groupeClient}</Text>
-        ) : null}
-      </View>
+      {showBack ? (
+        <BackHeader title={title} subtitle={codeUnion || groupeClient || undefined} />
+      ) : (
+        <View
+          style={[
+            styles.header,
+            { paddingTop: bleedStatusBar ? Math.max(insets.top, 12) : spacing.md },
+          ]}
+        >
+          <Text style={styles.title} numberOfLines={2}>
+            {title}
+          </Text>
+          {codeUnion || groupeClient ? (
+            <Text style={styles.codeLine}>{codeUnion || groupeClient}</Text>
+          ) : null}
+        </View>
+      )}
 
-      <View style={styles.tabs}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScroll}
+        contentContainerStyle={styles.tabs}
+      >
         {TABS.map((t) => (
           <Pressable
             key={t.id}
@@ -208,9 +230,15 @@ export function ClientDetailScreen({
             <Text style={[styles.tabText, tab === t.id && styles.tabTextActive]}>{t.label}</Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
+      {codeUnion ? (
+        <View style={styles.bannerWrap}>
+          <ImpayesBanner codeUnion={codeUnion} />
+        </View>
+      ) : null}
 
       {tab === 'rfa' ? (
         <View style={{ flex: 1 }}>
@@ -224,6 +252,15 @@ export function ClientDetailScreen({
           {loading && !dash && !rfa ? (
             <ActivityIndicator color={colors.orange} style={{ marginTop: 24 }} />
           ) : null}
+
+          {tab === 'mois' && (
+            <>
+              <Text style={styles.hint}>
+                Achats mois par mois vs 2025. Tapez un mois pour le détail par plateforme.
+              </Text>
+              <MonthlyCaCard data={monthly} />
+            </>
+          )}
 
           {(tab === 'marques' || tab === 'familles') && (
             <>
@@ -330,21 +367,20 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingBottom: 10, gap: 4 },
   title: { color: colors.white, fontSize: 26, fontWeight: '800', letterSpacing: -0.4, lineHeight: 32 },
   codeLine: { color: colors.muted, fontSize: 15, fontWeight: '600' },
+  tabsScroll: { flexGrow: 0 },
+  bannerWrap: { paddingHorizontal: spacing.lg, paddingBottom: 8 },
   tabs: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: spacing.lg,
-    marginBottom: 10,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 10,
     gap: 8,
   },
   tab: {
-    width: '48%',
-    flexGrow: 1,
     flexDirection: 'row',
-    gap: 8,
-    minHeight: 48,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
+    gap: 6,
+    minHeight: 44,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

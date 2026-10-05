@@ -7,6 +7,7 @@ import { fmtDeltaPct, fmtEuro, monthShort } from '../utils/format';
 type Props = {
   data: ClientMonthlyEvolution | null;
   compact?: boolean;
+  emptyHint?: string;
 };
 
 function monthSlice(byMonth: MonthlyPlatform['by_month'], month: number) {
@@ -18,7 +19,7 @@ function monthSlice(byMonth: MonthlyPlatform['by_month'], month: number) {
   };
 }
 
-export function MonthlyCaCard({ data, compact = false }: Props) {
+export function MonthlyCaCard({ data, compact = false, emptyHint }: Props) {
   const [openMonth, setOpenMonth] = useState<number | null>(null);
 
   const months = useMemo(() => {
@@ -37,7 +38,7 @@ export function MonthlyCaCard({ data, compact = false }: Props) {
       <View style={styles.card}>
         <Text style={styles.title}>Achats mois par mois</Text>
         <Text style={styles.hint}>
-          Le détail janvier–décembre n’est pas encore disponible pour ce magasin.
+          {emptyHint || 'Le détail janvier–décembre n’est pas encore disponible pour ce magasin.'}
         </Text>
       </View>
     );
@@ -48,7 +49,11 @@ export function MonthlyCaCard({ data, compact = false }: Props) {
       <Text style={styles.title}>Achats mois par mois</Text>
       <Text style={styles.hint}>
         {yearN} vs {yearN1}
-        {compact ? ' · 6 derniers mois' : ' · tap un mois pour les plateformes'}
+        {compact
+          ? ' · 6 derniers mois'
+          : platforms.length
+            ? ' · tap un mois pour le détail'
+            : ''}
       </Text>
 
       {months.map((m) => {

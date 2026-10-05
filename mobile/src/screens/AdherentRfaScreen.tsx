@@ -6,7 +6,7 @@ import { ClientDetailScreen } from './ClientDetailScreen';
 import { colors, spacing } from '../theme';
 
 type Params = {
-  RFA: { initialTab?: 'rfa' | 'marques' | 'familles' | 'contrat' } | undefined;
+  RFA: { initialTab?: 'rfa' | 'mois' | 'marques' | 'familles' | 'contrat' } | undefined;
 };
 
 export function AdherentRfaScreen() {

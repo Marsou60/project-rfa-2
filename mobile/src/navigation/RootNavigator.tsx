@@ -22,6 +22,7 @@ import { AnalysesScreen } from '../screens/AnalysesScreen';
 import { AlertsScreen } from '../screens/AlertsScreen';
 import { AdherentHomeScreen } from '../screens/AdherentHomeScreen';
 import { AdherentRfaScreen } from '../screens/AdherentRfaScreen';
+import { SliceDetailScreen } from '../screens/SliceDetailScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -69,6 +70,7 @@ function tabIcon(active: IconName, inactive: IconName) {
 }
 
 const detailScreenOptions = {
+  headerShown: false as const,
   headerStyle: { backgroundColor: colors.bgElevated },
   headerTintColor: colors.white,
   headerShadowVisible: false,
@@ -241,6 +243,30 @@ function UnionStack() {
           ...detailScreenOptions,
         })}
       />
+      <Stack.Screen
+        name="SliceDetail"
+        component={SliceDetailScreen}
+        options={({ route }: any) => ({
+          title: route?.params?.title || 'Plateforme',
+          ...detailScreenOptions,
+        })}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function AdherentStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="AdherentTabs" component={AdherentTabs} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="SliceDetail"
+        component={SliceDetailScreen}
+        options={({ route }: any) => ({
+          title: route?.params?.title || 'Plateforme',
+          ...detailScreenOptions,
+        })}
+      />
     </Stack.Navigator>
   );
 }
@@ -268,7 +294,7 @@ export function RootNavigator() {
       {isUnion || (!isAdherent && String(user.role || '').toUpperCase() === 'ADMIN') ? (
         <UnionStack />
       ) : (
-        <AdherentTabs />
+        <AdherentStack />
       )}
     </NavigationContainer>
   );
