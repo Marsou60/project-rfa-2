@@ -16,6 +16,51 @@ def _warning_contract():
     return SimpleNamespace(id=21, name="Contrat Warning", use_combined_global_rate=False, level_baremes=None)
 
 
+def test_prodex_deducted_on_a_specific_contract_and_on_tripartite():
+    """Hors Adhérents 2026 : palier sur 100 % du CA, versement hors Prodex."""
+    from app.models import RuleScope
+
+    contract = SimpleNamespace(
+        id=9,
+        name="Contrat spécial EXADIS",
+        use_combined_global_rate=False,
+        level_baremes=None,
+    )
+    rules = {
+        "GLOBAL_EXADIS": SimpleNamespace(
+            scope=RuleScope.GLOBAL,
+            tiers_rfa='[{"min": 25000, "rate": 0.035}]',
+            tiers_bonus="[]",
+            label="EXADIS",
+        ),
+        "TRI_EXADIS_FREINAGE": SimpleNamespace(
+            scope=RuleScope.TRI,
+            tiers='[{"min": 25000, "rate": 0.02}]',
+            label="EXADIS Freinage",
+        ),
+    }
+    result = calculate_rfa(
+        {
+            "global": {"GLOBAL_EXADIS": 30000.0},
+            "tri": {"TRI_EXADIS_FREINAGE": 30000.0},
+            "excluded_ca": {
+                "GLOBAL_EXADIS": 10000.0,
+                "TRI_EXADIS_FREINAGE": 10000.0,
+            },
+        },
+        contract=contract,
+        contract_rules=rules,
+        year=2026,
+    )
+    ex = result["global"]["GLOBAL_EXADIS"]
+    tri = result["tri"]["TRI_EXADIS_FREINAGE"]
+    assert ex["rfa"]["selected_min"] == 25000
+    assert ex["rfa"]["value"] == 700.0
+    assert tri["selected_min"] == 25000
+    assert tri["value"] == 400.0
+    assert tri["ca_remunere"] == 20000.0
+
+
 def test_warning_prime_triggered_adds_ht_to_grand_total():
     recap_ca = {
         "global": {"GLOBAL_ACR": 0.0, "GLOBAL_ALLIANCE": 0.0, "GLOBAL_DCA": 0.0, "GLOBAL_EXADIS": 0.0},

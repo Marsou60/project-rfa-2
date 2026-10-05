@@ -4,6 +4,32 @@ Tests parser Pure Data — tripartites marque × famille (Adhérents 2026).
 from app.services.pure_data_rfa_parser import compute_recap_ca_from_rows
 
 
+def test_exadis_prodex_is_in_global_but_not_remunerated_lines():
+    rows = [
+        {
+            "fournisseur": "EXADIS",
+            "marque": "PRODEX",
+            "famille": "FREINAGE",
+            "sous_famille": "PLAQUETTE DE FREIN",
+            "ca": 10000,
+        },
+        {
+            "fournisseur": "EXADIS",
+            "marque": "TRW",
+            "famille": "FREINAGE",
+            "sous_famille": "DISQUE DE FREIN",
+            "ca": 20000,
+        },
+    ]
+    recap = compute_recap_ca_from_rows(rows)
+    assert recap["global"]["GLOBAL_EXADIS"] == 30000.0
+    assert recap["excluded_ca"]["GLOBAL_EXADIS"] == 10000.0
+    assert recap["tri"]["TRI_EXADIS_FREINAGE"] == 30000.0
+    assert recap["excluded_ca"]["TRI_EXADIS_FREINAGE"] == 10000.0
+    assert recap["tri"]["TRI_EXADIS_TRW_FREINAGE"] == 20000.0
+    assert recap["excluded_ca"].get("TRI_EXADIS_TRW_FREINAGE", 0) == 0
+
+
 def test_alliance_delphi_freinage_vs_psd_split():
     rows = [
         {

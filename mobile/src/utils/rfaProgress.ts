@@ -55,7 +55,12 @@ function progBase(ca: number, tiers: Tier[]) {
 }
 
 /** Progression combinée RFA + Bonus (plateformes globales). */
-export function globalProgress(ca: number, tiersRfa: Tier[], tiersBonus: Tier[]): TierProgress {
+export function globalProgress(
+  ca: number,
+  tiersRfa: Tier[],
+  tiersBonus: Tier[],
+  caRemunere?: number | null,
+): TierProgress {
   const pr = progBase(ca, tiersRfa);
   const pb = progBase(ca, tiersBonus);
   const nexts = [pr.nextMin, pb.nextMin].filter((v): v is number => v != null);
@@ -64,10 +69,13 @@ export function globalProgress(ca: number, tiersRfa: Tier[], tiersBonus: Tier[])
   const nextRate =
     nextMin != null ? rateForThreshold(tiersRfa, nextMin) + rateForThreshold(tiersBonus, nextMin) : null;
   const progress = nextMin ? Math.min((ca / nextMin) * 100, 100) : 100;
-  const currentValue = rate * ca;
+  const excluded = caRemunere == null ? 0 : Math.max(ca - caRemunere, 0);
+  const base = caRemunere == null ? ca : caRemunere;
+  const currentValue = rate * base;
   const missing = nextMin != null ? Math.max(nextMin - ca, 0) : 0;
+  const nextBase = nextMin != null ? Math.max(nextMin - excluded, 0) : 0;
   const projectedGain =
-    nextMin != null && nextRate != null ? Math.max(nextRate * nextMin - currentValue, 0) : 0;
+    nextMin != null && nextRate != null ? Math.max(nextRate * nextBase - currentValue, 0) : 0;
   return {
     rate,
     nextMin,
@@ -82,14 +90,17 @@ export function globalProgress(ca: number, tiersRfa: Tier[], tiersBonus: Tier[])
 }
 
 /** Progression simple (tripartite). */
-export function triProgress(ca: number, tiers: Tier[]): TierProgress {
+export function triProgress(ca: number, tiers: Tier[], caRemunere?: number | null): TierProgress {
   const p = progBase(ca, tiers);
   const nextRate = p.nextMin != null ? rateForThreshold(tiers, p.nextMin) : null;
   const progress = p.nextMin ? Math.min((ca / p.nextMin) * 100, 100) : 100;
-  const currentValue = (p.rate || 0) * ca;
+  const excluded = caRemunere == null ? 0 : Math.max(ca - caRemunere, 0);
+  const base = caRemunere == null ? ca : caRemunere;
+  const currentValue = (p.rate || 0) * base;
   const missing = p.nextMin != null ? Math.max(p.nextMin - ca, 0) : 0;
+  const nextBase = p.nextMin != null ? Math.max(p.nextMin - excluded, 0) : 0;
   const projectedGain =
-    p.nextMin != null && nextRate != null ? Math.max(nextRate * p.nextMin - currentValue, 0) : 0;
+    p.nextMin != null && nextRate != null ? Math.max(nextRate * nextBase - currentValue, 0) : 0;
   return {
     rate: p.rate,
     nextMin: p.nextMin,

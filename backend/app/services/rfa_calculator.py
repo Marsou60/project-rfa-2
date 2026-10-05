@@ -18,6 +18,29 @@ WARNING_PRIME_REQUIRES = (
     ("TRI_ALLIANCE_SOGEFI", "Sogefi / Coopers", 20000.0),
 )
 
+# EXADIS : le CA Prodex compte pour le palier, pas pour le montant versé.
+EXADIS_EXCLUDED_BRAND = "PRODEX"
+
+
+def exadis_remuneration_base(recap_ca: Dict, ca: float, key: str = "GLOBAL_EXADIS") -> tuple:
+    """(ca_exclu Prodex, assiette rémunérée). Le palier reste sur `ca` complet."""
+    raw = 0.0
+    try:
+        raw = float(((recap_ca or {}).get("excluded_ca") or {}).get(key) or 0)
+    except (TypeError, ValueError):
+        raw = 0.0
+    full = float(ca or 0)
+    excluded = round(max(0.0, min(raw, full)), 2)
+    return excluded, round(full - excluded, 2)
+
+
+def _pay_on_assiette(tier_result: Dict, assiette: float) -> Dict:
+    out = dict(tier_result)
+    rate = float(out.get("rate") or 0)
+    out["value"] = round(assiette * rate, 2)
+    out["assiette"] = assiette
+    return out
+
 
 def is_warning_contract(contract: Optional[Contract]) -> bool:
     if not contract:
@@ -571,6 +594,14 @@ def calculate_rfa(
             bonus_result["min_threshold"] = bonus_min_threshold
             bonus_result["has_override"] = has_bonus_override
 
+        ca_exclu = 0.0
+        ca_remunere = ca
+        if key == "GLOBAL_EXADIS":
+            ca_exclu, ca_remunere = exadis_remuneration_base(recap_ca, ca)
+            if ca_exclu > 0:
+                rfa_result = _pay_on_assiette(rfa_result, ca_remunere)
+                bonus_result = _pay_on_assiette(bonus_result, ca_remunere)
+
         # APA Nord+Franchise : forcer 12 % RFA sur Alliance + ACR (sans bonus)
         if key in apa_boost_keys:
             boost_rate = float(apa_boost.get("rate") or APA_NORD_FRANCHISE_RATE)
@@ -598,7 +629,7 @@ def calculate_rfa(
         total_value = rfa_result["value"] + bonus_result["value"]
         triggered = rfa_result["triggered"] or bonus_result["triggered"]
         
-        result["global"][key] = {
+        platform_row = {
             "label": label,
             "ca": ca,
             "rfa": rfa_result,
@@ -610,6 +641,11 @@ def calculate_rfa(
             "triggered": triggered,
             "has_override": has_rfa_override or has_bonus_override
         }
+        if key == "GLOBAL_EXADIS" and ca_exclu > 0:
+            platform_row["ca_exclu"] = ca_exclu
+            platform_row["ca_remunere"] = ca_remunere
+            platform_row["exclusion_marque"] = EXADIS_EXCLUDED_BRAND
+        result["global"][key] = platform_row
         
         global_rfa_sum += rfa_result["value"]
         global_bonus_sum += bonus_result["value"]
@@ -657,8 +693,11 @@ def calculate_rfa(
         # Ajouter le seuil minimal (premier palier)
         tri_min_threshold = tiers[0]["min"] if tiers and len(tiers) > 0 else None
         tier_result["min_threshold"] = tri_min_threshold
-        
-        result["tri"][key] = {
+        ca_exclu, ca_remunere = exadis_remuneration_base(recap_ca, ca, key)
+        if ca_exclu > 0:
+            tier_result = _pay_on_assiette(tier_result, ca_remunere)
+
+        tri_row = {
             "label": label,
             "ca": ca,
             "selected_min": tier_result["selected_min"],
@@ -668,6 +707,11 @@ def calculate_rfa(
             "triggered": tier_result["triggered"],
             "has_override": has_tri_override
         }
+        if ca_exclu > 0:
+            tri_row["ca_exclu"] = ca_exclu
+            tri_row["ca_remunere"] = ca_remunere
+            tri_row["exclusion_marque"] = EXADIS_EXCLUDED_BRAND
+        result["tri"][key] = tri_row
         
         tri_total += tier_result["value"]
     
@@ -769,11 +813,18 @@ def calculate_rfa_multi_contracts(
         # Calculer RFA et Bonus
         tier_rfa = compute_tier(ca, tiers_rfa)
         tier_bonus = compute_tier(ca, tiers_bonus)
-        
+        ca_exclu = 0.0
+        ca_remunere = ca
+        if key == "GLOBAL_EXADIS":
+            ca_exclu, ca_remunere = exadis_remuneration_base(recap_ca, ca)
+            if ca_exclu > 0:
+                tier_rfa = _pay_on_assiette(tier_rfa, ca_remunere)
+                tier_bonus = _pay_on_assiette(tier_bonus, ca_remunere)
+
         total_value = tier_rfa["value"] + tier_bonus["value"]
         triggered = tier_rfa["triggered"] or tier_bonus["triggered"]
         
-        result["global"][key] = {
+        row = {
             "label": label,
             "ca": ca,
             "rfa": tier_rfa,
@@ -785,6 +836,11 @@ def calculate_rfa_multi_contracts(
             "triggered": triggered,
             "has_override": False
         }
+        if key == "GLOBAL_EXADIS" and ca_exclu > 0:
+            row["ca_exclu"] = ca_exclu
+            row["ca_remunere"] = ca_remunere
+            row["exclusion_marque"] = EXADIS_EXCLUDED_BRAND
+        result["global"][key] = row
         
         global_rfa_sum += tier_rfa["value"]
         global_bonus_sum += tier_bonus["value"]
@@ -809,8 +865,11 @@ def calculate_rfa_multi_contracts(
         tier_result = compute_tier(ca, tiers)
         tri_min_threshold = tiers[0]["min"] if tiers and len(tiers) > 0 else None
         tier_result["min_threshold"] = tri_min_threshold
-        
-        result["tri"][key] = {
+        ca_exclu, ca_remunere = exadis_remuneration_base(recap_ca, ca, key)
+        if ca_exclu > 0:
+            tier_result = _pay_on_assiette(tier_result, ca_remunere)
+
+        tri_row = {
             "label": label,
             "ca": ca,
             "selected_min": tier_result["selected_min"],
@@ -820,6 +879,11 @@ def calculate_rfa_multi_contracts(
             "triggered": tier_result["triggered"],
             "has_override": False
         }
+        if ca_exclu > 0:
+            tri_row["ca_exclu"] = ca_exclu
+            tri_row["ca_remunere"] = ca_remunere
+            tri_row["exclusion_marque"] = EXADIS_EXCLUDED_BRAND
+        result["tri"][key] = tri_row
         
         tri_total += tier_result["value"]
     

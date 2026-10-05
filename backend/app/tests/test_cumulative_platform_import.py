@@ -34,6 +34,7 @@ def test_scale_recap_by_platform_months_lag():
     recap = {
         "global": {"GLOBAL_DCA": 60000.0, "GLOBAL_EXADIS": 70000.0},
         "tri": {"TRI_DCA_SBS": 1000.0},
+        "excluded_ca": {"GLOBAL_EXADIS": 7000.0},
     }
     projected, display_factor, display_month = scale_recap_by_platform_months(
         recap,
@@ -44,6 +45,7 @@ def test_scale_recap_by_platform_months_lag():
     # DCA juin → ×2 ; EXADIS juillet → ×12/7
     assert projected["global"]["GLOBAL_DCA"] == 120000.0
     assert abs(projected["global"]["GLOBAL_EXADIS"] - round(70000 * 12 / 7, 2)) < 0.01
+    assert abs(projected["excluded_ca"]["GLOBAL_EXADIS"] - round(7000 * 12 / 7, 2)) < 0.01
     assert abs(projected["tri"]["TRI_DCA_SBS"] - 2000.0) < 0.01
     assert display_month == 6
     assert abs(display_factor - 2.0) < 0.01

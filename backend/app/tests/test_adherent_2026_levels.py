@@ -107,6 +107,33 @@ def test_below_25k_no_rfa():
     assert result["totals"]["grand_total"] == 0.0
 
 
+def test_exadis_prodex_counts_for_tier_not_for_payment():
+    """30 k€ EXADIS dont 10 k€ Prodex : palier 25 k€ acquis, 3,5 % sur 20 k€."""
+    contract = _make_contract()
+    result = calculate_rfa(
+        {
+            "global": {
+                "GLOBAL_ACR": 80000.0,
+                "GLOBAL_EXADIS": 30000.0,
+                "GLOBAL_ALLIANCE": 0.0,
+                "GLOBAL_DCA": 0.0,
+            },
+            "tri": {},
+            "excluded_ca": {"GLOBAL_EXADIS": 10000.0},
+        },
+        contract=contract,
+        contract_rules={},
+    )
+    ex = result["global"]["GLOBAL_EXADIS"]
+    assert result["contract_level"]["id"] == "SILVER"
+    assert ex["rfa"]["selected_min"] == 25000
+    assert ex["ca"] == 30000.0
+    assert ex["ca_exclu"] == 10000.0
+    assert ex["ca_remunere"] == 20000.0
+    assert abs(ex["total"]["rate"] - 0.035) < 1e-9
+    assert ex["total"]["value"] == 700.0
+
+
 def test_gold_example_from_livret():
     """Exemple livret : Gold 600k — ACR 100k → 6%, EXADIS 30k → 4%, Alliance 200k → 7,5%."""
     contract = _make_contract()

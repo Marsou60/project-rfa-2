@@ -93,10 +93,14 @@ def _empty_platform_totals() -> Dict[str, float]:
 
 
 def _scale_recap(recap_ca: Dict[str, Dict[str, float]], factor: float) -> Dict[str, Dict[str, float]]:
-    return {
+    scaled = {
         "global": {k: round(float(v) * factor, 2) for k, v in (recap_ca.get("global") or {}).items()},
         "tri": {k: round(float(v) * factor, 2) for k, v in (recap_ca.get("tri") or {}).items()},
     }
+    excluded = recap_ca.get("excluded_ca") or {}
+    if excluded:
+        scaled["excluded_ca"] = {k: round(float(v) * factor, 2) for k, v in excluded.items()}
+    return scaled
 
 
 def _platform_from_ca_key(key: str) -> Optional[str]:
@@ -146,9 +150,11 @@ def scale_recap_by_platform_months(
 
     used_months: List[int] = []
     projected = {"global": {}, "tri": {}}
+    if recap_ca.get("excluded_ca"):
+        projected["excluded_ca"] = {}
     has_any_factor = False
 
-    for section in ("global", "tri"):
+    for section in ("global", "tri", "excluded_ca"):
         for key, value in (recap_ca.get(section) or {}).items():
             platform = _platform_from_ca_key(key)
             month = platform_months.get(platform) if platform else None

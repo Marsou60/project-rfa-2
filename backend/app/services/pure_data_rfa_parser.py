@@ -100,6 +100,11 @@ def _is_mecafilter(m: str) -> bool:
     return m.replace(" ", "") in ("MECAFILTER",) or "MECA FILTER" in m
 
 
+def _is_prodex(m: str) -> bool:
+    """Marque EXADIS non rémunérée : compte pour le palier, pas pour le montant RFA."""
+    return m == "PRODEX" or m.startswith("PRODEX ") or m.startswith("PRODEX-")
+
+
 def _is_blueprint(m: str) -> bool:
     compact = m.replace(" ", "")
     return compact in ("BLUEPRINT", "BLUPRINT") or m == "BLUE PRINT"
@@ -227,6 +232,7 @@ def compute_recap_ca_from_rows(rows: List[Dict]) -> Dict[str, Dict[str, float]]:
     recap = {
         "global": {k: 0.0 for k in get_global_fields()},
         "tri": {k: 0.0 for k in get_tri_fields()},
+        "excluded_ca": {"GLOBAL_EXADIS": 0.0},
     }
 
     for r in rows:
@@ -247,19 +253,25 @@ def compute_recap_ca_from_rows(rows: List[Dict]) -> Dict[str, Dict[str, float]]:
         famille = _u(r.get("famille"))
         sous_famille = _u(r.get("sous_famille"))
 
-        # Global : tout le CA du fournisseur
+        # Global : tout le CA du fournisseur (Prodex inclus, il sert au palier)
         gkey = GLOBAL_BY_FOURNISSEUR.get(frs) or GLOBAL_BY_FOURNISSEUR.get(frs_raw)
+        prodex_exadis = frs == "EXADIS" and _is_prodex(marque)
         if gkey and gkey in recap["global"]:
             recap["global"][gkey] += ca
+        if prodex_exadis:
+            recap["excluded_ca"]["GLOBAL_EXADIS"] += ca
 
-        # Tri-partites : une ligne peut alimenter plusieurs clés (legacy + 2026)
+        # Tri-partites : le CA Prodex compte dans le palier, pas dans le montant versé.
         for tri_key, predicate in TRI_RULES:
             if tri_key not in recap["tri"]:
                 continue
             if predicate(frs, marque, famille, sous_famille):
                 recap["tri"][tri_key] += ca
+                if prodex_exadis:
+                    recap["excluded_ca"][tri_key] = recap["excluded_ca"].get(tri_key, 0.0) + ca
 
     # Arrondi propre
     recap["global"] = {k: round(v, 2) for k, v in recap["global"].items()}
     recap["tri"] = {k: round(v, 2) for k, v in recap["tri"].items()}
+    recap["excluded_ca"] = {k: round(v, 2) for k, v in recap["excluded_ca"].items()}
     return recap

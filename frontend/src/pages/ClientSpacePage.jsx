@@ -1944,7 +1944,7 @@ const rfa26Prog = (ca, tiers) => {
   return { rate, nextMin: next ? next.min : null, minReached }
 }
 /** Progression combinée (rfa + bonus) pour une plateforme globale. */
-function rfa26GlobalProgress(ca, tiersRfa, tiersBonus) {
+function rfa26GlobalProgress(ca, tiersRfa, tiersBonus, caRemunere = null) {
   const pr = rfa26Prog(ca, tiersRfa)
   const pb = rfa26Prog(ca, tiersBonus)
   const nexts = [pr.nextMin, pb.nextMin].filter((v) => v != null)
@@ -1952,19 +1952,25 @@ function rfa26GlobalProgress(ca, tiersRfa, tiersBonus) {
   const rate = (pr.rate || 0) + (pb.rate || 0)
   const nextRate = nextMin != null ? rfa26RateForThreshold(tiersRfa, nextMin) + rfa26RateForThreshold(tiersBonus, nextMin) : null
   const progress = nextMin ? Math.min((ca / nextMin) * 100, 100) : 100
-  const currentValue = rate * ca
+  const excluded = caRemunere == null ? 0 : Math.max(ca - caRemunere, 0)
+  const base = caRemunere == null ? ca : caRemunere
+  const currentValue = rate * base
   const missing = nextMin != null ? Math.max(nextMin - ca, 0) : 0
-  const projectedGain = nextMin != null && nextRate != null ? Math.max(nextRate * nextMin - currentValue, 0) : 0
+  const nextBase = nextMin != null ? Math.max(nextMin - excluded, 0) : 0
+  const projectedGain = nextMin != null && nextRate != null ? Math.max(nextRate * nextBase - currentValue, 0) : 0
   return { rate, nextMin, nextRate, progress, currentValue, missing, projectedGain, achieved: nextMin == null && (pr.minReached != null || pb.minReached != null) }
 }
 /** Progression simple pour une tri-partite. */
-function rfa26TriProgress(ca, tiers) {
+function rfa26TriProgress(ca, tiers, caRemunere = null) {
   const p = rfa26Prog(ca, tiers)
   const nextRate = p.nextMin != null ? rfa26RateForThreshold(tiers, p.nextMin) : null
   const progress = p.nextMin ? Math.min((ca / p.nextMin) * 100, 100) : 100
-  const currentValue = (p.rate || 0) * ca
+  const excluded = caRemunere == null ? 0 : Math.max(ca - caRemunere, 0)
+  const base = caRemunere == null ? ca : caRemunere
+  const currentValue = (p.rate || 0) * base
   const missing = p.nextMin != null ? Math.max(p.nextMin - ca, 0) : 0
-  const projectedGain = p.nextMin != null && nextRate != null ? Math.max(nextRate * p.nextMin - currentValue, 0) : 0
+  const nextBase = p.nextMin != null ? Math.max(p.nextMin - excluded, 0) : 0
+  const projectedGain = p.nextMin != null && nextRate != null ? Math.max(nextRate * nextBase - currentValue, 0) : 0
   return { rate: p.rate, nextMin: p.nextMin, nextRate, progress, currentValue, missing, projectedGain, achieved: p.nextMin == null && p.minReached != null }
 }
 
@@ -2131,6 +2137,7 @@ function Rfa26Readme({ isLevelBased, contractName, fmt, SILVER_MIN, GOLD_MIN }) 
                 <li><strong>Classique</strong> (≥ 25 k€) : RFA + Bonus plateformes. Pas de tripartites.</li>
                 <li><strong>Silver</strong> (≥ {fmt(SILVER_MIN)}) : meilleurs taux + <strong>tripartites débloquées</strong>.</li>
                 <li><strong>Gold</strong> (≥ {fmt(GOLD_MIN)}) : bonus Union supérieur.</li>
+                <li><strong>EXADIS / Prodex</strong> : le CA Prodex compte pour le palier, la RFA se calcule sur le CA hors Prodex.</li>
               </ul>
               <p className="text-slate-600">
                 Si votre projection dépasse le seuil Silver/Gold, la page affiche déjà le niveau et les tripartites <strong>comme en fin d&apos;année</strong> (bloc cyan), même si à date vous n&apos;y êtes pas encore.
@@ -2140,6 +2147,7 @@ function Rfa26Readme({ isLevelBased, contractName, fmt, SILVER_MIN, GOLD_MIN }) 
             <p className="text-slate-700">
               Contrat spécifique : les paliers affichés sont ceux de <strong>{contractName}</strong> (pas Classique/Silver/Gold).
               Tripartites et plateformes suivent ce contrat uniquement.
+              Chez EXADIS, le CA Prodex compte pour le palier et il est retiré du montant versé.
             </p>
           )}
         </div>
@@ -2157,6 +2165,7 @@ function Rfa26ProgressCard({
   hasTiers = true,
   tierGroups = [],
   proj = null,
+  exclusion = null,
   fmt,
   fmtPct,
   locked = false,
@@ -2301,6 +2310,11 @@ function Rfa26ProgressCard({
         </span>
         <span className="font-bold text-emerald-600">{fmt(prog.currentValue)} RFA</span>
       </div>
+      {exclusion?.exclu > 0 && (
+        <p className="text-[11px] text-slate-600 mb-1.5 leading-snug">
+          Dont {fmt(exclusion.exclu)} Prodex non rémunéré. Palier sur {fmt(ca)}, RFA sur {fmt(exclusion.remunere)}.
+        </p>
+      )}
 
       <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
         <div
@@ -2493,7 +2507,7 @@ function ClientRfa2026Section({
     .map(([key, it]) => {
       const tRfa = rfa26ParseTiers(it.tiers_rfa)
       const tBonus = rfa26ParseTiers(it.tiers_bonus)
-      const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus)
+      const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null)
       return { key, label: it.label, prog }
     })
     .filter((x) => x.prog.nextMin != null && x.prog.projectedGain > 0)
@@ -2876,9 +2890,13 @@ function ClientRfa2026Section({
                 .map(([key, it]) => {
                   const tRfa = rfa26ParseTiers(it.tiers_rfa)
                   const tBonus = rfa26ParseTiers(it.tiers_bonus)
-                  const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus)
+                  const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null)
+                  if (it.ca_exclu && it.total?.value != null) prog.currentValue = it.total.value
                   const pj = projected?.global?.[key]
                   const proj = pj ? { ca: pj.ca || 0, rate: pj.total?.rate || 0, value: pj.total?.value || 0 } : null
+                  const exclusion = it.ca_exclu > 0
+                    ? { exclu: it.ca_exclu, remunere: it.ca_remunere }
+                    : null
                   const pjRfa = pj ? rfa26ParseTiers(pj.tiers_rfa) : []
                   const pjBonus = pj ? rfa26ParseTiers(pj.tiers_bonus) : []
                   const projTierGroups = levelWillUpgrade && (pjRfa.length > 0 || pjBonus.length > 0)
@@ -2895,6 +2913,7 @@ function ClientRfa2026Section({
                       hasTiers={tRfa.length > 0 || tBonus.length > 0}
                       tierGroups={[{ label: 'Paliers RFA', tiers: tRfa }, { label: 'Paliers Bonus', tiers: tBonus }]}
                       proj={proj}
+                      exclusion={exclusion}
                       fmt={fmt}
                       fmtPct={fmtPct}
                       levelLabel={levelId ? `Barème ${levelId}` : null}
@@ -2945,7 +2964,8 @@ function ClientRfa2026Section({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {triItems.map(([key, it]) => {
                 const tiers = rfa26ParseTiers(it.tiers)
-                const prog = rfa26TriProgress(it.ca || 0, tiers)
+                const prog = rfa26TriProgress(it.ca || 0, tiers, it.ca_exclu ? it.ca_remunere : null)
+                if (it.ca_exclu && it.value != null) prog.currentValue = it.value
                 const pjt = projected?.tri?.[key]
                 const proj = pjt ? { ca: pjt.ca || 0, rate: pjt.rate || 0, value: pjt.value || 0 } : null
                 return (
@@ -2959,6 +2979,7 @@ function ClientRfa2026Section({
                     hasTiers={tiers.length > 0}
                     tierGroups={[{ label: 'Paliers', tiers }]}
                     proj={proj}
+                    exclusion={it.ca_exclu > 0 ? { exclu: it.ca_exclu, remunere: it.ca_remunere } : null}
                     fmt={fmt}
                     fmtPct={fmtPct}
                     locked={triFullyLocked}
