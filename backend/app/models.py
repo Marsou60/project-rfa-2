@@ -152,8 +152,11 @@ class User(SQLModel, table=True):
     # Photo de profil
     avatar_url: Optional[str] = None  # URL ou chemin local (uploads/avatars/xxx.png)
     is_active: bool = Field(default=True, index=True)
-    created_at: datetime = Field(default_factory=datetime.now)
-    last_login: Optional[datetime] = None
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=DateTime(timezone=True),
+    )
+    last_login: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class SupplierLogo(SQLModel, table=True):

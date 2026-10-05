@@ -62,3 +62,10 @@ def test_create_fusion_links_both_codes_and_rejects_reuse():
         assert updated["label"] == "Dupont nouveau Kbis"
         assert fusion_for_code(session, "M200") is None
         assert fusion_for_code(session, "m300")["id"] == created["id"]
+
+
+def test_user_created_at_is_timezone_aware():
+    from app.models import User
+
+    user = User(username="bbh", password_hash="x")
+    assert user.created_at.tzinfo is not None

@@ -6,7 +6,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Depends, 
 from fastapi.responses import JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
-from datetime import datetime
+from datetime import datetime, timezone
 import tempfile
 import os
 import re
@@ -3014,7 +3014,7 @@ async def login(request: LoginRequest, session: Session = Depends(get_session)):
             raise HTTPException(status_code=403, detail="Compte désactivé")
 
         # Mettre à jour last_login
-        user.last_login = datetime.now()
+        user.last_login = datetime.now(timezone.utc)
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -3138,7 +3138,8 @@ async def create_user(
         role=role,
         linked_code_union=user_data.linked_code_union.upper() if user_data.linked_code_union else None,
         linked_groupe=user_data.linked_groupe.upper() if user_data.linked_groupe else None,
-        is_active=True
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
     session.add(user)
     session.commit()
