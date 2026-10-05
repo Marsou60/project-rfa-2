@@ -207,6 +207,26 @@ export const deleteAssignment = async (assignmentId) => {
   return response.data
 }
 
+export const getRfaFusions = async () => {
+  const response = await api.get('/rfa-fusions')
+  return response.data
+}
+
+export const createRfaFusion = async (fusion) => {
+  const response = await api.post('/rfa-fusions', fusion)
+  return response.data
+}
+
+export const updateRfaFusion = async (fusionId, fusion) => {
+  const response = await api.patch(`/rfa-fusions/${fusionId}`, fusion)
+  return response.data
+}
+
+export const deleteRfaFusion = async (fusionId) => {
+  const response = await api.delete(`/rfa-fusions/${fusionId}`)
+  return response.data
+}
+
 // ==================== OVERRIDES (Taux personnalises par client ou groupe) ====================
 
 export const getOverrides = async (targetType = null, targetValue = null) => {

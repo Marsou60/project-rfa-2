@@ -2400,6 +2400,11 @@ function ClientRfa2026Section({
     <div className="rounded-2xl border border-indigo-100 bg-white p-6 shadow-sm">
       <h3 className="text-indigo-900 font-bold">RFA 2026</h3>
       <p className="text-sm text-slate-500 mt-2">{data?.message || 'Aucune donnée Pure Data 2026 disponible pour le moment.'}</p>
+      {data?.fusion?.codes?.length > 1 && (
+        <p className="text-sm text-sky-900 mt-3">
+          Fusion {data.fusion.label ? `« ${data.fusion.label} »` : ''} : {data.fusion.codes.join(' + ')}.
+        </p>
+      )}
     </div>
   )
 
@@ -2537,6 +2542,14 @@ function ClientRfa2026Section({
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] text-amber-900">
           Chiffres estimatifs — module en validation. Ne pas communiquer tels quels aux adhérents.
         </div>
+
+        {data.fusion?.codes?.length > 1 && (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-2.5 text-[13px] text-sky-950">
+            <strong>Comptes fusionnés.</strong> Le chiffre d’affaires de {data.fusion.codes.join(' + ')}
+            {data.fusion.label ? ` (${data.fusion.label})` : ''} est additionné.
+            Un seul montant de RFA, identique sur chaque compte.
+          </div>
+        )}
 
         {(rfa.fixed_bonuses || []).filter((b) => b?.key === 'WARNING_TRI_PRIME').map((prime) => {
           const triggered = !!prime.triggered

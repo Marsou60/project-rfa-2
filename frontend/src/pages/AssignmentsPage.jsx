@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { Link2, Plus, Search, User, Users, Trash2, FileText, X } from 'lucide-react'
-import { getAssignments, createAssignment, deleteAssignment, getContracts, getEntities } from '../api/client'
+import { getAssignments, createAssignment, deleteAssignment, getContracts, getEntities, getRfaFusions, createRfaFusion, updateRfaFusion, deleteRfaFusion, nathalieGetClients } from '../api/client'
 
 function AssignmentsPage() {
   const [assignments, setAssignments] = useState([])
@@ -11,6 +11,7 @@ function AssignmentsPage() {
   const [activeTab, setActiveTab] = useState('code_union')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [fusions, setFusions] = useState([])
 
   useEffect(() => {
     loadData()
@@ -19,12 +20,14 @@ function AssignmentsPage() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [assignmentsData, contractsData] = await Promise.all([
+      const [assignmentsData, contractsData, fusionsData] = await Promise.all([
         getAssignments(),
-        getContracts()
+        getContracts(),
+        getRfaFusions().catch(() => [])
       ])
       setAssignments(assignmentsData)
       setContracts(contractsData.filter(c => c.is_active))
+      setFusions(fusionsData || [])
       setError(null)
 
       const lastImportId = localStorage.getItem('lastImportId')
@@ -56,7 +59,7 @@ function AssignmentsPage() {
       setShowCreateForm(false)
       loadData()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de la création')
+      setError(err.response?.data?.detail || 'Erreur lors de la crÃ©ation')
       throw err
     }
   }
@@ -110,7 +113,7 @@ function AssignmentsPage() {
               Affectations de Contrats
             </h1>
             <p className="text-sm text-glass-secondary mt-1">
-              Gérez les contrats assignés aux Code Union et Groupes Client
+              GÃ©rez les contrats assignÃ©s aux Code Union et Groupes Client
             </p>
           </div>
         </div>
@@ -135,10 +138,17 @@ function AssignmentsPage() {
       {/* Statistiques */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard title="Total" value={stats.total} icon={<FileText className="w-6 h-6" />} color="blue" />
-        <StatCard title="Code Union" value={stats.codeUnion} icon={<User className="w-6 h-6" />} color="emerald" subtitle="Priorité 100" />
-        <StatCard title="Groupes" value={stats.groupe} icon={<Users className="w-6 h-6" />} color="purple" subtitle="Priorité 50" />
-        <StatCard title="Contrats utilisés" value={stats.contracts} icon={<FileText className="w-6 h-6" />} color="orange" />
+        <StatCard title="Code Union" value={stats.codeUnion} icon={<User className="w-6 h-6" />} color="emerald" subtitle="PrioritÃ© 100" />
+        <StatCard title="Groupes" value={stats.groupe} icon={<Users className="w-6 h-6" />} color="purple" subtitle="PrioritÃ© 50" />
+        <StatCard title="Contrats utilisÃ©s" value={stats.contracts} icon={<FileText className="w-6 h-6" />} color="orange" />
       </div>
+
+      <FusionPanel
+        fusions={fusions}
+        contracts={contracts}
+        onChanged={loadData}
+        onError={setError}
+      />
 
       {showCreateForm && (
         <div className="glass-card p-6">
@@ -177,7 +187,7 @@ function AssignmentsPage() {
           }`}>
             {codeUnionAssignments.length}
           </span>
-          <span className="text-xs text-glass-muted">(Priorité 100)</span>
+          <span className="text-xs text-glass-muted">(PrioritÃ© 100)</span>
         </button>
         <button
           onClick={() => setActiveTab('groupe')}
@@ -194,7 +204,7 @@ function AssignmentsPage() {
           }`}>
             {groupeAssignments.length}
           </span>
-          <span className="text-xs text-glass-muted">(Priorité 50)</span>
+          <span className="text-xs text-glass-muted">(PrioritÃ© 50)</span>
         </button>
       </div>
 
@@ -220,7 +230,7 @@ function AssignmentsPage() {
             Aucune affectation {activeTab === 'code_union' ? 'Code Union' : 'Groupe Client'}
           </h3>
           <p className="text-glass-secondary mb-6">
-            {searchTerm ? 'Aucun résultat pour votre recherche' : 'Créez votre première affectation pour commencer'}
+            {searchTerm ? 'Aucun rÃ©sultat pour votre recherche' : 'CrÃ©ez votre premiÃ¨re affectation pour commencer'}
           </p>
           {!searchTerm && (
             <button
@@ -228,7 +238,7 @@ function AssignmentsPage() {
               className="glass-btn-primary"
             >
               <Plus className="w-4 h-4 mr-2 inline" />
-              Créer une affectation
+              CrÃ©er une affectation
             </button>
           )}
         </div>
@@ -293,7 +303,7 @@ function AssignmentCard({ assignment, contract, type, onDelete }) {
           <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
             isCodeUnion ? 'glass-badge-emerald' : 'glass-badge-purple'
           }`}>
-            Priorité {assignment.priority}
+            PrioritÃ© {assignment.priority}
           </div>
         </div>
         <button
@@ -308,11 +318,11 @@ function AssignmentCard({ assignment, contract, type, onDelete }) {
       <div className="border-t border-white/10 pt-3">
         <div className="flex items-center gap-2">
           <div className="flex-1">
-            <p className="text-xs text-glass-muted mb-1">Contrat assigné</p>
+            <p className="text-xs text-glass-muted mb-1">Contrat assignÃ©</p>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-white">{contract?.name || 'Contrat introuvable'}</span>
               {contract?.is_default && (
-                <span className="glass-badge-blue text-xs">Défaut</span>
+                <span className="glass-badge-blue text-xs">DÃ©faut</span>
               )}
             </div>
           </div>
@@ -342,7 +352,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!contractId) {
-      alert('Veuillez sélectionner un contrat')
+      alert('Veuillez sÃ©lectionner un contrat')
       return
     }
     onSubmit({
@@ -375,7 +385,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           >
             <User className="w-4 h-4" />
             <span className="font-medium">Code Union</span>
-            <span className="text-xs glass-badge-emerald">Priorité 100</span>
+            <span className="text-xs glass-badge-emerald">PrioritÃ© 100</span>
           </button>
           <button
             type="button"
@@ -391,7 +401,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           >
             <Users className="w-4 h-4" />
             <span className="font-medium">Groupe Client</span>
-            <span className="text-xs glass-badge-purple">Priorité 50</span>
+            <span className="text-xs glass-badge-purple">PrioritÃ© 50</span>
           </button>
         </div>
       </div>
@@ -462,10 +472,10 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           required
           className="glass-select"
         >
-          <option value="">Sélectionner un contrat</option>
+          <option value="">SÃ©lectionner un contrat</option>
           {contracts.filter(c => c.is_active && (c.scope === 'ADHERENT' || !c.scope)).map((contract) => (
             <option key={contract.id} value={contract.id}>
-              {contract.name} {contract.is_default && '(Défaut)'}
+              {contract.name} {contract.is_default && '(DÃ©faut)'}
             </option>
           ))}
         </select>
@@ -483,11 +493,312 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           type="submit"
           className="glass-btn-primary"
         >
-          Créer l'affectation
+          CrÃ©er l'affectation
         </button>
       </div>
     </form>
   )
 }
 
+function FusionPanel({ fusions, contracts, onChanged, onError }) {
+  const [label, setLabel] = useState('')
+  const [labelTouched, setLabelTouched] = useState(false)
+  const [selected, setSelected] = useState([])
+  const [contractId, setContractId] = useState('')
+  const [query, setQuery] = useState('')
+  const [directory, setDirectory] = useState([])
+  const [editingId, setEditingId] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    nathalieGetClients()
+      .then((data) => setDirectory(data?.clients || []))
+      .catch(() => setDirectory([]))
+  }, [])
+
+  const byCode = {}
+  for (const client of directory) {
+    const code = (client.code_union || '').trim().toUpperCase()
+    if (code) byCode[code] = client.nom_client || ''
+  }
+
+  const suggestLabel = (accounts) => {
+    const names = accounts.map((a) => a.name).filter(Boolean)
+    if (names.length >= 2 && names[0] === names[1]) return names[0]
+    return names.filter(Boolean).join(' + ')
+  }
+
+  const addAccount = (account) => {
+    const code = (account.code || '').trim().toUpperCase()
+    if (!code || selected.some((a) => a.code === code)) return
+    const next = [...selected, { code, name: account.name || byCode[code] || '' }]
+    setSelected(next)
+    if (!labelTouched) setLabel(suggestLabel(next))
+    setQuery('')
+    setOpen(false)
+  }
+
+  const removeAccount = (code) => {
+    const next = selected.filter((a) => a.code !== code)
+    setSelected(next)
+    if (!labelTouched) setLabel(suggestLabel(next))
+  }
+
+  const resetForm = () => {
+    setLabel('')
+    setLabelTouched(false)
+    setSelected([])
+    setContractId('')
+    setQuery('')
+    setEditingId(null)
+    setOpen(false)
+  }
+
+  const startEdit = (fusion) => {
+    setEditingId(fusion.id)
+    setLabel(fusion.label || '')
+    setLabelTouched(true)
+    setContractId(String(fusion.contract_id || ''))
+    setSelected((fusion.codes || []).map((code) => ({ code, name: byCode[code] || '' })))
+    setQuery('')
+    setOpen(false)
+  }
+
+  const needle = query.trim().toLowerCase()
+  const suggestions = needle.length < 1 ? [] : directory
+    .filter((client) => {
+      const code = (client.code_union || '').trim().toUpperCase()
+      if (!code || selected.some((a) => a.code === code)) return false
+      const nom = (client.nom_client || '').toLowerCase()
+      const ville = (client.ville || '').toLowerCase()
+      return code.toLowerCase().includes(needle) || nom.includes(needle) || ville.includes(needle)
+    })
+    .slice(0, 8)
+
+  const typedCode = query.trim().toUpperCase()
+  const canAddTyped = typedCode.length >= 2
+    && !selected.some((a) => a.code === typedCode)
+    && !suggestions.some((c) => (c.code_union || '').trim().toUpperCase() === typedCode)
+
+  const handleCreate = async (e) => {
+    e.preventDefault()
+    if (selected.length < 2) {
+      onError('Choisissez au moins deux magasins.')
+      return
+    }
+    if (!contractId) {
+      onError('Choisissez le contrat de la fusion.')
+      return
+    }
+    const payload = {
+      label: label.trim() || suggestLabel(selected),
+      contract_id: parseInt(contractId, 10),
+      codes: selected.map((a) => a.code),
+    }
+    setBusy(true)
+    try {
+      if (editingId) await updateRfaFusion(editingId, payload)
+      else await createRfaFusion(payload)
+      resetForm()
+      onError(null)
+      onChanged()
+    } catch (err) {
+      onError(err.response?.data?.detail || 'Erreur lors de la fusion')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleDelete = async (fusion) => {
+    const who = (fusion.codes || []).join(' + ')
+    if (!window.confirm(`Supprimer la fusion Â« ${fusion.label} Â» (${who}) ? Chaque compte reprendra son propre calcul.`)) {
+      return
+    }
+    try {
+      await deleteRfaFusion(fusion.id)
+      if (editingId === fusion.id) resetForm()
+      onChanged()
+    } catch (err) {
+      onError(err.response?.data?.detail || 'Erreur lors de la suppression')
+    }
+  }
+
+  const changeContract = async (fusion, nextId) => {
+    try {
+      await updateRfaFusion(fusion.id, { contract_id: parseInt(nextId, 10) })
+      onError(null)
+      onChanged()
+    } catch (err) {
+      onError(err.response?.data?.detail || 'Impossible de changer le contrat')
+    }
+  }
+
+  return (
+    <div className="glass-card p-6 space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold text-white">Fusion de comptes</h2>
+        <p className="text-sm text-glass-secondary mt-1">
+          Pour un changement de Kbis : cherchez les magasins, choisissez le contrat. Le chiffre dâ€™affaires est additionnÃ© et la RFA est la mÃªme sur chaque compte.
+        </p>
+      </div>
+
+      <form onSubmit={handleCreate} className="space-y-4">
+        {editingId && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-400/30 bg-indigo-500/10 px-4 py-2 text-sm text-indigo-100">
+            <span>Modification en cours</span>
+            <button type="button" onClick={resetForm} className="text-indigo-200 hover:text-white">Annuler</button>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-glass-secondary mb-2">Magasins Ã  additionner</label>
+          {selected.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {selected.map((account) => (
+                <span key={account.code} className="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/15 px-3 py-1 text-sm text-white">
+                  <span className="font-semibold">{account.code}</span>
+                  {account.name && <span className="text-glass-secondary">{account.name}</span>}
+                  <button type="button" onClick={() => removeAccount(account.code)} className="text-glass-muted hover:text-white" aria-label={`Retirer ${account.code}`}>
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="relative">
+            <input
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+              onFocus={() => setOpen(true)}
+              onBlur={() => setTimeout(() => setOpen(false), 150)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                if (suggestions[0]) {
+                  addAccount({
+                    code: suggestions[0].code_union,
+                    name: suggestions[0].nom_client || '',
+                  })
+                } else if (canAddTyped) {
+                  addAccount({ code: typedCode, name: byCode[typedCode] || '' })
+                }
+              }}
+              placeholder="Rechercher un magasin, une ville ou un code"
+              className="glass-input"
+            />
+            {open && (suggestions.length > 0 || canAddTyped) && (
+              <div className="absolute z-20 mt-1 w-full rounded-xl border border-white/15 bg-slate-900/95 shadow-xl overflow-hidden">
+                {suggestions.map((client) => {
+                  const code = (client.code_union || '').trim().toUpperCase()
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => addAccount({ code, name: client.nom_client || '' })}
+                      className="w-full text-left px-4 py-2.5 hover:bg-white/10 flex items-baseline gap-3"
+                    >
+                      <span className="text-sm font-semibold text-white shrink-0">{code}</span>
+                      <span className="text-sm text-glass-secondary truncate">
+                        {client.nom_client || 'Sans nom'}
+                        {client.ville ? ` Â· ${client.ville}` : ''}
+                      </span>
+                    </button>
+                  )
+                })}
+                {canAddTyped && (
+                  <button
+                    type="button"
+                    onClick={() => addAccount({ code: typedCode, name: byCode[typedCode] || '' })}
+                    className="w-full text-left px-4 py-2.5 hover:bg-white/10 text-sm text-indigo-200"
+                  >
+                    Ajouter le code {typedCode}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-glass-muted mt-1">Au moins deux comptes. Vous pouvez aussi coller un code qui nâ€™est pas dans lâ€™annuaire.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-glass-secondary mb-2">Nom affichÃ©</label>
+            <input
+              value={label}
+              onChange={(e) => { setLabel(e.target.value); setLabelTouched(true) }}
+              placeholder="Repris des noms de magasins"
+              className="glass-input"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-glass-secondary mb-2">Contrat appliquÃ© Ã  la somme</label>
+            <select
+              value={contractId}
+              onChange={(e) => setContractId(e.target.value)}
+              required
+              className="glass-select"
+            >
+              <option value="">SÃ©lectionner un contrat</option>
+              {contracts.map((contract) => (
+                <option key={contract.id} value={contract.id}>{contract.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button type="submit" disabled={busy || selected.length < 2} className="glass-btn-primary">
+            {busy ? 'Enregistrementâ€¦' : editingId ? 'Enregistrer la fusion' : 'CrÃ©er la fusion'}
+          </button>
+        </div>
+      </form>
+
+      {fusions.length > 0 && (
+        <div className="space-y-2 border-t border-white/10 pt-4">
+          {fusions.map((fusion) => (
+            <div key={fusion.id} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{fusion.label}</p>
+                  <p className="text-xs text-glass-secondary mt-1">
+                    {(fusion.codes || []).map((code) => byCode[code] ? `${code} ${byCode[code]}` : code).join(' + ')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => startEdit(fusion)} className="text-xs text-indigo-200 hover:text-white px-2 py-1">
+                    Modifier
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(fusion)}
+                    className="glass-btn-icon text-red-400 hover:text-red-300"
+                    title="Supprimer la fusion"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <select
+                value={fusion.contract_id || ''}
+                onChange={(e) => changeContract(fusion, e.target.value)}
+                className="glass-select"
+                aria-label={`Contrat de ${fusion.label}`}
+              >
+                {contracts.map((contract) => (
+                  <option key={contract.id} value={contract.id}>{contract.name}</option>
+                ))}
+                {fusion.contract_id && !contracts.some((c) => c.id === fusion.contract_id) && (
+                  <option value={fusion.contract_id}>{fusion.contract_name || 'Contrat inactif'}</option>
+                )}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default AssignmentsPage
+

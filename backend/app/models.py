@@ -197,5 +197,22 @@ class BonusSetting(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class RfaFusion(SQLModel, table=True):
+    """Plusieurs codes Union dont le CA est additionné pour une seule RFA."""
+    __tablename__ = "rfa_fusion"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    label: str
+    contract_id: int = Field(foreign_key="contract.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class RfaFusionMember(SQLModel, table=True):
+    """Un code Union appartient à au plus une fusion."""
+    __tablename__ = "rfa_fusion_member"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    fusion_id: int = Field(foreign_key="rfa_fusion.id", index=True)
+    code_union: str = Field(index=True, unique=True)
+
+
 
 

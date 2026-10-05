@@ -2841,6 +2841,74 @@ def require_staff_or_adherent(user: Optional[User] = Depends(get_current_user)) 
     return user
 
 
+# ==================== FUSIONS DE COMPTES (changement de Kbis) ====================
+
+@router.get("/rfa-fusions")
+async def list_rfa_fusions(
+    session: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """Liste les fusions de codes Union (CA additionné, un seul contrat)."""
+    from app.services.rfa_fusion import list_fusions
+    return list_fusions(session)
+
+
+@router.post("/rfa-fusions")
+async def create_rfa_fusion(
+    payload: Dict[str, Any] = Body(...),
+    session: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """Crée une fusion : au moins deux codes, un contrat."""
+    from app.services.rfa_fusion import create_fusion
+    try:
+        return create_fusion(
+            session,
+            label=str(payload.get("label") or ""),
+            contract_id=int(payload.get("contract_id")),
+            codes=payload.get("codes"),
+        )
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e) or "Fusion invalide")
+
+
+@router.patch("/rfa-fusions/{fusion_id}")
+async def update_rfa_fusion(
+    fusion_id: int,
+    payload: Dict[str, Any] = Body(...),
+    session: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    """Met à jour le nom, le contrat ou les comptes d'une fusion."""
+    from app.services.rfa_fusion import update_fusion
+    try:
+        return update_fusion(
+            session,
+            fusion_id,
+            label=payload.get("label") if "label" in payload else None,
+            contract_id=int(payload["contract_id"]) if payload.get("contract_id") is not None else None,
+            codes=payload.get("codes") if "codes" in payload else None,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Fusion introuvable")
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e) or "Fusion invalide")
+
+
+@router.delete("/rfa-fusions/{fusion_id}")
+async def delete_rfa_fusion(
+    fusion_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(require_admin),
+):
+    from app.services.rfa_fusion import delete_fusion
+    try:
+        delete_fusion(session, fusion_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Fusion introuvable")
+    return {"message": "Fusion supprimée"}
+
+
 def _assert_contract_pdf_access(
     user: User,
     *,
@@ -4076,45 +4144,72 @@ async def pure_data_cumulative_client_rfa(
         from app.services.pure_data_cumulative_service import _norm_text
         from app.services.pure_data_rfa_parser import compute_recap_ca_from_rows
         from app.services.rfa_calculator import calculate_rfa
-        from app.services.contract_resolver import resolve_contract
+        from app.services.contract_resolver import resolve_contract, apply_year_contract_policy
         from app.services.entity_directory import load_pure_data_rows_for_entity
+        from app.services.rfa_fusion import fusion_for_code, load_rows_for_codes
 
-        rows, data_source = load_pure_data_rows_for_entity(
-            code_union=code_union,
-            groupe_client=groupe_client,
-            year=year,
-        )
+        fusion = fusion_for_code(session, code_union) if code_union else None
+        if fusion and len(fusion.get("codes") or []) < 2:
+            fusion = None
 
-        if code_union:
-            label = next(
-                (f"{(r.get('code_union') or '').strip()} — {(r.get('raison_sociale') or '').strip()}".strip(" —")
-                 for r in rows if (r.get("raison_sociale") or "").strip()),
-                code_union,
-            )
+        if fusion:
+            rows, data_source = load_rows_for_codes(fusion["codes"], year)
+            label = fusion["label"]
             entity_kind = "client"
-            resolve_key = {"code_union": code_union.strip().upper()}
         else:
-            label = groupe_client
-            entity_kind = "group"
-            resolve_key = {"groupe_client": _norm_text(groupe_client)}
+            rows, data_source = load_pure_data_rows_for_entity(
+                code_union=code_union,
+                groupe_client=groupe_client,
+                year=year,
+            )
+            if code_union:
+                label = next(
+                    (f"{(r.get('code_union') or '').strip()} — {(r.get('raison_sociale') or '').strip()}".strip(" —")
+                     for r in rows if (r.get("raison_sociale") or "").strip()),
+                    code_union,
+                )
+                entity_kind = "client"
+                resolve_key = {"code_union": code_union.strip().upper()}
+            else:
+                label = groupe_client
+                entity_kind = "group"
+                resolve_key = {"groupe_client": _norm_text(groupe_client)}
+
+        fusion_payload = None
+        if fusion:
+            fusion_payload = {
+                "id": fusion["id"],
+                "label": fusion["label"],
+                "codes": fusion["codes"],
+                "contract_id": fusion["contract_id"],
+                "contract_name": fusion.get("contract_name"),
+            }
 
         if not rows:
             return {
                 "available": False,
                 "label": label,
                 "entity_kind": entity_kind,
+                "fusion": fusion_payload,
                 "message": f"Aucune donnée Pure Data (cumulé ou mensuel) pour {year}.",
             }
 
         recap_ca = compute_recap_ca_from_rows(rows)
 
-        # Contrat résolu par le mécanisme existant (Code Union > Groupe > Défaut)
-        contract = resolve_contract(**resolve_key, year=year)
+        # Fusion Kbis : le contrat est celui de la fusion, pas l'affectation d'un seul code.
+        # Pas d'override d'un magasin sur la somme.
+        rfa_code = None if fusion else (code_union.strip().upper() if code_union else None)
+        rfa_groupe = None if fusion else (_norm_text(groupe_client) if groupe_client else None)
+        if fusion:
+            contract = session.get(Contract, fusion["contract_id"])
+            contract = apply_year_contract_policy(contract, year, session)
+        else:
+            contract = resolve_contract(**resolve_key, year=year)
         rfa_result = calculate_rfa(
             recap_ca,
             contract=contract,
-            code_union=code_union.strip().upper() if code_union else None,
-            groupe_client=(_norm_text(groupe_client) if groupe_client else None),
+            code_union=rfa_code,
+            groupe_client=rfa_groupe,
             year=year,
         )
 
@@ -4128,13 +4223,12 @@ async def pure_data_cumulative_client_rfa(
             should_apply_entity_overrides,
         )
         _rules = load_contract_rules(contract) if contract else {}
-        if should_apply_entity_overrides(contract, year):
-            if code_union:
-                _ovr = load_entity_overrides("CODE_UNION", code_union.strip().upper())
-            elif groupe_client:
-                _ovr = load_entity_overrides("GROUPE_CLIENT", _norm_text(groupe_client))
-            else:
-                _ovr = {}
+        if fusion or not should_apply_entity_overrides(contract, year):
+            _ovr = {}
+        elif code_union:
+            _ovr = load_entity_overrides("CODE_UNION", code_union.strip().upper())
+        elif groupe_client:
+            _ovr = load_entity_overrides("GROUPE_CLIENT", _norm_text(groupe_client))
         else:
             _ovr = {}
 
@@ -4197,8 +4291,8 @@ async def pure_data_cumulative_client_rfa(
             rfa_projected = calculate_rfa(
                 projected_recap,
                 contract=contract,
-                code_union=code_union.strip().upper() if code_union else None,
-                groupe_client=(_norm_text(groupe_client) if groupe_client else None),
+                code_union=rfa_code,
+                groupe_client=rfa_groupe,
                 year=year,
             )
             # Attacher les paliers du NIVEAU PROJETÉ (ex: GOLD) pour la jauge UI
@@ -4223,11 +4317,14 @@ async def pure_data_cumulative_client_rfa(
 
         # ── Comparaison CA complet N-1 vs projection fin d'année ──
         year_previous = year - 1
-        rows_n1, _ = load_pure_data_rows_for_entity(
-            code_union=code_union,
-            groupe_client=groupe_client,
-            year=year_previous,
-        )
+        if fusion:
+            rows_n1, _ = load_rows_for_codes(fusion["codes"], year_previous)
+        else:
+            rows_n1, _ = load_pure_data_rows_for_entity(
+                code_union=code_union,
+                groupe_client=groupe_client,
+                year=year_previous,
+            )
 
         def _sum_rows_ca(rs):
             return round(sum(float(r.get("ca") or 0.0) for r in rs), 2)
@@ -4278,7 +4375,10 @@ async def pure_data_cumulative_client_rfa(
         # Magasin : récupérer le groupe Pure Data pour savoir si cotisation au groupe
         member_groupe = None
         if code_union:
+            opened_code = _norm_text(code_union)
             for r in rows:
+                if fusion and _norm_text(r.get("code_union")) != opened_code:
+                    continue
                 g = _norm_text(r.get("groupe_client"))
                 if g:
                     member_groupe = g
@@ -4368,6 +4468,7 @@ async def pure_data_cumulative_client_rfa(
             "contract_level": contract_level,
             "projected_level": (rfa_projected or {}).get("contract_level") if rfa_projected else None,
             "level_based": bool(contract_level),
+            "fusion": fusion_payload,
         }
     except HTTPException:
         raise
