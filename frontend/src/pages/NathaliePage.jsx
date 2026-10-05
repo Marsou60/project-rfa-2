@@ -114,11 +114,20 @@ function clientStatus(client) {
   return 'docs_partial'
 }
 
+function matchesAnnuaireFilter(client, filter) {
+  if (filter === 'fermes') return Boolean(client.is_closed)
+  if (filter === 'ouverts') return !client.is_closed
+  if (filter === 'complet') return clientStatus(client) === 'docs_ok'
+  if (filter === 'en_cours') return !client.is_closed && clientStatus(client) === 'docs_partial'
+  if (filter === 'sans_dossier') return clientStatus(client) === 'sans_dossier'
+  return true
+}
+
 /* ═══════════════════════════════════════════════════════════════ */
 export default function NathaliePage() {
   const [view, setView] = useState('accueil') // accueil | nouveau | dossiers | annuaire | alertes | client | emails
   const [listOrigin, setListOrigin] = useState('dossiers')
-  const [annuaireFilter, setAnnuaireFilter] = useState('tous') // tous | ouverts | fermes | sans_dossier
+  const [annuaireFilter, setAnnuaireFilter] = useState('tous')
   const [clients, setClients] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(false)
@@ -268,8 +277,9 @@ export default function NathaliePage() {
           stats={stats}
           loading={loading}
           scanning={scanning}
-          onVoirDossiers={() => { setSearch(''); setView('dossiers') }}
+          onVoirDossiers={() => { setSearch(''); setAnnuaireFilter('en_cours'); setView('annuaire') }}
           onVoirAnnuaire={() => { setSearch(''); setAnnuaireFilter('tous'); setView('annuaire') }}
+          onVoirComplets={() => { setSearch(''); setAnnuaireFilter('complet'); setView('annuaire') }}
           onVoirSansDossier={() => { setSearch(''); setAnnuaireFilter('sans_dossier'); setView('annuaire') }}
           onVoirAlertes={() => setView('alertes')}
           legalOpen={legalOpen}
@@ -302,15 +312,11 @@ export default function NathaliePage() {
 
       {view === 'annuaire' && (
         <AnnuaireView
-          clients={filteredClients.filter(c => {
-            if (annuaireFilter === 'fermes') return Boolean(c.is_closed)
-            if (annuaireFilter === 'ouverts') return !c.is_closed
-            if (annuaireFilter === 'sans_dossier') return !hasDriveFolder(c)
-            return true
-          }).slice().sort((a, b) => {
-            const rank = (c) => (hasDriveFolder(c) ? 1 : 0)
-            const byFolder = rank(a) - rank(b)
-            if (byFolder) return byFolder
+          clients={filteredClients.filter(c => matchesAnnuaireFilter(c, annuaireFilter)).slice().sort((a, b) => {
+            if (annuaireFilter === 'tous') {
+              const byFolder = (hasDriveFolder(a) ? 1 : 0) - (hasDriveFolder(b) ? 1 : 0)
+              if (byFolder) return byFolder
+            }
             return (a.nom_client || '').localeCompare(b.nom_client || '', 'fr')
           })}
           total={clients.length}
@@ -401,13 +407,13 @@ function NathalieHeader({ onRefresh, loading }) {
 }
 
 /* ── Accueil ─────────────────────────────────────────────────── */
-function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire, onVoirSansDossier, onVoirAlertes, legalOpen, onNouveau, onScanDrive }) {
+function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire, onVoirComplets, onVoirSansDossier, onVoirAlertes, legalOpen, onNouveau, onScanDrive }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: 'En cours', value: stats.enCours, color: 'text-amber-300', onClick: onVoirDossiers },
-          { label: 'Complets', value: stats.complets, color: 'text-emerald-300', onClick: onVoirAnnuaire },
+          { label: 'Complets', value: stats.complets, color: 'text-emerald-300', onClick: onVoirComplets },
           { label: 'Sans dossier', value: stats.sansDossier, color: 'text-rose-300', onClick: onVoirSansDossier },
           { label: 'Alertes', value: legalOpen || 0, color: 'text-rose-300', onClick: onVoirAlertes },
           { label: 'Annuaire', value: stats.total, color: 'text-blue-300', onClick: onVoirAnnuaire },
@@ -1158,11 +1164,19 @@ function DossiersView({ clients, loading, scanning, aScanner, search, setSearch,
 /* ── Annuaire complet ─────────────────────────────────────────── */
 function AnnuaireView({ clients, total, loading, search, setSearch, filter, setFilter, onBack, onSelectClient }) {
   const filters = [
-    { id: 'tous', label: 'Tous' },
-    { id: 'ouverts', label: 'Ouverts' },
-    { id: 'fermes', label: 'Fermés' },
-    { id: 'sans_dossier', label: 'Sans dossier' },
+    { id: 'tous', label: 'Tous', title: 'Annuaire complet' },
+    { id: 'ouverts', label: 'Ouverts', title: 'Comptes ouverts' },
+    { id: 'fermes', label: 'Fermés', title: 'Comptes fermés' },
+    { id: 'complet', label: 'Complet', title: 'Dossiers complets' },
+    { id: 'en_cours', label: 'En cours', title: 'Dossiers en cours' },
+    { id: 'sans_dossier', label: 'Sans dossier', title: 'Sans dossier Drive' },
   ]
+  const active = filters.find(f => f.id === filter) || filters[0]
+  const chipOn = {
+    complet: 'bg-emerald-500/30 text-emerald-100',
+    en_cours: 'bg-amber-500/30 text-amber-100',
+    sans_dossier: 'bg-rose-500/30 text-rose-100',
+  }
   return (
     <div className="space-y-4 pb-8">
       <div className="flex items-center gap-3 flex-wrap sticky top-16 z-30 bg-slate-950/85 backdrop-blur-md rounded-2xl px-2 py-2 border border-white/10">
@@ -1170,12 +1184,12 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
           <ArrowLeft className="w-4 h-4" /> Retour dans Nathalie
         </button>
         <div className="flex-1 min-w-[180px]">
-          <h2 className="text-lg font-bold text-white">Annuaire complet</h2>
+          <h2 className="text-lg font-bold text-white">{active.title}</h2>
           <p className="text-xs text-blue-300/50">
             {clients.length} / {total} adhérents
           </p>
         </div>
-        <div className="flex rounded-xl bg-white/10 border border-white/15 p-0.5">
+        <div className="flex flex-wrap rounded-xl bg-white/10 border border-white/15 p-0.5">
           {filters.map(f => (
             <button
               key={f.id}
@@ -1183,7 +1197,7 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
               onClick={() => setFilter(f.id)}
               className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition ${
                 filter === f.id
-                  ? (f.id === 'sans_dossier' ? 'bg-rose-500/30 text-rose-100' : 'bg-white/15 text-white')
+                  ? (chipOn[f.id] || 'bg-white/15 text-white')
                   : 'text-white/50 hover:text-white/80'
               }`}
             >
