@@ -70,6 +70,7 @@ export function AuthProvider({ children }) {
     }
     localStorage.removeItem('authToken')
     localStorage.removeItem('authUser')
+    try { sessionStorage.removeItem('prodex_notice_2026_09_02') } catch { /* navigation privée */ }
     setUser(null)
   }
 

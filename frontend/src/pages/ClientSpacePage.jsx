@@ -1,10 +1,72 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026, upsertCotisation } from '../api/client'
 import ImpayesAdherentBanner from '../components/ImpayesAdherentBanner'
 import ClientFusionControl from '../components/ClientFusionControl'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
+
+const PRODEX_NOTICE_KEY = 'prodex_notice_2026_09_02'
+
+function ProdexNoticeModal({ logoUrl, onClose }) {
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/55"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prodex-notice-title"
+        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="px-6 pt-6 pb-4 flex flex-col items-center text-center border-b border-slate-100">
+          {logoUrl ? (
+            <img src={getImageUrl(logoUrl)} alt="EXADIS" className="h-16 w-auto max-w-[220px] object-contain" />
+          ) : (
+            <span className="text-lg font-black tracking-wide text-slate-800">EXADIS</span>
+          )}
+          <h2 id="prodex-notice-title" className="mt-4 text-base font-bold text-slate-900">
+            Rappel du communiqué du 2 septembre 2026
+          </h2>
+        </div>
+        <div className="px-6 py-5 text-sm text-slate-700 leading-relaxed space-y-3">
+          <p>
+            Le Groupement Union déplore la décision unilatérale d’EXADIS de ne pas rémunérer le chiffre d’affaires réalisé sur la marque PRODEX.
+          </p>
+          <p>
+            Cette décision, prise indépendamment de notre volonté, nous contraint de déduire le chiffre d’affaires PRODEX du calcul de la RFA finale.
+          </p>
+          <p>
+            Nous regrettons les conséquences de cette mesure pour nos adhérents et restons à votre disposition pour tout complément d’information.
+          </p>
+        </div>
+        <div className="px-6 pb-6">
+          <button
+            type="button"
+            autoFocus
+            onClick={onClose}
+            className="w-full rounded-xl bg-indigo-600 text-white font-semibold py-2.5 hover:bg-indigo-500"
+          >
+            J’ai compris
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
 
 function consumeClientSpaceFocus() {
   try {
@@ -44,6 +106,9 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [supplierLogos, setSupplierLogos] = useState({})
+  const [showProdexNotice, setShowProdexNotice] = useState(() => {
+    try { return sessionStorage.getItem(PRODEX_NOTICE_KEY) !== '1' } catch { return true }
+  })
   const [exportingPdf, setExportingPdf] = useState(false)
   const [contractPdfMeta, setContractPdfMeta] = useState(null)
   const [loadingContractPdf, setLoadingContractPdf] = useState(false)
@@ -515,8 +580,19 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
     if (first) scrollToRow(first.key)
   }
 
+  const dismissProdexNotice = () => {
+    try { sessionStorage.setItem(PRODEX_NOTICE_KEY, '1') } catch { /* navigation privée */ }
+    setShowProdexNotice(false)
+  }
+  const exadisLogo = Object.values(supplierLogos).find(
+    (logo) => String(logo?.supplier_key || '').toUpperCase() === 'EXADIS',
+  )
+
   return (
     <div className="space-y-6">
+      {showProdexNotice && (
+        <ProdexNoticeModal logoUrl={exadisLogo?.image_url} onClose={dismissProdexNotice} />
+      )}
       {/* Header */}
       <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 -mx-6 -mt-6 px-6 py-6 mb-6 rounded-b-2xl shadow-lg">
         <div className="flex items-center gap-3 flex-wrap">
