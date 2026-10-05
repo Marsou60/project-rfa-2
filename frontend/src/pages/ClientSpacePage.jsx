@@ -7,8 +7,6 @@ import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
 
-const PRODEX_NOTICE_KEY = 'prodex_notice_2026_09_02'
-
 function ProdexNoticeModal({ logoUrl, onClose }) {
   useEffect(() => {
     const onKey = (event) => {
@@ -40,6 +38,7 @@ function ProdexNoticeModal({ logoUrl, onClose }) {
           <h2 id="prodex-notice-title" className="mt-4 text-base font-bold text-slate-900">
             Rappel du communiqué du 2 septembre 2026
           </h2>
+          <p className="mt-2 text-3xl font-black tracking-wide text-slate-950">PRODEX</p>
         </div>
         <div className="px-6 py-5 text-sm text-slate-700 leading-relaxed space-y-3">
           <p>
@@ -106,9 +105,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [supplierLogos, setSupplierLogos] = useState({})
-  const [showProdexNotice, setShowProdexNotice] = useState(() => {
-    try { return sessionStorage.getItem(PRODEX_NOTICE_KEY) !== '1' } catch { return true }
-  })
+  const [showProdexNotice, setShowProdexNotice] = useState(true)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [contractPdfMeta, setContractPdfMeta] = useState(null)
   const [loadingContractPdf, setLoadingContractPdf] = useState(false)
@@ -580,10 +577,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
     if (first) scrollToRow(first.key)
   }
 
-  const dismissProdexNotice = () => {
-    try { sessionStorage.setItem(PRODEX_NOTICE_KEY, '1') } catch { /* navigation privée */ }
-    setShowProdexNotice(false)
-  }
+  const dismissProdexNotice = () => setShowProdexNotice(false)
   const exadisLogo = Object.values(supplierLogos).find(
     (logo) => String(logo?.supplier_key || '').toUpperCase() === 'EXADIS',
   )
