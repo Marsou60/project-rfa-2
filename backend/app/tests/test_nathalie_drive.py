@@ -141,3 +141,21 @@ def test_sync_liste_client_2_swallows_errors(monkeypatch):
     monkeypatch.setattr("app.services.nathalie_service._delete_liste_client_2_row", boom)
     assert "sheets down" in _sync_liste_client_2(delete_code="M0001")
     assert _sync_liste_client_2(None) is None
+
+
+def test_dossier_complet_requires_rib_kbis_and_identity():
+    from app.services.nathalie_adherents import _row_to_client
+
+    base = {
+        "rib_url": "https://drive/rib",
+        "kbis_url": "https://drive/kbis",
+        "piece_identite_url": "",
+        "is_closed": False,
+    }
+    incomplete = _row_to_client(base)
+    assert incomplete["dossier_complet"] is False
+    assert incomplete["missing_docs"] == ["Pièce d'identité"]
+
+    complete = _row_to_client({**base, "piece_identite_url": "https://drive/cni"})
+    assert complete["dossier_complet"] is True
+    assert complete["missing_docs"] == []

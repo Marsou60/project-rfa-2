@@ -798,7 +798,8 @@ def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, 
             "files": files_out,
             "has_rib": bool(rib),
             "has_kbis": bool(kbis),
-            "docs_ok": bool(rib and kbis),
+            "has_piece_identite": bool(piece),
+            "docs_ok": bool(rib and kbis and piece),
         }
         if persist:
             patch = {
@@ -888,7 +889,7 @@ def sync_drive_dossiers() -> Dict[str, Any]:
                 "piece_identite_url": (piece or {}).get("link"),
                 "drive_checked_at": now,
             })
-            if rib and kbis:
+            if rib and kbis and piece:
                 complets += 1
             else:
                 en_cours += 1

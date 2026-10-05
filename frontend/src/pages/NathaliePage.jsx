@@ -97,7 +97,10 @@ const STATUS_STYLE = {
 }
 
 function isDossierComplet(client) {
-  return Boolean(client.has_rib ?? client.rib) && Boolean(client.has_kbis ?? client.kbis)
+  const rib = Boolean(client.has_rib ?? client.rib)
+  const kbis = Boolean(client.has_kbis ?? client.kbis)
+  const piece = Boolean(client.has_piece_identite ?? client.piece_identite)
+  return rib && kbis && piece
 }
 
 function isDriveChecked(client) {
@@ -106,7 +109,10 @@ function isDriveChecked(client) {
 
 function clientStatus(client) {
   if (isDossierComplet(client)) return 'docs_ok'
-  if (!isDriveChecked(client)) return 'a_scanner'
+  const hasSomeDoc = Boolean(client.has_rib ?? client.rib)
+    || Boolean(client.has_kbis ?? client.kbis)
+    || Boolean(client.has_piece_identite ?? client.piece_identite)
+  if (!isDriveChecked(client) && !hasSomeDoc) return 'a_scanner'
   return 'docs_partial'
 }
 
@@ -236,12 +242,12 @@ export default function NathaliePage() {
 
   const stats = {
     total: clients.length,
-    enCours: clients.filter(c => isDriveChecked(c) && !isDossierComplet(c)).length,
+    enCours: clients.filter(c => !c.is_closed && clientStatus(c) === 'docs_partial').length,
     complets: clients.filter(c => isDossierComplet(c)).length,
     aScanner: clients.filter(c => !isDriveChecked(c)).length,
   }
 
-  const dossiersEnCours = filteredClients.filter(c => isDriveChecked(c) && !isDossierComplet(c))
+  const dossiersEnCours = filteredClients.filter(c => !c.is_closed && clientStatus(c) === 'docs_partial')
 
   return (
     <div className="min-h-screen space-y-6 pb-16">
@@ -1038,7 +1044,7 @@ function DossiersView({ clients, loading, scanning, aScanner, search, setSearch,
         <div className="flex-1 min-w-[180px]">
           <h2 className="text-lg font-bold text-white">Dossiers en cours</h2>
           <p className="text-xs text-blue-300/50">
-            {clients.length} dossiers incomplets — RIB ou Kbis manquant
+            {clients.length} dossiers incomplets — RIB, Kbis ou pièce d'identité manquant
           </p>
         </div>
         <button
@@ -1095,6 +1101,7 @@ function DossiersView({ clients, loading, scanning, aScanner, search, setSearch,
                 const missing = c.missing_docs?.length ? c.missing_docs : [
                   ...(c.has_rib || c.rib ? [] : ['RIB']),
                   ...(c.has_kbis || c.kbis ? [] : ['Kbis']),
+                  ...(c.has_piece_identite || c.piece_identite ? [] : ["Pièce d'identité"]),
                 ]
                 return (
                   <tr

@@ -343,6 +343,9 @@ def _row_to_client(row) -> Dict[str, Any]:
         missing.append("RIB")
     if not kbis:
         missing.append("Kbis")
+    if not piece:
+        missing.append("Pièce d'identité")
+    data["has_piece_identite"] = bool(piece)
     data["missing_docs"] = missing
     data["dossier_complet"] = not missing
     data["dossier_en_cours"] = bool(data["drive_checked"] and missing)
