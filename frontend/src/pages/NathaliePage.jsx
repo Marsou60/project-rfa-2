@@ -595,16 +595,31 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
     setLookupError(null)
     try {
       const data = await nathalieExtractKbis(file)
-      if (data.entreprise && isSiret14(data.entreprise.siret)) {
-        applyRow(data.entreprise, data.method === 'ocr' ? 'kbis-ocr' : 'kbis', {
-          via: data.resolved_via,
+      let entreprise = data.entreprise
+      let via = data.resolved_via
+      if (!entreprise || !isSiret14(entreprise.siret)) {
+        const q = (data.sirets || []).find(isSiret14)
+          || (data.sirens || [])[0]
+          || (data.noms_kbis || [])[0]
+        if (q) {
+          const found = await nathalieSearchEntreprise(q)
+          const row = (found.results || []).find(r => isSiret14(r.siret))
+          if (row) {
+            entreprise = row
+            via = (data.sirets || []).length ? 'siret' : ((data.sirens || []).length ? 'rcs' : 'nom')
+          }
+        }
+      }
+      if (entreprise && isSiret14(entreprise.siret)) {
+        applyRow(entreprise, data.method === 'ocr' ? 'kbis-ocr' : 'kbis', {
+          via,
           rcs: data.siren,
           nom: (data.noms_kbis || [])[0],
         })
       } else if ((data.suggestions || []).length) {
         setSuggestions(data.suggestions)
       }
-      if (data.warning) setLookupError(data.warning)
+      if (data.warning && !(entreprise && isSiret14(entreprise.siret))) setLookupError(data.warning)
     } catch (e) {
       setLookupError(e?.response?.data?.detail || 'Impossible de lire ce Kbis.')
     } finally {

@@ -104,3 +104,23 @@ def test_map_etablissement_prefers_enseigne_and_street():
     assert mapped["ville"] == "Paris"
     assert mapped["contact_magasin"] == "PAUL MANICLE"
     assert mapped["nom_client"] == "GOOGLE FRANCE"
+
+
+def test_extract_from_kbis_keeps_identifiers_when_annuaire_down(monkeypatch):
+    from app.services.nathalie_entreprise import extract_from_kbis
+
+    monkeypatch.setattr(
+        "app.services.nathalie_entreprise.extract_text_from_kbis",
+        lambda data, filename="": (KBIS_RCS_ONLY, "pdf"),
+    )
+
+    def boom(*_a, **_k):
+        raise ValueError("API entreprises injoignable : <urlopen error [Errno 111] Connection refused>")
+
+    monkeypatch.setattr("app.services.nathalie_entreprise.lookup_identifiant", boom)
+    monkeypatch.setattr("app.services.nathalie_entreprise._pick_by_name", boom)
+    out = extract_from_kbis(b"%PDF-1.4", "kbis.pdf")
+    assert out["entreprise"] is None
+    assert out["siren"] == "443061841"
+    assert "DUPONT" in (out["noms_kbis"] or [""])[0].upper()
+    assert out["warning"] is None

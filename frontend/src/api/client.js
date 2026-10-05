@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { searchAnnuaire } from './entrepriseAnnuaire'
 
 // Détection de l'environnement :
 // - En DEV: on utilise LOCAL par défaut pour éviter de dépendre de Railway
@@ -1084,8 +1085,12 @@ export const nathalieSyncDrive = async () => {
 }
 
 export const nathalieSearchEntreprise = async (q) => {
-  const response = await api.get('/nathalie/entreprise/search', { params: { q } })
-  return response.data
+  try {
+    return await searchAnnuaire(q)
+  } catch {
+    const response = await api.get('/nathalie/entreprise/search', { params: { q } })
+    return response.data
+  }
 }
 
 export const nathalieExtractKbis = async (file) => {

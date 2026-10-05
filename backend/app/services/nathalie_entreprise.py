@@ -515,13 +515,19 @@ def extract_from_kbis(data: bytes, filename: str = "") -> Dict[str, Any]:
     siret_kbis = sirets[0] if sirets else None
     siren = sirens[0] if sirens else None
     resolved_via = None
-    entreprise = lookup_identifiant(siret=siret_kbis, siren=siren)
-    if entreprise:
-        resolved_via = "siret" if siret_kbis else "rcs"
-    elif names:
-        entreprise = _pick_by_name(names)
+    annuaire_down = False
+    try:
+        entreprise = lookup_identifiant(siret=siret_kbis, siren=siren)
         if entreprise:
-            resolved_via = "nom"
+            resolved_via = "siret" if siret_kbis else "rcs"
+        elif names:
+            entreprise = _pick_by_name(names)
+            if entreprise:
+                resolved_via = "nom"
+    except ValueError:
+        # Railway est souvent refusé par l'annuaire (Errno 111). Le navigateur retente.
+        annuaire_down = True
+        entreprise = None
     if entreprise and not entreprise.get("tva") and tva_ocr:
         entreprise["tva"] = tva_ocr
     stored_siret = (entreprise or {}).get("siret") if entreprise else None
@@ -531,7 +537,7 @@ def extract_from_kbis(data: bytes, filename: str = "") -> Dict[str, Any]:
         resolved_via = None
 
     warning = None
-    if not entreprise:
+    if not annuaire_down and not entreprise:
         if siren or names:
             warning = (
                 "Entreprise trouvée sur le Kbis "
