@@ -22,6 +22,7 @@ import {
   getEnterpriseWatchAlerts,
 } from '../api/client'
 import EnterpriseWatchPage from './EnterpriseWatchPage'
+import NathalieImpayesPanel from '../components/NathalieImpayesPanel'
 
 /* ── Fournisseurs connus (pour les cases à cocher) ─────────── */
 const KNOWN_SUPPLIERS = ['ACR', 'ALLIANCE', 'DCA', 'EXADIS', 'PURFLUX']
@@ -1149,9 +1150,11 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
     { id: 'fermes', label: 'Fermés' },
   ]
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={onBack} className="glass-btn-icon"><ArrowLeft className="w-4 h-4" /></button>
+    <div className="space-y-4 pb-8">
+      <div className="flex items-center gap-3 flex-wrap sticky top-16 z-30 bg-slate-950/85 backdrop-blur-md rounded-2xl px-2 py-2 border border-white/10">
+        <button onClick={onBack} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500">
+          <ArrowLeft className="w-4 h-4" /> Retour dans Nathalie
+        </button>
         <div className="flex-1 min-w-[180px]">
           <h2 className="text-lg font-bold text-white">Annuaire complet</h2>
           <p className="text-xs text-blue-300/50">
@@ -1237,6 +1240,15 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
             </tbody>
           </table>
         </div>
+      )}
+      {!loading && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 text-white font-bold hover:bg-emerald-500"
+        >
+          <ArrowLeft className="w-4 h-4" /> Retour dans Nathalie
+        </button>
       )}
     </div>
   )
@@ -1404,6 +1416,12 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
       {saveMsg && (
         <div className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-2">{saveMsg}</div>
       )}
+
+      <NathalieImpayesPanel
+        codeUnion={client.code_union}
+        nomMagasin={client.nom_client}
+        commercial={client.agent_union}
+      />
 
       <div className="grid md:grid-cols-2 gap-5">
         {/* Infos client */}

@@ -390,7 +390,7 @@ function loadingSafe(v) {
   return v ?? '—'
 }
 
-function ImpayeDrawer({ id, canWrite, onClose, onChanged }) {
+export function ImpayeDrawer({ id, canWrite, onClose, onChanged }) {
   const [item, setItem] = useState(null)
   const [loading, setLoading] = useState(true)
   const [note, setNote] = useState('')
@@ -548,7 +548,7 @@ function Info({ label, value }) {
   )
 }
 
-function CreateModal({ onClose, onCreated, prefill = {} }) {
+export function CreateModal({ onClose, onCreated, prefill = {} }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...prefill })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)

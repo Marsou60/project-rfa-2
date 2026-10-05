@@ -689,8 +689,8 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
               <ImpayesAdherentBanner
                 codeUnion={entity.code_union || entity.id}
                 nomMagasin={entity.nom_client || ''}
+                commercial={entity.commercial || entity.agent_union || ''}
                 canWrite={!isAdherent}
-                onOpenModule={onNavigate ? () => onNavigate('impayes') : undefined}
               />
             </div>
           )}
