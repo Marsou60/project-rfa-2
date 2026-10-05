@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026, upsertCotisation } from '../api/client'
 import ImpayesAdherentBanner from '../components/ImpayesAdherentBanner'
+import ClientFusionControl from '../components/ClientFusionControl'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
 import { readCotisationMap, resolveCotisationInfo } from '../utils/cotisationStorage'
@@ -53,6 +54,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
   const [cotisationMap, setCotisationMap] = useState({})
   const [bonusMap, setBonusMap] = useState({})
   const [activeViewTab, setActiveViewTab] = useState('monthly')
+  const [fusionTick, setFusionTick] = useState(0)
 
   const refreshCotisationMap = useCallback(async () => {
     try {
@@ -684,6 +686,14 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
             </p>
           </div>
 
+          {mode === 'client' && !isAdherent && (entity.code_union || entity.id) && (
+            <ClientFusionControl
+              codeUnion={entity.code_union || entity.id}
+              nomMagasin={entity.nom_client || ''}
+              onChanged={() => setFusionTick((n) => n + 1)}
+            />
+          )}
+
           {mode === 'client' && (entity.code_union || entity.id) && (
             <div className="mb-4">
               <ImpayesAdherentBanner
@@ -1293,6 +1303,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
               caN1Label="CA 2025 (Vue RFA)"
               isAdherent={isAdherent}
               onCotisationChanged={refreshCotisationMap}
+              fusionTick={fusionTick}
             />
           )}
 
@@ -2334,6 +2345,7 @@ function ClientRfa2026Section({
   caN1Label = 'CA N-1 (Vue RFA)',
   isAdherent = false,
   onCotisationChanged = null,
+  fusionTick = 0,
 }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2350,7 +2362,7 @@ function ClientRfa2026Section({
       .then(setData)
       .catch(() => setData({ available: false }))
       .finally(() => setLoading(false))
-  }, [codeUnion, groupeClient])
+  }, [codeUnion, groupeClient, fusionTick])
 
   useEffect(() => {
     getSupplierLogos().then((list) => {

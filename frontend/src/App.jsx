@@ -512,7 +512,7 @@ function AppContent() {
                       hasDropdown={true}
                     />
                     {openMenu === 'more' && (
-                      <div className="glass-dropdown absolute top-full right-0 mt-2 w-52 z-50 dropdown-menu">
+                      <div className="glass-dropdown absolute top-full right-0 mt-2 w-64 z-50 dropdown-menu">
                         <button onClick={() => { setCurrentPage('upload'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'upload' ? 'active' : ''}`}>
                           <Upload className="w-4 h-4" />
@@ -527,7 +527,7 @@ function AppContent() {
                         <button onClick={() => { setCurrentPage('assignments'); setOpenMenu(null) }}
                           className={`glass-dropdown-item w-full text-left text-sm ${effectivePage === 'assignments' ? 'active' : ''}`}>
                           <Link2 className="w-4 h-4" />
-                          <span>Affectations</span>
+                          <span>Affectations et fusions</span>
                         </button>
                         <div className="border-t border-white/10 my-1" />
                         <button onClick={() => { setCurrentPage('users'); setOpenMenu(null) }}

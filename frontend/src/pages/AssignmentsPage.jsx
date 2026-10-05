@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link2, Plus, Search, User, Users, Trash2, FileText, X } from 'lucide-react'
 import { getAssignments, createAssignment, deleteAssignment, getContracts, getEntities, getRfaFusions, createRfaFusion, updateRfaFusion, deleteRfaFusion, nathalieGetClients } from '../api/client'
 
@@ -59,7 +59,7 @@ function AssignmentsPage() {
       setShowCreateForm(false)
       loadData()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Erreur lors de la crÃ©ation')
+      setError(err.response?.data?.detail || 'Erreur lors de la création')
       throw err
     }
   }
@@ -113,7 +113,7 @@ function AssignmentsPage() {
               Affectations de Contrats
             </h1>
             <p className="text-sm text-glass-secondary mt-1">
-              GÃ©rez les contrats assignÃ©s aux Code Union et Groupes Client
+              Gérez les contrats assignés aux Code Union et Groupes Client
             </p>
           </div>
         </div>
@@ -138,9 +138,9 @@ function AssignmentsPage() {
       {/* Statistiques */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard title="Total" value={stats.total} icon={<FileText className="w-6 h-6" />} color="blue" />
-        <StatCard title="Code Union" value={stats.codeUnion} icon={<User className="w-6 h-6" />} color="emerald" subtitle="PrioritÃ© 100" />
-        <StatCard title="Groupes" value={stats.groupe} icon={<Users className="w-6 h-6" />} color="purple" subtitle="PrioritÃ© 50" />
-        <StatCard title="Contrats utilisÃ©s" value={stats.contracts} icon={<FileText className="w-6 h-6" />} color="orange" />
+        <StatCard title="Code Union" value={stats.codeUnion} icon={<User className="w-6 h-6" />} color="emerald" subtitle="Priorité 100" />
+        <StatCard title="Groupes" value={stats.groupe} icon={<Users className="w-6 h-6" />} color="purple" subtitle="Priorité 50" />
+        <StatCard title="Contrats utilisés" value={stats.contracts} icon={<FileText className="w-6 h-6" />} color="orange" />
       </div>
 
       <FusionPanel
@@ -187,7 +187,7 @@ function AssignmentsPage() {
           }`}>
             {codeUnionAssignments.length}
           </span>
-          <span className="text-xs text-glass-muted">(PrioritÃ© 100)</span>
+          <span className="text-xs text-glass-muted">(Priorité 100)</span>
         </button>
         <button
           onClick={() => setActiveTab('groupe')}
@@ -204,7 +204,7 @@ function AssignmentsPage() {
           }`}>
             {groupeAssignments.length}
           </span>
-          <span className="text-xs text-glass-muted">(PrioritÃ© 50)</span>
+          <span className="text-xs text-glass-muted">(Priorité 50)</span>
         </button>
       </div>
 
@@ -230,7 +230,7 @@ function AssignmentsPage() {
             Aucune affectation {activeTab === 'code_union' ? 'Code Union' : 'Groupe Client'}
           </h3>
           <p className="text-glass-secondary mb-6">
-            {searchTerm ? 'Aucun rÃ©sultat pour votre recherche' : 'CrÃ©ez votre premiÃ¨re affectation pour commencer'}
+            {searchTerm ? 'Aucun résultat pour votre recherche' : 'Créez votre première affectation pour commencer'}
           </p>
           {!searchTerm && (
             <button
@@ -238,7 +238,7 @@ function AssignmentsPage() {
               className="glass-btn-primary"
             >
               <Plus className="w-4 h-4 mr-2 inline" />
-              CrÃ©er une affectation
+              Créer une affectation
             </button>
           )}
         </div>
@@ -303,7 +303,7 @@ function AssignmentCard({ assignment, contract, type, onDelete }) {
           <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
             isCodeUnion ? 'glass-badge-emerald' : 'glass-badge-purple'
           }`}>
-            PrioritÃ© {assignment.priority}
+            Priorité {assignment.priority}
           </div>
         </div>
         <button
@@ -318,11 +318,11 @@ function AssignmentCard({ assignment, contract, type, onDelete }) {
       <div className="border-t border-white/10 pt-3">
         <div className="flex items-center gap-2">
           <div className="flex-1">
-            <p className="text-xs text-glass-muted mb-1">Contrat assignÃ©</p>
+            <p className="text-xs text-glass-muted mb-1">Contrat assigné</p>
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-white">{contract?.name || 'Contrat introuvable'}</span>
               {contract?.is_default && (
-                <span className="glass-badge-blue text-xs">DÃ©faut</span>
+                <span className="glass-badge-blue text-xs">Défaut</span>
               )}
             </div>
           </div>
@@ -352,7 +352,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!contractId) {
-      alert('Veuillez sÃ©lectionner un contrat')
+      alert('Veuillez sélectionner un contrat')
       return
     }
     onSubmit({
@@ -385,7 +385,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           >
             <User className="w-4 h-4" />
             <span className="font-medium">Code Union</span>
-            <span className="text-xs glass-badge-emerald">PrioritÃ© 100</span>
+            <span className="text-xs glass-badge-emerald">Priorité 100</span>
           </button>
           <button
             type="button"
@@ -401,7 +401,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           >
             <Users className="w-4 h-4" />
             <span className="font-medium">Groupe Client</span>
-            <span className="text-xs glass-badge-purple">PrioritÃ© 50</span>
+            <span className="text-xs glass-badge-purple">Priorité 50</span>
           </button>
         </div>
       </div>
@@ -472,10 +472,10 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           required
           className="glass-select"
         >
-          <option value="">SÃ©lectionner un contrat</option>
+          <option value="">Sélectionner un contrat</option>
           {contracts.filter(c => c.is_active && (c.scope === 'ADHERENT' || !c.scope)).map((contract) => (
             <option key={contract.id} value={contract.id}>
-              {contract.name} {contract.is_default && '(DÃ©faut)'}
+              {contract.name} {contract.is_default && '(Défaut)'}
             </option>
           ))}
         </select>
@@ -493,7 +493,7 @@ function AssignmentCreateForm({ contracts, availableEntities, onSubmit, onCancel
           type="submit"
           className="glass-btn-primary"
         >
-          CrÃ©er l'affectation
+          Créer l'affectation
         </button>
       </div>
     </form>
@@ -612,7 +612,7 @@ function FusionPanel({ fusions, contracts, onChanged, onError }) {
 
   const handleDelete = async (fusion) => {
     const who = (fusion.codes || []).join(' + ')
-    if (!window.confirm(`Supprimer la fusion Â« ${fusion.label} Â» (${who}) ? Chaque compte reprendra son propre calcul.`)) {
+    if (!window.confirm(`Supprimer la fusion « ${fusion.label} » (${who}) ? Chaque compte reprendra son propre calcul.`)) {
       return
     }
     try {
@@ -639,7 +639,7 @@ function FusionPanel({ fusions, contracts, onChanged, onError }) {
       <div>
         <h2 className="text-lg font-semibold text-white">Fusion de comptes</h2>
         <p className="text-sm text-glass-secondary mt-1">
-          Pour un changement de Kbis : cherchez les magasins, choisissez le contrat. Le chiffre dâ€™affaires est additionnÃ© et la RFA est la mÃªme sur chaque compte.
+          Pour un changement de Kbis : cherchez les magasins, choisissez le contrat. Le chiffre d’affaires est additionné et la RFA est la même sur chaque compte.
         </p>
       </div>
 
@@ -652,7 +652,7 @@ function FusionPanel({ fusions, contracts, onChanged, onError }) {
         )}
 
         <div>
-          <label className="block text-sm font-medium text-glass-secondary mb-2">Magasins Ã  additionner</label>
+          <label className="block text-sm font-medium text-glass-secondary mb-2">Magasins à additionner</label>
           {selected.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2">
               {selected.map((account) => (
@@ -701,7 +701,7 @@ function FusionPanel({ fusions, contracts, onChanged, onError }) {
                       <span className="text-sm font-semibold text-white shrink-0">{code}</span>
                       <span className="text-sm text-glass-secondary truncate">
                         {client.nom_client || 'Sans nom'}
-                        {client.ville ? ` Â· ${client.ville}` : ''}
+                        {client.ville ? ` · ${client.ville}` : ''}
                       </span>
                     </button>
                   )
@@ -718,12 +718,12 @@ function FusionPanel({ fusions, contracts, onChanged, onError }) {
               </div>
             )}
           </div>
-          <p className="text-xs text-glass-muted mt-1">Au moins deux comptes. Vous pouvez aussi coller un code qui nâ€™est pas dans lâ€™annuaire.</p>
+          <p className="text-xs text-glass-muted mt-1">Au moins deux comptes. Vous pouvez aussi coller un code qui n’est pas dans l’annuaire.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-glass-secondary mb-2">Nom affichÃ©</label>
+            <label className="block text-sm font-medium text-glass-secondary mb-2">Nom affiché</label>
             <input
               value={label}
               onChange={(e) => { setLabel(e.target.value); setLabelTouched(true) }}
@@ -732,14 +732,14 @@ function FusionPanel({ fusions, contracts, onChanged, onError }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-glass-secondary mb-2">Contrat appliquÃ© Ã  la somme</label>
+            <label className="block text-sm font-medium text-glass-secondary mb-2">Contrat appliqué à la somme</label>
             <select
               value={contractId}
               onChange={(e) => setContractId(e.target.value)}
               required
               className="glass-select"
             >
-              <option value="">SÃ©lectionner un contrat</option>
+              <option value="">Sélectionner un contrat</option>
               {contracts.map((contract) => (
                 <option key={contract.id} value={contract.id}>{contract.name}</option>
               ))}
@@ -749,7 +749,7 @@ function FusionPanel({ fusions, contracts, onChanged, onError }) {
 
         <div className="flex justify-end">
           <button type="submit" disabled={busy || selected.length < 2} className="glass-btn-primary">
-            {busy ? 'Enregistrementâ€¦' : editingId ? 'Enregistrer la fusion' : 'CrÃ©er la fusion'}
+            {busy ? 'Enregistrement…' : editingId ? 'Enregistrer la fusion' : 'Créer la fusion'}
           </button>
         </div>
       </form>

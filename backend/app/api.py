@@ -2846,7 +2846,7 @@ def require_staff_or_adherent(user: Optional[User] = Depends(get_current_user)) 
 @router.get("/rfa-fusions")
 async def list_rfa_fusions(
     session: Session = Depends(get_session),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_staff),
 ):
     """Liste les fusions de codes Union (CA additionné, un seul contrat)."""
     from app.services.rfa_fusion import list_fusions
@@ -2857,7 +2857,7 @@ async def list_rfa_fusions(
 async def create_rfa_fusion(
     payload: Dict[str, Any] = Body(...),
     session: Session = Depends(get_session),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_staff),
 ):
     """Crée une fusion : au moins deux codes, un contrat."""
     from app.services.rfa_fusion import create_fusion
@@ -2877,7 +2877,7 @@ async def update_rfa_fusion(
     fusion_id: int,
     payload: Dict[str, Any] = Body(...),
     session: Session = Depends(get_session),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_staff),
 ):
     """Met à jour le nom, le contrat ou les comptes d'une fusion."""
     from app.services.rfa_fusion import update_fusion
@@ -2899,7 +2899,7 @@ async def update_rfa_fusion(
 async def delete_rfa_fusion(
     fusion_id: int,
     session: Session = Depends(get_session),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_staff),
 ):
     from app.services.rfa_fusion import delete_fusion
     try:
