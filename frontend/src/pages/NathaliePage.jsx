@@ -93,26 +93,24 @@ function regionChoices(current) {
 const STATUS_STYLE = {
   'docs_ok':      { bg: 'bg-emerald-500/20', text: 'text-emerald-300', label: 'Complet' },
   'docs_partial': { bg: 'bg-amber-500/20',   text: 'text-amber-300',   label: 'Incomplet' },
-  'a_scanner':    { bg: 'bg-slate-500/20',   text: 'text-slate-400',   label: 'À scanner' },
+  'sans_dossier': { bg: 'bg-rose-500/25',    text: 'text-rose-200',    label: 'Sans dossier' },
+}
+
+function hasDriveFolder(client) {
+  return Boolean(String(client?.drive_folder_id || '').trim())
 }
 
 function isDossierComplet(client) {
+  if (!hasDriveFolder(client)) return false
   const rib = Boolean(client.has_rib ?? client.rib)
   const kbis = Boolean(client.has_kbis ?? client.kbis)
   const piece = Boolean(client.has_piece_identite ?? client.piece_identite)
   return rib && kbis && piece
 }
 
-function isDriveChecked(client) {
-  return Boolean(client.drive_checked || client.drive_checked_at || client.drive_folder_id)
-}
-
 function clientStatus(client) {
+  if (!hasDriveFolder(client)) return 'sans_dossier'
   if (isDossierComplet(client)) return 'docs_ok'
-  const hasSomeDoc = Boolean(client.has_rib ?? client.rib)
-    || Boolean(client.has_kbis ?? client.kbis)
-    || Boolean(client.has_piece_identite ?? client.piece_identite)
-  if (!isDriveChecked(client) && !hasSomeDoc) return 'a_scanner'
   return 'docs_partial'
 }
 
@@ -120,7 +118,7 @@ function clientStatus(client) {
 export default function NathaliePage() {
   const [view, setView] = useState('accueil') // accueil | nouveau | dossiers | annuaire | alertes | client | emails
   const [listOrigin, setListOrigin] = useState('dossiers')
-  const [annuaireFilter, setAnnuaireFilter] = useState('tous') // tous | ouverts | fermes
+  const [annuaireFilter, setAnnuaireFilter] = useState('tous') // tous | ouverts | fermes | sans_dossier
   const [clients, setClients] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(false)
@@ -244,7 +242,8 @@ export default function NathaliePage() {
     total: clients.length,
     enCours: clients.filter(c => !c.is_closed && clientStatus(c) === 'docs_partial').length,
     complets: clients.filter(c => isDossierComplet(c)).length,
-    aScanner: clients.filter(c => !isDriveChecked(c)).length,
+    aScanner: clients.filter(c => !c.drive_checked && !c.drive_checked_at && !hasDriveFolder(c)).length,
+    sansDossier: clients.filter(c => !hasDriveFolder(c)).length,
   }
 
   const dossiersEnCours = filteredClients.filter(c => !c.is_closed && clientStatus(c) === 'docs_partial')
@@ -271,6 +270,7 @@ export default function NathaliePage() {
           scanning={scanning}
           onVoirDossiers={() => { setSearch(''); setView('dossiers') }}
           onVoirAnnuaire={() => { setSearch(''); setAnnuaireFilter('tous'); setView('annuaire') }}
+          onVoirSansDossier={() => { setSearch(''); setAnnuaireFilter('sans_dossier'); setView('annuaire') }}
           onVoirAlertes={() => setView('alertes')}
           legalOpen={legalOpen}
           onNouveau={() => setView('nouveau')}
@@ -305,7 +305,13 @@ export default function NathaliePage() {
           clients={filteredClients.filter(c => {
             if (annuaireFilter === 'fermes') return Boolean(c.is_closed)
             if (annuaireFilter === 'ouverts') return !c.is_closed
+            if (annuaireFilter === 'sans_dossier') return !hasDriveFolder(c)
             return true
+          }).slice().sort((a, b) => {
+            const rank = (c) => (hasDriveFolder(c) ? 1 : 0)
+            const byFolder = rank(a) - rank(b)
+            if (byFolder) return byFolder
+            return (a.nom_client || '').localeCompare(b.nom_client || '', 'fr')
           })}
           total={clients.length}
           loading={loading}
@@ -395,14 +401,14 @@ function NathalieHeader({ onRefresh, loading }) {
 }
 
 /* ── Accueil ─────────────────────────────────────────────────── */
-function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire, onVoirAlertes, legalOpen, onNouveau, onScanDrive }) {
+function AccueilView({ stats, loading, scanning, onVoirDossiers, onVoirAnnuaire, onVoirSansDossier, onVoirAlertes, legalOpen, onNouveau, onScanDrive }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: 'En cours', value: stats.enCours, color: 'text-amber-300', onClick: onVoirDossiers },
           { label: 'Complets', value: stats.complets, color: 'text-emerald-300', onClick: onVoirAnnuaire },
-          { label: 'À scanner', value: stats.aScanner, color: 'text-slate-300', onClick: onVoirAnnuaire },
+          { label: 'Sans dossier', value: stats.sansDossier, color: 'text-rose-300', onClick: onVoirSansDossier },
           { label: 'Alertes', value: legalOpen || 0, color: 'text-rose-300', onClick: onVoirAlertes },
           { label: 'Annuaire', value: stats.total, color: 'text-blue-300', onClick: onVoirAnnuaire },
         ].map(k => (
@@ -1155,6 +1161,7 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
     { id: 'tous', label: 'Tous' },
     { id: 'ouverts', label: 'Ouverts' },
     { id: 'fermes', label: 'Fermés' },
+    { id: 'sans_dossier', label: 'Sans dossier' },
   ]
   return (
     <div className="space-y-4 pb-8">
@@ -1175,7 +1182,9 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
               type="button"
               onClick={() => setFilter(f.id)}
               className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition ${
-                filter === f.id ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/80'
+                filter === f.id
+                  ? (f.id === 'sans_dossier' ? 'bg-rose-500/30 text-rose-100' : 'bg-white/15 text-white')
+                  : 'text-white/50 hover:text-white/80'
               }`}
             >
               {f.label}
@@ -1218,11 +1227,15 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
                 </tr>
               )}
               {clients.map((c, i) => {
-                const st = c.is_closed ? null : STATUS_STYLE[clientStatus(c)]
+                const status = clientStatus(c)
+                const st = STATUS_STYLE[status]
+                const noFolder = status === 'sans_dossier'
                 return (
                   <tr
                     key={c.code_union + i}
-                    className={`border-b border-white/5 hover:bg-white/5 transition cursor-pointer ${i % 2 === 0 ? 'bg-white/[0.02]' : ''}`}
+                    className={`border-b border-white/5 hover:bg-white/5 transition cursor-pointer ${
+                      noFolder ? 'bg-rose-500/10' : i % 2 === 0 ? 'bg-white/[0.02]' : ''
+                    }`}
                     onClick={() => onSelectClient(c)}
                   >
                     <td className="px-4 py-3 font-mono text-xs text-blue-300/70">{c.code_union}</td>
@@ -1232,11 +1245,14 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
                     <td className="px-4 py-3 text-white/50 text-xs">{c.agent_union || '—'}</td>
                     <td className="px-4 py-3 text-white/50 text-xs">{c.ville || '—'}</td>
                     <td className="px-4 py-3">
-                      {c.is_closed ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">Fermé</span>
-                      ) : (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${st.bg} ${st.text}`}>{st.label}</span>
-                      )}
+                      <div className="flex flex-wrap gap-1">
+                        {c.is_closed && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">Fermé</span>
+                        )}
+                        {(!c.is_closed || noFolder) && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${st.bg} ${st.text}`}>{st.label}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <ChevronRight className="w-4 h-4 text-white/30" />
@@ -1402,6 +1418,13 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
         {client.is_closed ? (
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-semibold">Fermé</span>
         ) : null}
+        {(() => {
+          const st = STATUS_STYLE[clientStatus(client)]
+          if (client.is_closed && clientStatus(client) !== 'sans_dossier') return null
+          return (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${st.bg} ${st.text}`}>{st.label}</span>
+          )
+        })()}
         {!editing ? (
           <>
             <button type="button" onClick={() => { setForm(formFromClient(client)); setEditing(true); setSaveMsg(null) }} className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-white/10 border border-white/15 text-white/80 hover:bg-white/15">
