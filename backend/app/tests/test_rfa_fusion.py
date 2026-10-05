@@ -10,7 +10,7 @@ def test_parse_codes_dedupes_and_requires_separators():
 def test_create_fusion_links_both_codes_and_rejects_reuse():
     from sqlmodel import Session, SQLModel, create_engine
 
-    from app.models import Contract
+    from app.models import Contract, RfaFusion
     from app.services.rfa_fusion import create_fusion, fusion_for_code, update_fusion
 
     engine = create_engine("sqlite://")
@@ -26,6 +26,7 @@ def test_create_fusion_links_both_codes_and_rejects_reuse():
         )
         assert created["codes"] == ["M100", "M200"]
         assert created["contract_name"] == "Special Dupont"
+        assert RfaFusion(label="x", contract_id=contract.id).created_at.tzinfo is not None
 
         again = fusion_for_code(session, "m200")
         assert again["id"] == created["id"]

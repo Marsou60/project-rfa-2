@@ -5,6 +5,7 @@ sur plusieurs codes Union. On additionne ce CA et on applique un seul contrat.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
@@ -90,7 +91,11 @@ def create_fusion(
     if taken:
         busy = ", ".join(sorted(m.code_union for m in taken))
         raise ValueError(f"Déjà dans une fusion : {busy}")
-    fusion = RfaFusion(label=name, contract_id=int(contract_id))
+    fusion = RfaFusion(
+        label=name,
+        contract_id=int(contract_id),
+        created_at=datetime.now(timezone.utc),
+    )
     session.add(fusion)
     session.commit()
     session.refresh(fusion)

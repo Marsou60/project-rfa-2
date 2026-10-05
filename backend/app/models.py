@@ -3,8 +3,9 @@ Modèles SQLModel pour la base de données.
 """
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+from sqlalchemy import DateTime
 
 
 class RuleScope(str, Enum):
@@ -203,7 +204,10 @@ class RfaFusion(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     label: str
     contract_id: int = Field(foreign_key="contract.id", index=True)
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_type=DateTime(timezone=True),
+    )
 
 
 class RfaFusionMember(SQLModel, table=True):
