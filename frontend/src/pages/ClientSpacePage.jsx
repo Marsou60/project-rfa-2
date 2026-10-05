@@ -1443,6 +1443,11 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
         <p className="text-blue-100 text-xs mt-0.5">
           Évolution du chiffre d'affaires par mois et par fournisseur{supplierFilter ? ` — vue ${supplierFilter}` : ''}
         </p>
+        {data.fusion?.codes?.length > 1 && (
+          <p className="text-white text-xs mt-1 font-semibold">
+            Chiffre additionné : {data.fusion.codes.join(' + ')}
+          </p>
+        )}
       </div>
 
       <div className="p-5 space-y-6">
@@ -1513,9 +1518,11 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent }) {
         )}
 
         {/* Détail par magasin du groupe */}
-        {groupeClient && data.stores?.length > 0 && (
+        {(groupeClient || data.fusion) && data.stores?.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Par magasin du groupe — cliquez pour le détail</h4>
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              {data.fusion ? 'Détail des comptes fusionnés' : 'Par magasin du groupe — cliquez pour le détail'}
+            </h4>
             <div className="space-y-2">
               {data.stores.map((s) => {
                 const key = s.code_union || 'UNKNOWN'
@@ -1835,6 +1842,7 @@ function ClientPureDataDashboardSection({ codeUnion, groupeClient }) {
             <p className="text-violet-100 text-xs mt-0.5">
               Cumul annuel {data.year_current} vs {data.year_previous}
               {supplierFilter ? ` — vue ${supplierFilter}` : ''}
+              {data.fusion?.codes?.length > 1 ? ` — addition ${data.fusion.codes.join(' + ')}` : ''}
             </p>
           </div>
           {data.reporting_period && (

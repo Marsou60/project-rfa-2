@@ -91,8 +91,16 @@ def build_cumulative_dashboard(
     groupe_client: Optional[str] = None,
     fournisseur: Optional[str] = None,
     top_n: int = 15,
+    code_unions: Optional[List[str]] = None,
 ) -> Dict:
-    if code_union:
+    if code_unions:
+        targets = set()
+        for code in code_unions:
+            targets.update(_code_union_candidates(code))
+        rows = [r for r in rows if _norm_text(r.get("code_union")) in targets]
+        entity_label = " + ".join(code_unions)
+        entity_kind = "client"
+    elif code_union:
         targets = _code_union_candidates(code_union)
         rows = [r for r in rows if _norm_text(r.get("code_union")) in targets]
         entity_label = next(

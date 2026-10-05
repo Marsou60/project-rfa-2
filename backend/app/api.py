@@ -4045,21 +4045,27 @@ async def pure_data_cumulative_client_dashboard(
         from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
         from app.services.pure_data_cumulative_service import build_cumulative_dashboard
         from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.rfa_fusion import fusion_for_code
+
+        fusion = fusion_for_code(session, code_union) if code_union else None
+        code_unions = fusion["codes"] if fusion and len(fusion.get("codes") or []) >= 2 else None
 
         payload = None
         data_source = None
 
+        dash_kwargs = dict(
+            year_current=year_current,
+            year_previous=year_previous,
+            code_union=None if code_unions else code_union,
+            groupe_client=None if code_unions else groupe_client,
+            fournisseur=fournisseur,
+            code_unions=code_unions,
+        )
+
         if count_cumulative_rows() > 0:
             rows, _, _ = read_cumulative_rows()
             if rows:
-                payload = build_cumulative_dashboard(
-                    rows=rows,
-                    year_current=year_current,
-                    year_previous=year_previous,
-                    code_union=code_union,
-                    groupe_client=groupe_client,
-                    fournisseur=fournisseur,
-                )
+                payload = build_cumulative_dashboard(rows=rows, **dash_kwargs)
                 if payload.get("available"):
                     data_source = "cumulative"
 
@@ -4067,14 +4073,7 @@ async def pure_data_cumulative_client_dashboard(
         if not payload or not payload.get("available"):
             if count_monthly_rows() > 0:
                 monthly_rows, _, _ = read_monthly_rows()
-                payload = build_cumulative_dashboard(
-                    rows=monthly_rows,
-                    year_current=year_current,
-                    year_previous=year_previous,
-                    code_union=code_union,
-                    groupe_client=groupe_client,
-                    fournisseur=fournisseur,
-                )
+                payload = build_cumulative_dashboard(rows=monthly_rows, **dash_kwargs)
                 if payload.get("available"):
                     data_source = "monthly"
 
@@ -4085,6 +4084,13 @@ async def pure_data_cumulative_client_dashboard(
             }
 
         payload["data_source"] = data_source
+        if code_unions:
+            payload["fusion"] = {
+                "id": fusion["id"],
+                "label": fusion["label"],
+                "codes": fusion["codes"],
+            }
+            payload["entity_label"] = fusion["label"]
         month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
         reporting_year = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_YEAR_KEY))
         filename = _get_setting_value(session, PURE_DATA_CUMULATIVE_FILENAME_KEY)
@@ -5338,6 +5344,7 @@ async def pure_data_monthly_client_evolution(
     year_current: int = 2026,
     year_previous: int = 2025,
     fournisseur: Optional[str] = None,
+    session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
     """
@@ -5368,6 +5375,7 @@ async def pure_data_monthly_client_evolution(
     try:
         from app.services.pure_data_sales_source import load_evolution_sales_rows
         from app.services.pure_data_import import filter_rows_by_fournisseur
+        from app.services.rfa_fusion import filter_rows_for_codes, fusion_for_code
 
         def _norm_text(v: Optional[str]) -> str:
             return (v or "").strip().upper()
@@ -5400,8 +5408,13 @@ async def pure_data_monthly_client_evolution(
         def _pct(delta, base):
             return (delta / base) * 100 if base else None
 
-        # Filtrage strict : client ou groupe
-        if code_union:
+        # Filtrage strict : client, fusion de comptes, ou groupe
+        fusion = fusion_for_code(session, code_union) if code_union else None
+        fusion_codes = fusion["codes"] if fusion and len(fusion.get("codes") or []) >= 2 else None
+        if fusion_codes:
+            rows = filter_rows_for_codes(all_rows, fusion_codes)
+            label = fusion["label"]
+        elif code_union:
             targets = _code_union_candidates(code_union)
             rows = [r for r in all_rows if _norm_text(r.get("code_union")) in targets]
             label = next(
@@ -5475,7 +5488,7 @@ async def pure_data_monthly_client_evolution(
 
         # Si mode groupe : détail par magasin (code_union) × mois
         stores = []
-        if groupe_client:
+        if groupe_client or fusion_codes:
             store_map: Dict[str, Dict] = {}
             for r in rows:
                 y = r.get("year")
@@ -5590,6 +5603,11 @@ async def pure_data_monthly_client_evolution(
             "months": monthly,
             "platforms": platforms,
             "stores": stores,
+            "fusion": {
+                "id": fusion["id"],
+                "label": fusion["label"],
+                "codes": fusion_codes,
+            } if fusion_codes else None,
         }
     except HTTPException:
         raise

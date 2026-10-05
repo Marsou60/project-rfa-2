@@ -106,6 +106,18 @@ def create_fusion(
     return _fusion_dict(session, fusion)
 
 
+def filter_rows_for_codes(rows: List[Dict], codes: List[str]) -> List[Dict]:
+    """Garde les lignes Pure Data dont le code Union est dans la fusion."""
+    from app.services.pure_data_cumulative_service import _code_union_candidates, _norm_text
+
+    targets = set()
+    for code in codes:
+        targets.update(_code_union_candidates(code))
+    if not targets:
+        return []
+    return [row for row in rows or [] if _norm_text(row.get("code_union")) in targets]
+
+
 def load_rows_for_codes(codes: List[str], year: int):
     """Concatène le Pure Data de chaque code (cumulé, sinon mensuel)."""
     from app.services.entity_directory import load_pure_data_rows_for_entity

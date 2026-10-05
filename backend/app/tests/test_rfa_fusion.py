@@ -1,7 +1,17 @@
 from app.services.rfa_fusion import parse_codes
 
 
-def test_parse_codes_dedupes_and_requires_separators():
+def test_filter_rows_for_codes_keeps_both_accounts():
+    from app.services.rfa_fusion import filter_rows_for_codes
+
+    rows = [
+        {"code_union": "M0041", "ca": 10},
+        {"code_union": "m0306", "ca": 20},
+        {"code_union": "M9999", "ca": 99},
+    ]
+    kept = filter_rows_for_codes(rows, ["M0041", "M0306"])
+    assert [r["code_union"] for r in kept] == ["M0041", "m0306"]
+    assert sum(r["ca"] for r in kept) == 30
     assert parse_codes("m0123, M0456\nM0123") == ["M0123", "M0456"]
     assert parse_codes(["m1", "M2", "m1"]) == ["M1", "M2"]
     assert parse_codes("") == []
