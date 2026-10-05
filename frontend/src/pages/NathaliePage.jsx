@@ -59,6 +59,36 @@ const GROUPES = [
   'GROUPE CODIFA',
 ]
 
+const REGIONS_COMMERCIALES = [
+  'Île-de-France',
+  'Auvergne-Rhône-Alpes',
+  'Hauts-de-France',
+  'PACA',
+  'Occitanie',
+  'Nouvelle-Aquitaine',
+  'Grand Est',
+  'Centre-Val de Loire',
+  'Pays de la Loire',
+  'Bretagne',
+  'Normandie',
+  'Bourgogne-Franche-Comté',
+  'Corse',
+]
+
+function currentMonthPerimetre(date = new Date()) {
+  const mois = date.toLocaleDateString('fr-FR', { month: 'long', timeZone: 'Europe/Paris' })
+  const label = mois.charAt(0).toUpperCase() + mois.slice(1)
+  const annee = date.toLocaleDateString('fr-FR', { year: 'numeric', timeZone: 'Europe/Paris' })
+  return `${label} - ${annee}`
+}
+
+function regionChoices(current) {
+  if (current && !REGIONS_COMMERCIALES.includes(current)) {
+    return [current, ...REGIONS_COMMERCIALES]
+  }
+  return REGIONS_COMMERCIALES
+}
+
 const STATUS_STYLE = {
   'docs_ok':      { bg: 'bg-emerald-500/20', text: 'text-emerald-300', label: 'Complet' },
   'docs_partial': { bg: 'bg-amber-500/20',   text: 'text-amber-300',   label: 'Incomplet' },
@@ -519,6 +549,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
     mail: '',
     agent_union: '',
     region_commerciale: '',
+    perimetre: currentMonthPerimetre(),
     contrat_type: '',
     notes: '',
   })
@@ -837,7 +868,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
         {/* Info Base */}
         <div className="grid md:grid-cols-2 gap-5">
           <div className="md:col-span-2">
-            <label className="label-field">Raison sociale *</label>
+            <label className="label-field">Nom du magasin *</label>
             <input value={form.nom_client} onChange={e => setForm({...form, nom_client: e.target.value})} className="input-field" placeholder="Garage Dupont" autoFocus />
           </div>
           
@@ -857,7 +888,15 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
           </div>
           <div>
             <label className="label-field">Région commerciale</label>
-            <input value={form.region_commerciale} onChange={e => setForm({...form, region_commerciale: e.target.value})} className="input-field" placeholder="IDF, PACA…" />
+            <select value={form.region_commerciale} onChange={e => setForm({...form, region_commerciale: e.target.value})} className="input-field">
+              <option value="" className="text-black">Choisir…</option>
+              {regionChoices(form.region_commerciale).map(r => <option key={r} value={r} className="text-black">{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label-field">Périmètre</label>
+            <input value={form.perimetre} onChange={e => setForm({...form, perimetre: e.target.value})} className="input-field" placeholder="Octobre - 2026" />
+            <p className="text-[10px] text-blue-300/50 mt-1">Mois de création du compte, recopié dans la liste clients.</p>
           </div>
           <div>
             <label className="label-field">Agent Union</label>
@@ -890,6 +929,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
           <div>
             <label className="label-field">Téléphone responsable magasin</label>
             <input type="tel" value={form.telephone_responsable} onChange={e => setForm({...form, telephone_responsable: e.target.value})} className="input-field" placeholder="06 …" />
+            <p className="text-[10px] text-blue-300/50 mt-1">Enregistré dans la base Union. La feuille n’a pas de colonne pour ce numéro.</p>
           </div>
           <div className="md:col-span-2">
             <label className="label-field">Adresse complète</label>
@@ -1203,6 +1243,7 @@ function formFromClient(c) {
     mail: c.mail || '',
     agent_union: c.agent_union || '',
     region_commerciale: c.region_commerciale || '',
+    perimetre: c.perimetre || '',
     contrat_type: c.contrat_union || '',
     notes: c.notes || c.note_generale || '',
     is_closed: Boolean(c.is_closed),
@@ -1357,7 +1398,7 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
           </h3>
           {editing ? (
             <div className="space-y-3 text-sm">
-              <input value={form.nom_client} onChange={e => setForm({ ...form, nom_client: e.target.value })} className="input-field" placeholder="Raison sociale" />
+              <input value={form.nom_client} onChange={e => setForm({ ...form, nom_client: e.target.value })} className="input-field" placeholder="Nom du magasin" />
               <div className="grid grid-cols-2 gap-2">
                 <select value={form.groupe} onChange={e => setForm({ ...form, groupe: e.target.value })} className="input-field">
                   {GROUPES.map(g => <option key={g} value={g} className="text-black">{g}</option>)}
@@ -1367,7 +1408,11 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
                   {AGENTS_UNION.map(a => <option key={a} value={a} className="text-black">{a}</option>)}
                 </select>
               </div>
-              <input value={form.region_commerciale} onChange={e => setForm({ ...form, region_commerciale: e.target.value })} className="input-field" placeholder="Région commerciale" />
+              <select value={form.region_commerciale} onChange={e => setForm({ ...form, region_commerciale: e.target.value })} className="input-field">
+                <option value="" className="text-black">Région commerciale…</option>
+                {regionChoices(form.region_commerciale).map(r => <option key={r} value={r} className="text-black">{r}</option>)}
+              </select>
+              <input value={form.perimetre} onChange={e => setForm({ ...form, perimetre: e.target.value })} className="input-field" placeholder="Périmètre (Octobre - 2026)" />
               <div className="grid grid-cols-2 gap-2">
                 <input value={form.siret} onChange={e => setForm({ ...form, siret: e.target.value })} className="input-field" placeholder="SIRET" />
                 <input value={form.tva} onChange={e => setForm({ ...form, tva: e.target.value })} className="input-field" placeholder="TVA" />
@@ -1381,6 +1426,7 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
               <p className="text-[10px] uppercase tracking-wider text-emerald-300/70 pt-1">Responsable magasin</p>
               <input value={form.contact_responsable_pdv} onChange={e => setForm({ ...form, contact_responsable_pdv: e.target.value })} className="input-field" placeholder="Nom du responsable" />
               <input value={form.telephone_responsable} onChange={e => setForm({ ...form, telephone_responsable: e.target.value })} className="input-field" placeholder="Tél. responsable magasin" />
+              <p className="text-[10px] text-blue-300/50">Numéro gardé dans la base Union, pas dans la feuille.</p>
               <input value={form.adresse} onChange={e => setForm({ ...form, adresse: e.target.value })} className="input-field" placeholder="Adresse" />
               <div className="grid grid-cols-3 gap-2">
                 <input value={form.code_postal} onChange={e => setForm({ ...form, code_postal: e.target.value })} className="input-field" placeholder="CP" />

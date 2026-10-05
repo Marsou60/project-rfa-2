@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import os
 import re
+from datetime import datetime
 from typing import List, Dict, Optional, Any, Tuple
+from zoneinfo import ZoneInfo
 from fastapi import UploadFile
 
 from app.services import nathalie_adherents
@@ -79,34 +81,35 @@ DRIVE_FOLDERS = {
     "CODIFA":      "1Ko3a16Ppn_VrVLPjHKgXHs2lMjN28kEL",
 }
 
-# Colonnes de LISTE CLIENT 2 (0-indexed) - Pour lecture ET écriture
+# LISTE CLIENT 2 — colonnes figées (0 = A). Ne pas décaler.
+# A id client, B code union, C périmètre, D nom magasin, E groupe,
+# F vide, G région commerciale, H gérant, I adresse, J CP,
+# K département (2 premiers chiffres du CP), L ville, M tél. gérant,
+# N responsable magasin, O vide, P mail, Q SIRET,
+# R–U vides, V agent Union, W–AB vides.
+# Le téléphone du responsable magasin reste dans Supabase (pas de colonne feuille).
+SHEET_WIDTH = 28  # A … AB
+_MOIS_FR = (
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+)
 COL = {
-    "id_client":        0,
-    "code_union":       1,
-    "nom_client":       2,
-    "groupe":           3,
-    "contact_agent":    4,
-    "total_2024":       5,
-    "adherent_alliance":6,
-    "region":           7,
-    "contact_magasin":  8,
-    "adresse":          9,
-    "code_postal":      10,
-    "departement":      11,
-    "ville":            12,
-    "telephone":        13,
-    "responsable_pdv":  14,
-    "contact_appro":    15,
-    "mail":             16,
-    "siret":            17,
-    "rib":              18,
-    "kbis":             19,
-    "piece_identite":   20,
-    "ouverture_chez":   21,
-    "agent_union":      22,
-    "contrat_union":    23,
-    "note_generale":    24,
-    "photo_enseigne":   25,
+    "id_client":       0,   # A
+    "code_union":      1,   # B
+    "perimetre":       2,   # C
+    "nom_client":      3,   # D
+    "groupe":          4,   # E
+    "region":          6,   # G
+    "contact_magasin": 7,   # H
+    "adresse":         8,   # I
+    "code_postal":     9,   # J
+    "departement":     10,  # K
+    "ville":           11,  # L
+    "telephone":       12,  # M
+    "responsable_pdv": 13,  # N
+    "mail":            15,  # P
+    "siret":           16,  # Q
+    "agent_union":     21,  # V
 }
 
 # Colonnes CONTACT FOURNISSEURS (fallback si lecture par en-têtes échoue)
@@ -265,38 +268,39 @@ def _read_sheet(sheet_name: str, max_col: str = "Z") -> List[List[str]]:
     return values  # ligne 0 = en-têtes, lignes 1+ = données
 
 
+def default_perimetre(when: Optional[datetime] = None) -> str:
+    """Périmètre = mois de création, ex. « Octobre - 2026 »."""
+    dt = when or datetime.now(ZoneInfo("Europe/Paris"))
+    return f"{_MOIS_FR[dt.month - 1]} - {dt.year}"
+
+
+def dept_from_postal(code_postal: Any) -> str:
+    """Deux premiers chiffres du code postal (95 pour 95000)."""
+    digits = re.sub(r"\D", "", str(code_postal or ""))
+    return digits[:2]
+
+
 def _client_to_sheet_row(client: Dict[str, Any]) -> List[str]:
-    """Ligne LISTE CLIENT 2 (même ordre de colonnes qu'historiquement)."""
-    max_idx = max(COL.values())
-    row = [""] * (max_idx + 1)
+    """Ligne LISTE CLIENT 2, colonnes A à AB. Les colonnes vides restent vides."""
+    row = [""] * SHEET_WIDTH
     code = (client.get("code_union") or "").strip()
+    postal = str(client.get("code_postal") or "")
     row[COL["id_client"]] = code
     row[COL["code_union"]] = code
+    row[COL["perimetre"]] = client.get("perimetre") or ""
     row[COL["nom_client"]] = client.get("nom_client") or ""
     row[COL["groupe"]] = client.get("groupe") or ""
     row[COL["region"]] = client.get("region_commerciale") or client.get("region") or ""
     row[COL["contact_magasin"]] = client.get("contact_magasin") or client.get("gerant") or ""
     row[COL["adresse"]] = client.get("adresse") or ""
-    row[COL["code_postal"]] = client.get("code_postal") or ""
-    row[COL["departement"]] = client.get("departement") or ""
+    row[COL["code_postal"]] = postal
+    row[COL["departement"]] = dept_from_postal(postal)
     row[COL["ville"]] = client.get("ville") or ""
     row[COL["telephone"]] = client.get("telephone") or ""
     row[COL["responsable_pdv"]] = client.get("contact_responsable_pdv") or ""
-    row[COL["contact_appro"]] = client.get("contact_appro") or ""
     row[COL["mail"]] = client.get("mail") or ""
     row[COL["siret"]] = client.get("siret") or ""
-    row[COL["rib"]] = client.get("rib_url") or client.get("rib") or ""
-    row[COL["kbis"]] = client.get("kbis_url") or client.get("kbis") or ""
-    row[COL["piece_identite"]] = client.get("piece_identite_url") or client.get("piece_identite") or ""
-    row[COL["ouverture_chez"]] = client.get("ouverture_chez") or ""
     row[COL["agent_union"]] = client.get("agent_union") or ""
-    row[COL["contrat_union"]] = client.get("contrat_union") or client.get("contrat_type") or ""
-    notes = client.get("notes") or client.get("note_generale") or ""
-    tel_resp = client.get("telephone_responsable") or ""
-    if tel_resp and "Tél responsable" not in notes:
-        notes = f"{notes}\nTél responsable magasin : {tel_resp}".strip()
-    row[COL["note_generale"]] = notes
-    row[COL["photo_enseigne"]] = client.get("photo_devanture_url") or client.get("photo_devanture") or ""
     return row
 
 
@@ -313,16 +317,7 @@ def _find_liste_client_row(code_union: str) -> Tuple[Optional[int], Optional[Lis
 
 
 def _preserve_sheet_backup_columns(new_row: List[str], existing: Optional[List[str]]) -> List[str]:
-    """Garde CA / Alliance / contact agent historiques si on met à jour une ligne existante."""
-    if not existing:
-        if not new_row[COL["contact_agent"]]:
-            new_row[COL["contact_agent"]] = new_row[COL["agent_union"]]
-        return new_row
-    for key in ("contact_agent", "total_2024", "adherent_alliance"):
-        idx = COL[key]
-        old = _safe(existing, idx)
-        if old:
-            new_row[idx] = old
+    """N'écrase pas la ligne avec d'anciennes colonnes décalées (F, G, etc. ont un autre sens)."""
     return new_row
 
 
@@ -347,7 +342,7 @@ def _upsert_liste_client_2_row(client: Dict[str, Any]) -> str:
     if row_number:
         sheets.spreadsheets().values().update(
             spreadsheetId=SPREADSHEET_ID,
-            range=f"{SHEET_CLIENTS}!A{row_number}",
+            range=f"{SHEET_CLIENTS}!A{row_number}:AB{row_number}",
             valueInputOption="USER_ENTERED",
             body={"values": values},
         ).execute()
@@ -979,6 +974,11 @@ async def create_client_full(
             "Le RCS sert uniquement à retrouver l’entreprise."
         )
     data["siret"] = siret
+    if not (data.get("perimetre") or "").strip():
+        data["perimetre"] = default_perimetre()
+    dept = dept_from_postal(data.get("code_postal"))
+    if dept:
+        data["departement"] = dept
 
     code_union = get_next_code_union()
     data["code_union"] = code_union
@@ -1057,6 +1057,11 @@ async def update_client_full(
         data["region_commerciale"] = existing.get("region_commerciale")
     if not (data.get("groupe") or "").strip():
         data["groupe"] = existing.get("groupe")
+    if not (data.get("perimetre") or "").strip():
+        data["perimetre"] = existing.get("perimetre")
+    dept = dept_from_postal(data.get("code_postal") or existing.get("code_postal"))
+    if dept:
+        data["departement"] = dept
 
     siret_in = data.get("siret")
     if siret_in:
@@ -1170,31 +1175,22 @@ def _normalize_group_key(groupe_input: str) -> str:
 
 def _row_to_client(row: List[str]) -> Dict[str, Any]:
     return {
-        "id_client":         _safe(row, COL["id_client"]),
-        "code_union":        _safe(row, COL["code_union"]),
-        "nom_client":        _safe(row, COL["nom_client"]),
-        "groupe":            _safe(row, COL["groupe"]),
-        "contact_agent":     _safe(row, COL["contact_agent"]),
-        "region":            _safe(row, COL["region"]),
-        "adresse":           _safe(row, COL["adresse"]),
-        "code_postal":       _safe(row, COL["code_postal"]),
-        "ville":             _safe(row, COL["ville"]),
-        "telephone":         _safe(row, COL["telephone"]),
-        "mail":              _safe(row, COL["mail"]),
-        "siret":             _safe(row, COL["siret"]),
-        "rib":               _safe(row, COL["rib"]),
-        "kbis":              _safe(row, COL["kbis"]),
-        "piece_identite":    _safe(row, COL["piece_identite"]),
-        "ouverture_chez":    _safe(row, COL["ouverture_chez"]),
-        "agent_union":       _safe(row, COL["agent_union"]),
-        "contrat_union":     _safe(row, COL["contrat_union"]),
-        "note_generale":     _safe(row, COL["note_generale"]),
-        # Statut calculé
-        "docs_complets":     bool(
-            _safe(row, COL["rib"]) and
-            _safe(row, COL["kbis"]) and
-            _safe(row, COL["piece_identite"])
-        ),
+        "id_client":               _safe(row, COL["id_client"]),
+        "code_union":              _safe(row, COL["code_union"]),
+        "perimetre":               _safe(row, COL["perimetre"]),
+        "nom_client":              _safe(row, COL["nom_client"]),
+        "groupe":                  _safe(row, COL["groupe"]),
+        "region":                  _safe(row, COL["region"]),
+        "contact_magasin":         _safe(row, COL["contact_magasin"]),
+        "adresse":                 _safe(row, COL["adresse"]),
+        "code_postal":             _safe(row, COL["code_postal"]),
+        "departement":             _safe(row, COL["departement"]),
+        "ville":                   _safe(row, COL["ville"]),
+        "telephone":               _safe(row, COL["telephone"]),
+        "contact_responsable_pdv": _safe(row, COL["responsable_pdv"]),
+        "mail":                    _safe(row, COL["mail"]),
+        "siret":                   _safe(row, COL["siret"]),
+        "agent_union":             _safe(row, COL["agent_union"]),
     }
 
 

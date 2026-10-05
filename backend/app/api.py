@@ -6258,6 +6258,7 @@ async def nathalie_create_client(
     telephone_responsable: str = Form(""),
     agent_union: str = Form(""),
     region_commerciale: str = Form(""),
+    perimetre: str = Form(""),
     contrat_type: str = Form(""),
     notes: str = Form(""),
     rib: UploadFile = File(None),
@@ -6290,6 +6291,7 @@ async def nathalie_create_client(
         "telephone_responsable": telephone_responsable,
         "agent_union": agent_union,
         "region_commerciale": region_commerciale,
+        "perimetre": perimetre,
         "contrat_type": contrat_type,
         "notes": notes,
     }
@@ -6332,6 +6334,7 @@ async def nathalie_update_client(
     telephone_responsable: str = Form(""),
     agent_union: str = Form(""),
     region_commerciale: str = Form(""),
+    perimetre: str = Form(""),
     contrat_type: str = Form(""),
     notes: str = Form(""),
     is_closed: str = Form(""),
@@ -6360,6 +6363,7 @@ async def nathalie_update_client(
         "telephone_responsable": telephone_responsable,
         "agent_union": agent_union,
         "region_commerciale": region_commerciale,
+        "perimetre": perimetre,
         "contrat_type": contrat_type,
         "notes": notes,
     }
