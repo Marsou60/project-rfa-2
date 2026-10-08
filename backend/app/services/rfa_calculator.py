@@ -21,6 +21,13 @@ WARNING_PRIME_REQUIRES = (
 # EXADIS : le CA Prodex compte pour le palier, pas pour le montant versé.
 EXADIS_EXCLUDED_BRAND = "PRODEX"
 
+# M0291 : challenge ACR. Au-delà de 65 000 €, le taux ACR (RFA + bonus du palier)
+# est remplacé par un taux fixe : palier actuel + 2,5 points.
+# Ex. 2,5 % + 2 % = 4,5 % → 7 % fixe. Le bonus du barème n'est pas ajouté en plus.
+M0291_CODE = "M0291"
+M0291_ACR_CHALLENGE_MIN = 65000.0
+M0291_ACR_CHALLENGE_RATE = 0.025
+
 
 def exadis_remuneration_base(recap_ca: Dict, ca: float, key: str = "GLOBAL_EXADIS") -> tuple:
     """(ca_exclu Prodex, assiette rémunérée). Le palier reste sur `ca` complet."""
@@ -137,6 +144,41 @@ def evaluate_apa_nord_franchise(
         "triggered": triggered,
         "conditions": conditions,
         "platforms": ["GLOBAL_ALLIANCE", "GLOBAL_ACR"],
+    }
+
+
+def evaluate_m0291_acr_challenge(
+    recap_ca: Dict[str, Dict[str, float]],
+    code_union: Optional[str],
+    year: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Challenge réservé au code Union M0291 (RFA 2026+).
+    Si le CA ACR dépasse 65 000 €, le taux du palier (RFA + bonus) est remplacé
+    par un taux fixe égal à ce palier + 2,5 points (4,5 % deviennent 7 %).
+    La cotisation est offerte. Retourne None pour tout autre client.
+    """
+    if year is not None and int(year) < 2026:
+        return None
+    if (code_union or "").strip().upper() != M0291_CODE:
+        return None
+
+    acr_ca = float(((recap_ca or {}).get("global") or {}).get("GLOBAL_ACR") or 0.0)
+    triggered = acr_ca > M0291_ACR_CHALLENGE_MIN
+    if triggered:
+        missing = 0.0
+    else:
+        missing = round(max(M0291_ACR_CHALLENGE_MIN - acr_ca, 0.0), 2)
+    return {
+        "key": "M0291_ACR_CHALLENGE",
+        "code_union": M0291_CODE,
+        "label": "Challenge ACR",
+        "threshold": M0291_ACR_CHALLENGE_MIN,
+        "bonus_rate": M0291_ACR_CHALLENGE_RATE,
+        "ca": round(acr_ca, 2),
+        "triggered": triggered,
+        "missing": missing,
+        "cotisation_offerte": triggered,
     }
 
 
@@ -509,6 +551,8 @@ def calculate_rfa(
     elif apa_boost:
         print("[APA NORD+FRANCHISE] conditions non remplies")
 
+    m0291_challenge = evaluate_m0291_acr_challenge(recap_ca, code_union, year=year)
+
     for key in GLOBAL_PLATFORMS:
         if key not in recap_ca.get("global", {}):
             continue
@@ -624,6 +668,37 @@ def calculate_rfa(
                 "value": 0.0,
                 "has_override": has_bonus_override,
             }
+
+        # M0291 : taux fixe = palier (RFA + bonus) + 2,5 points. Le bonus n'est pas repris en plus.
+        if m0291_challenge and key == "GLOBAL_ACR":
+            base_rfa = float(rfa_result.get("rate") or 0.0)
+            base_bonus = float(bonus_result.get("rate") or 0.0)
+            base_rate = round(base_rfa + base_bonus, 6)
+            m0291_challenge["base_rfa_rate"] = base_rfa
+            m0291_challenge["base_bonus_rate"] = base_bonus
+            m0291_challenge["base_rate"] = base_rate
+            if m0291_challenge.get("triggered"):
+                fixed_rate = round(base_rate + M0291_ACR_CHALLENGE_RATE, 6)
+                rfa_result["rate"] = fixed_rate
+                rfa_result["value"] = round(ca_remunere * fixed_rate, 2)
+                rfa_result["triggered"] = fixed_rate > 0
+                rfa_result["acr_challenge"] = True
+                bonus_result["rate"] = 0.0
+                bonus_result["value"] = 0.0
+                bonus_result["triggered"] = False
+                m0291_challenge["boosted_rfa_rate"] = fixed_rate
+                m0291_challenge["boosted_rate"] = fixed_rate
+                m0291_challenge["fixed_rate"] = True
+                print(
+                    f"[M0291 ACR] CA {ca_remunere:.2f} > {M0291_ACR_CHALLENGE_MIN:.0f} "
+                    f"→ {base_rfa*100:.2f}% + {base_bonus*100:.2f}% = {base_rate*100:.2f}% "
+                    f"remplacé par {fixed_rate*100:.2f}% fixe"
+                )
+            else:
+                m0291_challenge["boosted_rfa_rate"] = base_rfa
+                m0291_challenge["boosted_rate"] = base_rate
+                m0291_challenge["fixed_rate"] = False
+
         # Total
         total_rate = rfa_result["rate"] + bonus_result["rate"]
         total_value = rfa_result["value"] + bonus_result["value"]
@@ -645,6 +720,8 @@ def calculate_rfa(
             platform_row["ca_exclu"] = ca_exclu
             platform_row["ca_remunere"] = ca_remunere
             platform_row["exclusion_marque"] = EXADIS_EXCLUDED_BRAND
+        if m0291_challenge and key == "GLOBAL_ACR":
+            platform_row["acr_challenge"] = m0291_challenge
         result["global"][key] = platform_row
         
         global_rfa_sum += rfa_result["value"]
@@ -731,6 +808,9 @@ def calculate_rfa(
 
     if apa_boost is not None:
         result["apa_nord_franchise"] = apa_boost
+
+    if m0291_challenge is not None:
+        result["acr_challenge"] = m0291_challenge
 
     result["fixed_bonuses"] = fixed_bonuses
     result["totals"] = {

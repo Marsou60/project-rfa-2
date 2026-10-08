@@ -2268,6 +2268,7 @@ function Rfa26ProgressCard({
   levelLabel = null,
   projTierGroups = null,
   projLevelLabel = null,
+  footnote = null,
 }) {
   const [open, setOpen] = useState(false)
   const achieved = prog.achieved
@@ -2404,6 +2405,11 @@ function Rfa26ProgressCard({
         </span>
         <span className="font-bold text-emerald-600">{fmt(prog.currentValue)} RFA</span>
       </div>
+      {footnote && (
+        <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 mb-1.5 leading-snug">
+          {footnote}
+        </p>
+      )}
       {exclusion?.exclu > 0 && (
         <p className="text-[11px] text-slate-600 mb-1.5 leading-snug">
           Dont {fmt(exclusion.exclu)} Prodex non rémunéré. Palier sur {fmt(ca)}, RFA sur {fmt(exclusion.remunere)}.
@@ -2596,6 +2602,9 @@ function ClientRfa2026Section({
   const cotAmount = Number(cotisation?.amount || 0)
   const cotFacture = Boolean(cotisation?.is_facture)
   const cotOfferte = Boolean(cotisation?.is_offerte)
+  const cotChallengeAuto = Boolean(cotisation?.acr_challenge_cotisation)
+  const acrChallenge = rfa.acr_challenge || null
+  const projAcrChallenge = projected?.acr_challenge || null
   const cotGroupMember = cotisation?.source === 'group_member'
   const rfaNet = data.rfa_net != null ? data.rfa_net : (cotFacture ? Math.max(grand - cotAmount, 0) : grand)
   const projNet = data.rfa_projected_net != null
@@ -2734,6 +2743,50 @@ function ClientRfa2026Section({
           )
         })}
 
+        {acrChallenge && (
+          <div className={`rounded-xl border-2 px-4 py-3 ${
+            acrChallenge.triggered
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+              : 'bg-amber-50 border-amber-300 text-amber-950'
+          }`}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold uppercase tracking-wide opacity-80">
+                  Challenge ACR · M0291
+                </div>
+                <p className="text-sm mt-1 leading-snug">
+                  {acrChallenge.triggered
+                    ? <>
+                        CA ACR {fmt(acrChallenge.ca)} — à la place de {fmtPct(acrChallenge.base_rate)} ({fmtPct(acrChallenge.base_rfa_rate)} + {fmtPct(acrChallenge.base_bonus_rate)}), taux fixe <strong>{fmtPct(acrChallenge.boosted_rate)}</strong>. Le bonus du barème n’est pas ajouté en plus. Cotisation offerte.
+                      </>
+                    : <>
+                        Au-delà de {fmt(acrChallenge.threshold)} de CA chez ACR, le palier (RFA + bonus) est remplacé par un taux fixe : palier + {fmtPct(acrChallenge.bonus_rate)}. Exemple : 2,5 % + 2 % = 4,5 % deviennent <strong>7 %</strong>. Cotisation offerte.
+                        {acrChallenge.missing > 0
+                          ? <> Encore <strong>{fmt(acrChallenge.missing)}</strong>.</>
+                          : <> Il faut dépasser {fmt(acrChallenge.threshold)}.</>}
+                      </>}
+                </p>
+                {projAcrChallenge?.triggered && !acrChallenge.triggered && (
+                  <p className="text-[13px] mt-1.5 text-cyan-900">
+                    En projection fin d’année le challenge est atteint ({fmt(projAcrChallenge.ca)} chez ACR) — le taux projeté passe à {fmtPct(projAcrChallenge.boosted_rate)} fixe, et la cotisation est offerte.
+                  </p>
+                )}
+                <div className="mt-2.5 h-2 rounded-full bg-white/80 border border-black/5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${acrChallenge.triggered ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                    style={{ width: `${Math.min(((acrChallenge.ca || 0) / (acrChallenge.threshold || 1)) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+              <span className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-bold ${
+                acrChallenge.triggered ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-200 text-amber-900'
+              }`}>
+                {acrChallenge.triggered ? 'Atteint' : 'En cours'}
+              </span>
+            </div>
+          </div>
+        )}
+
         <Rfa26Readme
           isLevelBased={isLevelBased}
           contractName={contractName}
@@ -2849,7 +2902,7 @@ function ClientRfa2026Section({
                         <div className="text-xl font-black text-slate-900 font-mono mt-0.5">{fmt(cotAmount)}</div>
                         <div className="text-[11px] text-slate-600 mt-0.5">
                           {cotisation.label || 'Barème 2026'}
-                          {cotOfferte ? ' · geste commercial' : ' · déduite de la RFA'}
+                          {cotChallengeAuto ? '' : cotOfferte ? ' · geste commercial' : ' · déduite de la RFA'}
                         </div>
                       </>
                     )}
@@ -2864,7 +2917,7 @@ function ClientRfa2026Section({
                     }`}>
                       {cotOfferte ? 'Offerte' : cotGroupMember ? 'Via groupe' : 'Facturée'}
                     </span>
-                    {!isAdherent && cotAmount > 0 && !cotGroupMember && (
+                    {!isAdherent && cotAmount > 0 && !cotGroupMember && !cotChallengeAuto && (
                       cotFacture ? (
                         <button
                           type="button"
@@ -2889,7 +2942,9 @@ function ClientRfa2026Section({
                 </div>
                 {cotAmount > 0 && cotFacture && projGrand != null && (
                   <div className="mt-2 pt-2 border-t border-orange-200/80 text-xs text-orange-900">
-                    Projection : {fmt(projGrand)} − {fmt(cotAmount)} = <strong>{fmt(projNet)}</strong> nette
+                    {projAcrChallenge?.triggered
+                      ? <>Projection : cotisation offerte (challenge ACR) — RFA nette <strong>{fmt(projNet)}</strong></>
+                      : <>Projection : {fmt(projGrand)} − {fmt(cotAmount)} = <strong>{fmt(projNet)}</strong> nette</>}
                   </div>
                 )}
               </div>
@@ -2991,7 +3046,18 @@ function ClientRfa2026Section({
                   const tRfa = rfa26ParseTiers(it.tiers_rfa)
                   const tBonus = rfa26ParseTiers(it.tiers_bonus)
                   const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null)
-                  if (it.ca_exclu && it.total?.value != null) prog.currentValue = it.total.value
+                  const challenge = it.acr_challenge || (key === 'GLOBAL_ACR' ? acrChallenge : null)
+                  if (challenge?.triggered) {
+                    const extra = Number(challenge.bonus_rate) || 0
+                    prog.rate = it.total?.rate ?? ((prog.rate || 0) + extra)
+                    prog.currentValue = it.total?.value ?? prog.currentValue
+                    if (prog.nextRate != null) prog.nextRate += extra
+                  } else if (it.ca_exclu && it.total?.value != null) {
+                    prog.currentValue = it.total.value
+                  }
+                  const challengeNote = challenge?.triggered
+                    ? `Challenge ACR : ${fmtPct(challenge.base_rate)} (${fmtPct(challenge.base_rfa_rate)} + ${fmtPct(challenge.base_bonus_rate)}) remplacés par un taux fixe de ${fmtPct(challenge.boosted_rate)}.`
+                    : null
                   const pj = projected?.global?.[key]
                   const proj = pj ? { ca: pj.ca || 0, rate: pj.total?.rate || 0, value: pj.total?.value || 0 } : null
                   const exclusion = it.ca_exclu > 0
@@ -3020,6 +3086,7 @@ function ClientRfa2026Section({
                       levelLabel={levelId ? `Barème ${levelId}` : null}
                       projTierGroups={projTierGroups}
                       projLevelLabel={projLevelId || null}
+                      footnote={challengeNote}
                     />
                   )
                 })}

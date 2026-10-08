@@ -284,3 +284,52 @@ def resolve_cotisation_2026_for_entity(
         contract_name=contract_name,
     )
     return merge_cotisation_status(default, setting)
+
+
+def apply_m0291_acr_cotisation(
+    cotisation: Dict[str, Any],
+    *,
+    code_union: Optional[str],
+    acr_ca: float,
+    year: Optional[int] = 2026,
+) -> Dict[str, Any]:
+    """
+    M0291 : si le CA ACR dépasse 65 000 €, la cotisation du barème est offerte
+    (montant conservé, plus déduit de la RFA). Les autres clients ne changent pas.
+    Un magasin facturé au groupe n'a pas de cotisation individuelle à offrir.
+    """
+    from app.services.rfa_calculator import evaluate_m0291_acr_challenge
+
+    challenge = evaluate_m0291_acr_challenge(
+        {"global": {"GLOBAL_ACR": float(acr_ca or 0)}},
+        code_union,
+        year=year,
+    )
+    if not challenge:
+        return cotisation
+
+    out = dict(cotisation)
+    out["acr_challenge"] = {
+        "threshold": challenge["threshold"],
+        "bonus_rate": challenge["bonus_rate"],
+        "ca": challenge["ca"],
+        "triggered": challenge["triggered"],
+        "missing": challenge["missing"],
+    }
+    if not challenge["triggered"] or out.get("source") == "group_member":
+        return out
+
+    amount = float(out.get("amount") or 0)
+    out["acr_challenge_cotisation"] = True
+    if amount <= 0:
+        return out
+
+    out["facturee"] = False
+    out["deduite"] = False
+    out["is_offerte"] = True
+    out["is_facture"] = False
+    out["deducted"] = 0.0
+    label = out.get("label") or "Cotisation 2026"
+    if "challenge ACR" not in label:
+        out["label"] = f"{label} · offerte (challenge ACR > 65 000 €)"
+    return out

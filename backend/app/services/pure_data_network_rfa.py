@@ -203,7 +203,10 @@ def _entity_row_from_rfa(
     cotisation_setting: Optional[Any] = None,
     groupe_client: Optional[str] = None,
 ) -> Dict[str, Any]:
-    from app.services.cotisation_2026 import resolve_cotisation_2026_for_entity
+    from app.services.cotisation_2026 import (
+        resolve_cotisation_2026_for_entity,
+        apply_m0291_acr_cotisation,
+    )
 
     totals_ytd = rfa_ytd.get("totals") or {}
     totals_proj = (rfa_proj or {}).get("totals") or {}
@@ -257,7 +260,16 @@ def _entity_row_from_rfa(
         entity_type=entity_type,
         groupe_client=groupe_client if entity_type == "independent" else None,
     )
+    acr_ytd = float(((rfa_ytd.get("global") or {}).get("GLOBAL_ACR") or {}).get("ca") or 0)
+    cotisation = apply_m0291_acr_cotisation(
+        cotisation,
+        code_union=code if entity_type == "independent" else None,
+        acr_ca=acr_ytd,
+        year=2026,
+    )
     deducted = float(cotisation.get("deducted") or 0)
+    proj_offered = bool(((rfa_proj or {}).get("acr_challenge") or {}).get("triggered"))
+    deducted_proj = 0.0 if proj_offered else deducted
 
     row = {
         "entity_type": entity_type,
@@ -281,7 +293,7 @@ def _entity_row_from_rfa(
         "rfa_proj_global": round(float(totals_proj.get("global_total", 0) or 0), 2) if rfa_proj else None,
         "rfa_proj_tri": round(float(totals_proj.get("tri_total", 0) or 0), 2) if rfa_proj else None,
         "rfa_ytd_net": round(max(rfa_ytd_val - deducted, 0), 2),
-        "rfa_proj_net": round(max((rfa_proj_val or 0) - deducted, 0), 2) if rfa_proj_val is not None else None,
+        "rfa_proj_net": round(max((rfa_proj_val or 0) - deducted_proj, 0), 2) if rfa_proj_val is not None else None,
         "cotisation": cotisation,
         # Comparaison 2025 (remplie ensuite si import Excel dispo)
         "ca_2025": None,

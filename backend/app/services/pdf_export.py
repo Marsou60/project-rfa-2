@@ -343,6 +343,12 @@ def _build_global_rows(entity_data: Dict, rules_map: Dict) -> List[Dict]:
         next_rfa_rate = _get_rate_for_threshold(tiers_rfa, combined_next_min) if combined_next_min else 0
         next_bonus_rate = _get_rate_for_threshold(tiers_bonus, combined_next_min) if combined_next_min else 0
         next_combined_rate = (next_rfa_rate + next_bonus_rate) if combined_next_min else None
+        challenge = item.get("acr_challenge") or {}
+        if challenge.get("triggered"):
+            combined_rate = current_rate
+            bonus_pts = float(challenge.get("bonus_rate") or 0)
+            if next_combined_rate is not None:
+                next_combined_rate = next_combined_rate + bonus_pts
         missing_ca = max((combined_next_min or 0) - ca, 0) if combined_next_min else None
         projected_rfa = (next_combined_rate * combined_next_min) if (combined_next_min and next_combined_rate is not None) else None
         projected_gain = max((projected_rfa or 0) - current_value, 0) if projected_rfa is not None else None

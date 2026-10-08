@@ -49,10 +49,13 @@ export function describeCotisation(c?: CotisationPayload | null): CotisationView
   if (amount <= 0) return null;
 
   if (isOfferte) {
+    const viaChallenge = Boolean(c.acr_challenge_cotisation);
     return {
       amount,
       badge: 'Offerte',
-      body: `${fmtEuro(amount)} — geste commercial. Ce montant n’est pas déduit de la RFA.`,
+      body: viaChallenge
+        ? `${fmtEuro(amount)} — offerte : CA ACR au-dessus de 65 000 €. Ce montant n’est pas déduit de la RFA.`
+        : `${fmtEuro(amount)} — geste commercial. Ce montant n’est pas déduit de la RFA.`,
       tone: 'green',
     };
   }

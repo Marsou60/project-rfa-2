@@ -289,6 +289,23 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         <Text style={styles.objPct}>{Math.round(d.nextObjective.progress)} % du palier</Text>
       </View>
 
+      {data.rfa?.acr_challenge ? (
+        <View style={data.rfa.acr_challenge.triggered ? styles.infoCyan : styles.infoAmber}>
+          <Text style={data.rfa.acr_challenge.triggered ? styles.infoCyanTitle : styles.infoAmberTitle}>
+            Challenge ACR {data.rfa.acr_challenge.triggered ? 'atteint' : 'en cours'}
+          </Text>
+          <Text style={data.rfa.acr_challenge.triggered ? styles.infoCyanBody : styles.infoAmberBody}>
+            {data.rfa.acr_challenge.triggered
+              ? `À la place de ${fmtPct(data.rfa.acr_challenge.base_rate || 0)}, taux fixe ${fmtPct(data.rfa.acr_challenge.boosted_rate || 0)}. Le bonus du barème n’est pas ajouté en plus. Cotisation offerte.`
+              : `Au-delà de ${fmtEuro(data.rfa.acr_challenge.threshold || 65000)} chez ACR : le palier RFA + bonus est remplacé par un taux fixe (+2,5 points). Cotisation offerte.${
+                  (data.rfa.acr_challenge.missing || 0) > 0
+                    ? ` Encore ${fmtEuro(data.rfa.acr_challenge.missing || 0)}.`
+                    : ''
+                }`}
+          </Text>
+        </View>
+      ) : null}
+
       <Text style={styles.section}>Plateformes</Text>
       <Text style={styles.sectionHint}>Tap pour ouvrir le barème · jauge = progression vers le prochain palier</Text>
       {d.globalItems.length === 0 ? (
@@ -298,7 +315,19 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
           const tRfa = parseTiers(it.tiers_rfa);
           const tBonus = parseTiers(it.tiers_bonus);
           const prog = globalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null);
-          if (it.ca_exclu) prog.currentValue = lineAmount(it);
+          const challenge = it.acr_challenge;
+          if (challenge?.triggered) {
+            const extra = Number(challenge.bonus_rate) || 0.025;
+            const totalRate =
+              it.total && typeof it.total === 'object' && 'rate' in it.total
+                ? Number(it.total.rate) || 0
+                : (prog.rate || 0) + extra;
+            prog.rate = totalRate;
+            prog.currentValue = lineAmount(it);
+            if (prog.nextRate != null) prog.nextRate += extra;
+          } else if (it.ca_exclu) {
+            prog.currentValue = lineAmount(it);
+          }
           const pj = d.projected?.global?.[key];
           const pjRate =
             pj && typeof pj.total === 'object' && pj.total && 'rate' in pj.total
@@ -325,9 +354,11 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
                   : null
               }
               note={
-                it.ca_exclu
-                  ? `Dont ${fmtEuro(it.ca_exclu)} Prodex non rémunéré. Palier sur ${fmtEuro(it.ca || 0)}, RFA sur ${fmtEuro(it.ca_remunere || 0)}.`
-                  : null
+                challenge?.triggered
+                  ? `Challenge ACR : ${fmtPct(challenge.base_rate || 0)} remplacés par un taux fixe de ${fmtPct(challenge.boosted_rate || 0)}.`
+                  : it.ca_exclu
+                    ? `Dont ${fmtEuro(it.ca_exclu)} Prodex non rémunéré. Palier sur ${fmtEuro(it.ca || 0)}, RFA sur ${fmtEuro(it.ca_remunere || 0)}.`
+                    : null
               }
               onOpenNotice={key === 'GLOBAL_EXADIS' ? () => setProdexNotice(true) : null}
             />

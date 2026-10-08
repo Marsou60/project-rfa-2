@@ -127,7 +127,7 @@ export type RfaLine = {
   value?: number;
   rfa?: number | { value?: number; rate?: number };
   bonus?: number | { value?: number; rate?: number };
-  total?: number | { value?: number };
+  total?: number | { value?: number; rate?: number };
   label?: string;
   tiers?: unknown;
   tiers_rfa?: unknown;
@@ -135,6 +135,20 @@ export type RfaLine = {
   ca_exclu?: number;
   ca_remunere?: number;
   exclusion_marque?: string;
+  acr_challenge?: AcrChallenge | null;
+};
+
+export type AcrChallenge = {
+  triggered?: boolean;
+  threshold?: number;
+  bonus_rate?: number;
+  ca?: number;
+  missing?: number;
+  base_rfa_rate?: number;
+  base_bonus_rate?: number;
+  base_rate?: number;
+  boosted_rfa_rate?: number;
+  boosted_rate?: number;
 };
 
 export type ClientRfaResponse = {
@@ -155,12 +169,14 @@ export type ClientRfaResponse = {
     tri?: Record<string, RfaLine>;
     totals?: { global_total?: number; tri_total?: number; grand_total?: number; rfa_total?: number; bonus_total?: number };
     contract_level?: { id?: string; tripartites_enabled?: boolean; total_ca?: number } | null;
+    acr_challenge?: AcrChallenge | null;
   };
   rfa_projected?: {
     totals?: { grand_total?: number };
     contract_level?: { id?: string; tripartites_enabled?: boolean } | null;
     global?: Record<string, RfaLine>;
     tri?: Record<string, RfaLine>;
+    acr_challenge?: AcrChallenge | null;
   } | null;
   contract_applied?: {
     id?: number | null;

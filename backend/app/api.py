@@ -4372,7 +4372,10 @@ async def pure_data_cumulative_client_rfa(
             }
 
         # ── Cotisation Union 2026 (barème niveau / contrat spécial + Offrir/Facturer) ──
-        from app.services.cotisation_2026 import resolve_cotisation_2026_for_entity
+        from app.services.cotisation_2026 import (
+            resolve_cotisation_2026_for_entity,
+            apply_m0291_acr_cotisation,
+        )
         from app.models import CotisationSetting as _Cotis
 
         entity_key = (
@@ -4440,9 +4443,19 @@ async def pure_data_cumulative_client_rfa(
             )
             cotisation["group_cotisation"] = group_cotis
 
+        acr_ytd = float((recap_ca.get("global") or {}).get("GLOBAL_ACR") or 0)
+        cotisation = apply_m0291_acr_cotisation(
+            cotisation,
+            code_union=code_union,
+            acr_ca=acr_ytd,
+            year=int(year),
+        )
+
         rfa_gross = float((rfa_result.get("totals") or {}).get("grand_total") or 0)
         proj_gross = float(((rfa_projected or {}).get("totals") or {}).get("grand_total") or 0) if rfa_projected else None
         deducted = float(cotisation.get("deducted") or 0)
+        proj_offered = bool(((rfa_projected or {}).get("acr_challenge") or {}).get("triggered"))
+        deducted_proj = 0.0 if proj_offered else deducted
 
         return {
             "available": True,
@@ -4463,7 +4476,7 @@ async def pure_data_cumulative_client_rfa(
             "comparison_n1": comparison_n1,
             "cotisation": cotisation,
             "rfa_net": round(max(rfa_gross - deducted, 0), 2),
-            "rfa_projected_net": round(max(proj_gross - deducted, 0), 2) if proj_gross is not None else None,
+            "rfa_projected_net": round(max(proj_gross - deducted_proj, 0), 2) if proj_gross is not None else None,
             "contract_applied": {
                 "id": contract.id,
                 "name": contract.name,
