@@ -1,13 +1,13 @@
 {
   "version": "1.0",
-  "description": "Contrat Client SMP - 100% Alliance avec tripartites spécifiques",
+  "description": "Contrat Groupe SMP 2026 — Alliance uniquement",
   "contracts": [
     {
       "id": "CONTRAT_SMP",
-      "name": "Contrat Client SMP",
+      "name": "Groupe SMP – Contrat Alliance",
       "isDefault": false,
       "useCombinedGlobalRate": false,
-      "notes": "Contrat SMP (100% Alliance). RFA et Bonus uniquement sur ALLIANCE. Tripartites: Schaeffler, Delphi, Brembo, SKF.",
+      "notes": "Alliance uniquement. RFA 300 k€ 7,5 % / 400 k€ 8 % / 500 k€ 8,5 %, sans bonus. Tripartites : Schaeffler, Delphi, Sogefi (Coopers Fiaam / Purflux), SKF.",
       "globalRules": {
         "GLOBAL_ACR": {
           "tiersRfa": [],
@@ -23,15 +23,11 @@
         },
         "GLOBAL_ALLIANCE": {
           "tiersRfa": [
-            {"min": 300000, "rate": 0.05},
-            {"min": 350000, "rate": 0.075},
-            {"min": 450000, "rate": 0.085},
-            {"min": 500000, "rate": 0.09}
+            {"min": 300000, "rate": 0.075},
+            {"min": 400000, "rate": 0.08},
+            {"min": 500000, "rate": 0.085}
           ],
-          "tiersBonus": [
-            {"min": 300000, "rate": 0.02},
-            {"min": 350000, "rate": 0.0}
-          ]
+          "tiersBonus": []
         }
       },
       "triRules": {
@@ -48,11 +44,9 @@
             {"min": 60000, "rate": 0.08}
           ]
         },
-        "TRI_ALLIANCE_BREMBO": {
+        "TRI_ALLIANCE_SOGEFI": {
           "tiers": [
-            {"min": 20000, "rate": 0.04},
-            {"min": 40000, "rate": 0.06},
-            {"min": 60000, "rate": 0.08}
+            {"min": 20000, "rate": 0.04}
           ]
         },
         "TRI_ALLIANCE_SKF": {
@@ -61,11 +55,6 @@
             {"min": 20000, "rate": 0.03},
             {"min": 30000, "rate": 0.045},
             {"min": 40000, "rate": 0.06}
-          ]
-        },
-        "TRI_ALLIANCE_MECAFILTER": {
-          "tiers": [
-            {"min": 20000, "rate": 0.04}
           ]
         }
       }
