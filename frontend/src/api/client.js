@@ -412,7 +412,7 @@ function triggerBlobDownload(blob, filename) {
 
 /** Télécharge / ouvre le PDF de contrat applicable (Adhérents 2026 ou annexe spéciale). */
 export const downloadContractPdf = async (mode, entityId, groupeClient = null, openInNewTab = true) => {
-  const params = { mode: String(mode), id: String(entityId) }
+  const params = { mode: String(mode), id: String(entityId), v: Date.now() }
   if (groupeClient) params.groupe_client = String(groupeClient)
   let response
   try {

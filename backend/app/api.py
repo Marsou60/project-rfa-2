@@ -2997,6 +2997,10 @@ async def get_commercial_contract_pdf(
         media_type="application/pdf",
         filename=download_name,
         content_disposition_type="inline",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
     )
 
 
