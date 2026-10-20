@@ -18,6 +18,8 @@ type Props = {
   rfaEstimated?: number | null;
   avgRate?: number | null;
   note?: string | null;
+  /** Un seul indicateur en bas de carte (atterrissage), sans colonne de droite. */
+  hideRight?: boolean;
 };
 
 export function HeroCaCard({
@@ -33,6 +35,7 @@ export function HeroCaCard({
   rfaEstimated,
   avgRate,
   note,
+  hideRight = false,
 }: Props) {
   const leftL = leftLabel || 'RFA à date';
   const leftV = leftValue || fmtEuro(rfaEstimated || 0);
@@ -61,12 +64,14 @@ export function HeroCaCard({
       <View style={styles.footer}>
         <View style={styles.footerCol}>
           <Text style={styles.footerLabel}>{leftL}</Text>
-          <Text style={styles.footerValue}>{leftV}</Text>
+          <Text style={[styles.footerValue, hideRight && styles.footerValueSingle]}>{leftV}</Text>
         </View>
-        <View style={styles.footerCol}>
-          <Text style={styles.footerLabel}>{rightL}</Text>
-          <Text style={styles.footerValue}>{rightV}</Text>
-        </View>
+        {hideRight ? null : (
+          <View style={styles.footerCol}>
+            <Text style={styles.footerLabel}>{rightL}</Text>
+            <Text style={styles.footerValue}>{rightV}</Text>
+          </View>
+        )}
       </View>
       {note ? <Text style={styles.note}>{note}</Text> : null}
     </LinearGradient>
@@ -128,6 +133,10 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 22,
     fontWeight: '800',
+  },
+  footerValueSingle: {
+    fontSize: 28,
+    letterSpacing: -0.4,
   },
   note: {
     color: 'rgba(255,255,255,0.82)',

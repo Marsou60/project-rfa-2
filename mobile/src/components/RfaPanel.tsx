@@ -23,7 +23,7 @@ import { ProdexNoticeModal } from './ProdexNoticeModal';
 import { RfaProgressCard } from './RfaProgressCard';
 import { colors, spacing } from '../theme';
 import { fmtEuro, fmtPct, untilMonthLabel } from '../utils/format';
-import { describeCotisation } from '../utils/cotisationStatus';
+import { CotisationPayload } from '../utils/cotisationStatus';
 import { globalProgress, parseTiers, triProgress } from '../utils/rfaProgress';
 
 type Props = {
@@ -42,6 +42,37 @@ function asNum(v: unknown): number {
     return Number((v as { value?: number }).value) || 0;
   }
   return Number(v) || 0;
+}
+
+function cotisationFootnote(c?: CotisationPayload | null): string | null {
+  if (!c) return null;
+  const amount = Number(c.amount) || 0;
+  const deducted = Number(c.deducted) || 0;
+  const groupMember = c.source === 'group_member' || Boolean(c.billed_at_group);
+  if (groupMember) {
+    const group = String(c.billed_at_group || '').trim();
+    return group
+      ? `Cotisation facturée au groupe ${group}, pas sur ce magasin.`
+      : 'Cotisation facturée au groupe, pas sur ce magasin.';
+  }
+  if (amount <= 0 && deducted <= 0) return null;
+  const offered =
+    Boolean(c.is_offerte) || (amount > 0 && c.facturee === false && c.deduite === false);
+  if (offered) {
+    return `Cotisation Union ${fmtEuro(amount)} offerte : elle n’est pas déduite de ce montant.`;
+  }
+  const shown = deducted > 0 ? deducted : amount;
+  const taken =
+    Boolean(c.is_facture) ||
+    deducted > 0 ||
+    (amount > 0 && c.facturee === true && c.deduite === true);
+  if (taken) {
+    return `Hors cotisation. Cotisation Union ${fmtEuro(shown)}, déduite au versement.`;
+  }
+  if (c.facturee === true && c.deduite === false) {
+    return `Hors cotisation. Cotisation Union ${fmtEuro(amount)}, facturée à part, non déduite.`;
+  }
+  return `Cotisation Union ${fmtEuro(amount)}, non déduite de ce montant.`;
 }
 
 function lineAmount(item: RfaLine): number {
@@ -170,13 +201,11 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
 
     return {
       caGlobal,
-      rfaNet,
       level,
       isLevelBased,
       contractName: data.contract_applied?.name || '—',
-      proj: data.rfa_projected_net ?? data.rfa_projected?.totals?.grand_total,
+      proj: data.rfa_projected?.totals?.grand_total ?? null,
       projectedLevel: projLevelId,
-      avgRate: caGlobal > 0 ? rfaNet / caGlobal : null,
       globalItems,
       triItems,
       nextObjective,
@@ -223,7 +252,13 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
 
   const d = derived;
   const until = untilMonthLabel(data.reporting_month);
-  const cotis = describeCotisation(data.cotisation);
+  const cotisLine = cotisationFootnote(data.cotisation);
+  const landingNote =
+    d.proj != null
+      ? `Atterrissage estimé au 31 décembre, au rythme des achats connus. Ce n’est pas un versement.${
+          d.projectedLevel ? ` Niveau projeté : ${d.projectedLevel}.` : ''
+        }${cotisLine ? ` ${cotisLine}` : ''}`
+      : cotisLine;
 
   return (
     <ScrollView
@@ -237,19 +272,10 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         subtitle={`${title || data.label || codeUnion || groupeClient}${d.level ? ` · ${d.level}` : ''}`}
         deltaPct={caDeltaPct({ comparison: data.comparison_n1, monthly })}
         deltaLabel="CA vs 2025 · même période"
-        leftLabel="RFA à date"
-        rfaEstimated={d.rfaNet}
-        rightLabel="RFA fin d’année"
-        rightValue={d.proj != null ? fmtEuro(d.proj) : '—'}
-        note={
-          d.proj != null
-            ? `La RFA à date est déjà acquise sur les achats connus. La RFA fin d’année estime le 31 décembre si le rythme actuel se poursuit — ce n’est pas un versement.${
-                d.projectedLevel ? ` Niveau projeté : ${d.projectedLevel}.` : ''
-              }`
-            : d.avgRate != null
-              ? `Taux moyen à date : ${fmtPct(d.avgRate)}`
-              : null
-        }
+        leftLabel="RFA fin d’année"
+        leftValue={d.proj != null ? fmtEuro(d.proj) : '—'}
+        hideRight
+        note={landingNote}
       />
 
       <View style={styles.contractRow}>
@@ -424,35 +450,6 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         })
       )}
 
-      {cotis ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Cotisation Union 2026</Text>
-          <Text style={styles.cotisAmount}>{fmtEuro(cotis.amount)}</Text>
-          <View
-            style={[
-              styles.cotisBadge,
-              cotis.tone === 'green' && styles.cotisBadgeGreen,
-              cotis.tone === 'sky' && styles.cotisBadgeSky,
-              cotis.tone === 'muted' && styles.cotisBadgeMuted,
-            ]}
-          >
-            <Text
-              style={[
-                styles.cotisBadgeText,
-                cotis.tone === 'green' && { color: '#A7F3D0' },
-                cotis.tone === 'sky' && { color: '#BAE6FD' },
-                cotis.tone === 'muted' && { color: colors.muted },
-              ]}
-            >
-              {cotis.badge}
-            </Text>
-          </View>
-          <Text style={styles.rowText}>{cotis.body}</Text>
-          {d.avgRate != null ? (
-            <Text style={styles.rowText}>Taux moyen net à date : {fmtPct(d.avgRate)}</Text>
-          ) : null}
-        </View>
-      ) : null}
     </ScrollView>
   );
 }
@@ -547,27 +544,4 @@ const styles = StyleSheet.create({
   },
   infoAmberTitle: { color: '#FCD34D', fontWeight: '800', fontSize: 13 },
   infoAmberBody: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    gap: 6,
-    marginTop: 4,
-  },
-  cardTitle: { color: colors.white, fontWeight: '800', fontSize: 16 },
-  cotisAmount: { color: colors.white, fontSize: 22, fontWeight: '800' },
-  cotisBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(249, 115, 22, 0.2)',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  cotisBadgeGreen: { backgroundColor: 'rgba(52, 211, 153, 0.22)' },
-  cotisBadgeSky: { backgroundColor: 'rgba(56, 189, 248, 0.22)' },
-  cotisBadgeMuted: { backgroundColor: 'rgba(148, 163, 184, 0.18)' },
-  cotisBadgeText: { color: colors.orangeSoft, fontWeight: '800', fontSize: 12 },
-  rowText: { color: colors.muted, fontSize: 14, lineHeight: 20 },
 });
