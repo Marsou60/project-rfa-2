@@ -3741,6 +3741,29 @@ def _platform_months_from_meta(platforms_meta: Dict[str, Any]) -> Dict[str, int]
     return out
 
 
+def _effective_platform_months(session: Session, year: int = 2026) -> Dict[str, int]:
+    """Mois de référence affiché : dernier mois réellement présent, par plateforme.
+
+    Le réglage d'import peut rester en retard (ex. août) alors que les lignes
+    de septembre sont déjà en base. L'indicateur suit les données.
+    """
+    meta = _platform_months_from_meta(_load_cumulative_platforms_meta(session))
+    try:
+        from app.services.pure_data_cumulative_supabase import months_in_data_by_platform
+        data_months = months_in_data_by_platform(year)
+    except Exception:
+        data_months = {}
+    out = dict(meta)
+    for platform, months in (data_months or {}).items():
+        if not months:
+            continue
+        try:
+            out[str(platform).strip().upper()] = max(int(m) for m in months)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _sync_legacy_cumulative_month_keys(session: Session, platforms_meta: Dict[str, Any]) -> None:
     """Maintient les cles globales (compat) = min mois / max annee des plateformes."""
     months = []
@@ -3864,8 +3887,7 @@ async def pure_data_network_dashboard(
         if forced:
             commercial = forced
 
-        platforms_meta = _load_cumulative_platforms_meta(session)
-        platform_months = _platform_months_from_meta(platforms_meta)
+        platform_months = _effective_platform_months(session, year_current)
 
         obj_raw = _get_setting_value(session, "ca_objectif_2026")
         try:
@@ -3962,9 +3984,12 @@ async def import_pure_data_cumulative_excel(
             raise HTTPException(status_code=400, detail=str(ve))
 
         now_iso = datetime.now().isoformat()
+        stored_month = reporting_month
+        if result.get("months_in_file"):
+            stored_month = max(int(m) for m in result["months_in_file"])
         platforms_meta = _load_cumulative_platforms_meta(session)
         platforms_meta[platform] = {
-            "reporting_month": reporting_month,
+            "reporting_month": stored_month,
             "reporting_year": reporting_year,
             "filename": file.filename,
             "rows_imported": result["rows_inserted"],
@@ -3993,7 +4018,7 @@ async def import_pure_data_cumulative_excel(
             "rows_skipped": result["rows_skipped"],
             "years": result["years"],
             "months_in_file": result["months_in_file"],
-            "reporting_month": reporting_month,
+            "reporting_month": stored_month,
             "reporting_year": reporting_year,
             "month_mismatch": month_mismatch,
             "columns_detected": columns[:12],
@@ -4096,7 +4121,10 @@ async def pure_data_cumulative_client_dashboard(
                 "codes": fusion["codes"],
             }
             payload["entity_label"] = fusion["label"]
-        month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+        effective_months = _effective_platform_months(session, year_current)
+        month = min(effective_months.values()) if effective_months else _safe_int(
+            _get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY)
+        )
         reporting_year = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_YEAR_KEY))
         filename = _get_setting_value(session, PURE_DATA_CUMULATIVE_FILENAME_KEY)
         updated_at = _get_setting_value(session, PURE_DATA_CUMULATIVE_UPDATED_AT_KEY)
@@ -4283,9 +4311,10 @@ async def pure_data_cumulative_client_rfa(
 
         contract_level = rfa_result.get("contract_level")
         # ── Projection fin d'année : par plateforme (decalage EXADIS/DCA OK) ──
-        platforms_meta = _load_cumulative_platforms_meta(session)
-        platform_months = _platform_months_from_meta(platforms_meta)
-        reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
+        platform_months = _effective_platform_months(session, year)
+        reporting_month = min(platform_months.values()) if platform_months else _safe_int(
+            _get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY)
+        )
         from app.services.pure_data_network_rfa import scale_recap_by_platform_months
 
         projected_recap, projection_factor, display_month = scale_recap_by_platform_months(
@@ -4524,9 +4553,10 @@ def _build_network_rfa_2026_payload(
     if dissolved_groups:
         dissolved_set = {g.strip().upper() for g in dissolved_groups.split(",") if g.strip()}
 
-    reporting_month = _safe_int(_get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY))
-    platforms_meta = _load_cumulative_platforms_meta(session)
-    platform_months = _platform_months_from_meta(platforms_meta)
+    platform_months = _effective_platform_months(session, year)
+    reporting_month = min(platform_months.values()) if platform_months else _safe_int(
+        _get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY)
+    )
 
     cumulative_rows_year: List[Dict[str, Any]] = []
     if count_cumulative_rows() > 0:
