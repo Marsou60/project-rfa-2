@@ -1593,7 +1593,7 @@ function ClientView({ agents, client, clientDetail, suppliers, selectedSuppliers
                 </select>
                 <select value={form.agent_union} onChange={e => setForm({ ...form, agent_union: e.target.value })} className="input-field">
                   <option value="" className="text-black">Agent Union…</option>
-                  {agentChoices(agents, editForm.agent_union).map(a => <option key={a} value={a} className="text-black">{a}</option>)}
+                  {agentChoices(agents, form.agent_union).map(a => <option key={a} value={a} className="text-black">{a}</option>)}
                 </select>
               </div>
               <select value={form.region_commerciale} onChange={e => setForm({ ...form, region_commerciale: e.target.value })} className="input-field">
