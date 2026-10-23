@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import {
   nathalieGetClients,
+  nathalieGetAgents,
+  nathalieAssignGroupe,
   nathalieGetSuppliers,
   nathalieGenerateEmails,
   nathalieGetClientDetail,
@@ -31,6 +33,18 @@ const KNOWN_SUPPLIERS = ['ACR', 'ALLIANCE', 'DCA', 'EXADIS', 'PURFLUX']
 const AGENTS_UNION = [
   'Vanessa', 'Emeric', 'El Mehdi', 'Rayane', 'Agathe', 'Alya', 'Coralie', 'Martial',
 ]
+
+function agentChoices(agents, current) {
+  const labels = (agents || []).map((a) => (typeof a === 'string' ? a : a.label)).filter(Boolean)
+  const list = labels.length ? labels : AGENTS_UNION
+  if (current && !list.includes(current)) return [current, ...list]
+  return list
+}
+
+function isAssignableGroup(groupe) {
+  const n = (groupe || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase()
+  return Boolean(n) && n !== 'INDEPENDANT' && n !== 'INDEPENDANT UNION'
+}
 
 const PHOTO_SLOTS = [
   { key: 'photo_devanture', label: 'Photo 1 — Devanture', urlKey: 'photo_devanture_url' },
@@ -129,6 +143,7 @@ export default function NathaliePage() {
   const [listOrigin, setListOrigin] = useState('dossiers')
   const [annuaireFilter, setAnnuaireFilter] = useState('tous')
   const [clients, setClients] = useState([])
+  const [agents, setAgents] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -148,6 +163,12 @@ export default function NathaliePage() {
     try {
       const c = await nathalieGetClients(false)
       setClients(c.clients || [])
+      try {
+        const a = await nathalieGetAgents()
+        setAgents(a.agents || [])
+      } catch {
+        setAgents([])
+      }
       try {
         const legal = await getEnterpriseWatchAlerts({ acknowledged: false, limit: 1 })
         setLegalOpen(legal.unacknowledged || 0)
@@ -290,6 +311,7 @@ export default function NathaliePage() {
 
       {view === 'nouveau' && (
         <NouveauDossierView
+          agents={agents}
           onBack={() => setView('accueil')}
           onSuccess={() => { loadData(); setView('dossiers') }}
           onPrepareEmails={openNewClientForEmails}
@@ -312,6 +334,13 @@ export default function NathaliePage() {
 
       {view === 'annuaire' && (
         <AnnuaireView
+          agents={agents}
+          allClients={clients}
+          onAssignGroupe={async (groupe, agent) => {
+            const res = await nathalieAssignGroupe(groupe, agent)
+            await loadData()
+            return res
+          }}
           clients={filteredClients.filter(c => matchesAnnuaireFilter(c, annuaireFilter)).slice().sort((a, b) => {
             if (annuaireFilter === 'tous') {
               const byFolder = (hasDriveFolder(a) ? 1 : 0) - (hasDriveFolder(b) ? 1 : 0)
@@ -349,6 +378,7 @@ export default function NathaliePage() {
 
       {view === 'client' && selectedClient && (
         <ClientView
+          agents={agents}
           client={selectedClient}
           clientDetail={clientDetail}
           suppliers={suppliers}
@@ -547,7 +577,7 @@ function applyEntrepriseToForm(current, row) {
 }
 
 /* ── Nouveau Dossier ───────────────────────────────────────────── */
-function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
+function NouveauDossierView({ agents, onBack, onSuccess, onPrepareEmails }) {
   const [submitting, setSubmitted] = useState(false)
   const [result, setResult] = useState(null)
   const skipSiretLookup = useRef(false)
@@ -936,7 +966,7 @@ function NouveauDossierView({ onBack, onSuccess, onPrepareEmails }) {
             <label className="label-field">Agent Union</label>
             <select value={form.agent_union} onChange={e => setForm({...form, agent_union: e.target.value})} className="input-field">
               <option value="" className="text-black">Choisir…</option>
-              {AGENTS_UNION.map(a => <option key={a} value={a} className="text-black">{a}</option>)}
+              {agentChoices(agents, form.agent_union).map(a => <option key={a} value={a} className="text-black">{a}</option>)}
             </select>
           </div>
         </div>
@@ -1162,7 +1192,7 @@ function DossiersView({ clients, loading, scanning, aScanner, search, setSearch,
 }
 
 /* ── Annuaire complet ─────────────────────────────────────────── */
-function AnnuaireView({ clients, total, loading, search, setSearch, filter, setFilter, onBack, onSelectClient }) {
+function AnnuaireView({ clients, allClients, agents, total, loading, search, setSearch, filter, setFilter, onBack, onSelectClient, onAssignGroupe }) {
   const filters = [
     { id: 'tous', label: 'Tous', title: 'Annuaire complet' },
     { id: 'ouverts', label: 'Ouverts', title: 'Comptes ouverts' },
@@ -1171,6 +1201,24 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
     { id: 'en_cours', label: 'En cours', title: 'Dossiers en cours' },
     { id: 'sans_dossier', label: 'Sans dossier', title: 'Sans dossier Drive' },
   ]
+  const [groupeAgent, setGroupeAgent] = useState('')
+  const [groupeCible, setGroupeCible] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignMsg, setAssignMsg] = useState(null)
+  const groupes = (() => {
+    const byLabel = new Map()
+    for (const c of allClients || []) {
+      const label = (c.groupe || '').trim()
+      if (!isAssignableGroup(label)) continue
+      const key = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase()
+      const bucket = byLabel.get(key) || { label, count: 0, agents: new Set() }
+      bucket.count += 1
+      if (c.agent_union) bucket.agents.add(c.agent_union)
+      byLabel.set(key, bucket)
+    }
+    return [...byLabel.values()].filter((g) => g.count >= 2).sort((a, b) => a.label.localeCompare(b.label, 'fr'))
+  })()
+  const groupeChoisi = groupes.find((g) => g.label === groupeCible)
   const active = filters.find(f => f.id === filter) || filters[0]
   const chipOn = {
     complet: 'bg-emerald-500/30 text-emerald-100',
@@ -1215,6 +1263,69 @@ function AnnuaireView({ clients, total, loading, search, setSearch, filter, setF
           />
         </div>
       </div>
+
+      {groupes.length > 0 && (
+        <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <label className="block text-[11px] uppercase tracking-wide text-white/40 mb-1">Groupe</label>
+            <select
+              value={groupeCible}
+              onChange={(e) => { setGroupeCible(e.target.value); setAssignMsg(null) }}
+              className="w-full rounded-xl bg-slate-900 border border-white/15 text-white text-sm px-3 py-2"
+            >
+              <option value="" className="text-black">Choisir un groupe…</option>
+              {groupes.map((g) => (
+                <option key={g.label} value={g.label} className="text-black">
+                  {g.label} ({g.count} magasins)
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="min-w-[180px]">
+            <label className="block text-[11px] uppercase tracking-wide text-white/40 mb-1">Agent Union</label>
+            <select
+              value={groupeAgent}
+              onChange={(e) => { setGroupeAgent(e.target.value); setAssignMsg(null) }}
+              className="w-full rounded-xl bg-slate-900 border border-white/15 text-white text-sm px-3 py-2"
+            >
+              <option value="" className="text-black">Choisir…</option>
+              {agentChoices(agents, groupeAgent).map((a) => (
+                <option key={a} value={a} className="text-black">{a}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            disabled={!groupeCible || !groupeAgent || assigning}
+            onClick={async () => {
+              const agentsActuels = groupeChoisi ? [...groupeChoisi.agents] : []
+              const mixte = agentsActuels.length > 1
+              if (mixte && !window.confirm(
+                `${groupeCible} a aujourd’hui plusieurs agents (${agentsActuels.join(', ')}). Tout passer à ${groupeAgent} ?`
+              )) return
+              setAssigning(true)
+              setAssignMsg(null)
+              try {
+                const res = await onAssignGroupe(groupeCible, groupeAgent)
+                setAssignMsg(`${res.magasins} magasins rattachés à ${res.agent_union}.`)
+              } catch (e) {
+                setAssignMsg(e?.response?.data?.detail || 'Affectation impossible.')
+              } finally {
+                setAssigning(false)
+              }
+            }}
+            className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-40 hover:bg-emerald-500"
+          >
+            {assigning ? 'Affectation…' : 'Affecter le groupe'}
+          </button>
+          {groupeChoisi && (
+            <p className="text-xs text-white/45 w-full">
+              Agents actuels : {groupeChoisi.agents.size ? [...groupeChoisi.agents].join(', ') : 'aucun'}
+            </p>
+          )}
+          {assignMsg && <p className="text-xs text-emerald-300 w-full">{assignMsg}</p>}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20 text-blue-300/60 gap-3">
@@ -1315,7 +1426,7 @@ function formFromClient(c) {
 }
 
 /* ── Client detail ────────────────────────────────────────────── */
-function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSelectedSuppliers, generating, onGenerate, onBack, onClientUpdated, onDeleted }) {
+function ClientView({ agents, client, clientDetail, suppliers, selectedSuppliers, setSelectedSuppliers, generating, onGenerate, onBack, onClientUpdated, onDeleted }) {
   const [drive, setDrive] = useState(null)
   const [driveLoading, setDriveLoading] = useState(true)
   const [driveError, setDriveError] = useState(null)
@@ -1482,7 +1593,7 @@ function ClientView({ client, clientDetail, suppliers, selectedSuppliers, setSel
                 </select>
                 <select value={form.agent_union} onChange={e => setForm({ ...form, agent_union: e.target.value })} className="input-field">
                   <option value="" className="text-black">Agent Union…</option>
-                  {AGENTS_UNION.map(a => <option key={a} value={a} className="text-black">{a}</option>)}
+                  {agentChoices(agents, editForm.agent_union).map(a => <option key={a} value={a} className="text-black">{a}</option>)}
                 </select>
               </div>
               <select value={form.region_commerciale} onChange={e => setForm({ ...form, region_commerciale: e.target.value })} className="input-field">

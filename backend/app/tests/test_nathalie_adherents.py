@@ -94,5 +94,15 @@ def test_canonical_agent_and_closed_form():
 
     assert canonical_commercial_label("emeric") == "Emeric"
     assert canonical_commercial_label("El-Mehdi") == "El Mehdi"
+    assert canonical_commercial_label("ryhan julien") == "Ryhan Julien"
+    assert canonical_commercial_label("Rachida Amazal") == "Rachida Amazal"
+    from types import SimpleNamespace
+    from app.services.commercial_scope import agent_label_for_user
+    from app.services.nathalie_adherents import is_assignable_groupe
+
+    user = SimpleNamespace(username="RACHIDA", display_name="RACHIDA AMAZAL")
+    assert agent_label_for_user(user) == "Rachida Amazal"
+    assert is_assignable_groupe("GROUPE APA MARSEILLE") is True
+    assert is_assignable_groupe("INDEPENDANT UNION") is False
     assert _coerce_closed("false", "X", None, None) in (False, 0)
     assert _coerce_closed("true", "X", None, None) in (True, 1)

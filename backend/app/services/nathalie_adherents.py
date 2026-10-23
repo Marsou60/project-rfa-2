@@ -696,6 +696,62 @@ def replace_directory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     return stats
 
 
+def is_assignable_groupe(groupe: Any) -> bool:
+    """Un vrai groupe peut recevoir un seul agent. Les indépendants, non."""
+    label = normalize_groupe_label(groupe)
+    if not label:
+        return False
+    key = unicodedata.normalize("NFKD", label)
+    key = "".join(c for c in key if not unicodedata.combining(c)).upper()
+    return key not in ("INDEPENDANT", "INDEPENDANT UNION")
+
+
+def assign_groupe_agent(groupe: str, agent: str) -> Dict[str, Any]:
+    """Pose le même agent Union sur tous les magasins du groupe et réaffecte leur CA."""
+    label = normalize_groupe_label(groupe)
+    if not is_assignable_groupe(label):
+        raise ValueError("Les indépendants se rattachent magasin par magasin.")
+    agent_label = _canonical_agent(agent)
+    if not agent_label:
+        raise ValueError("Choisissez un agent Union.")
+    members = [
+        c for c in list_clients()
+        if normalize_groupe_label(c.get("groupe")) == label
+    ]
+    if len(members) < 2:
+        raise ValueError("Ce groupe n'a qu'un magasin : modifiez sa fiche directement.")
+    updated = 0
+    for client in members:
+        code = client.get("code_union")
+        previous = (client.get("agent_union") or "").strip()
+        if previous == agent_label:
+            continue
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"UPDATE {TABLE} SET agent_union = :agent, updated_at = :now "
+                    "WHERE UPPER(code_union) = :code"
+                ),
+                {"agent": agent_label, "now": _now(), "code": code},
+            )
+        reassign_code_union_portfolio(code, agent_label, client.get("region_commerciale"))
+        try:
+            from app.services.nathalie_service import _sync_liste_client_2
+            refreshed = get_by_code(code)
+            if refreshed:
+                _sync_liste_client_2(refreshed)
+        except Exception:
+            pass
+        updated += 1
+    return {
+        "groupe": label,
+        "agent_union": agent_label,
+        "magasins": len(members),
+        "updated": updated,
+        "codes": [c.get("code_union") for c in members],
+    }
+
+
 def _canonical_agent(value: Any) -> Optional[str]:
     from app.services.commercial_scope import canonical_commercial_label
     return canonical_commercial_label(clean_text(value))

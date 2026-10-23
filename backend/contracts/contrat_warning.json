@@ -8,7 +8,7 @@
       "scope": "ADHERENT",
       "isDefault": false,
       "useCombinedGlobalRate": false,
-      "notes": "Contrat Warning. Alliance : 250-300k RFA 7% / bonus 2% ; 300-350k RFA 7,5% / bonus 2% ; 350-400k RFA 8% / bonus 2% ; 400k+ RFA 9% / bonus 2%. ACR/DCA/EXADIS globaux = barème de base. Tripartites : Delphi, Schaeffler (CA 2025), LUK-INA-FAG (embrayage), NAPA (30-50k 3% / 50k+ 4%), SBS, familles EXADIS et ACR.",
+      "notes": "Contrat Warning. Alliance : 250-300k RFA 7% / bonus 2% ; 300-350k RFA 7,5% / bonus 2% ; 350-400k RFA 8% / bonus 2% ; 400k+ RFA 9% / bonus 2%. ACR/DCA/EXADIS globaux = barème de base. Tripartites : Delphi Freinage uniquement (pas le CA Delphi toutes familles), Schaeffler, LUK-INA-FAG (embrayage), NAPA (30-50k 3% / 50k+ 4%), SBS, familles EXADIS et ACR. Prime 1 500 € TTC si Schaeffler ≥ 60 k€, Delphi Freinage ≥ 120 k€ et Cooper Sogefi ≥ 15 k€.",
       "globalRules": {
         "GLOBAL_ACR": {
           "tiersRfa": [
@@ -86,7 +86,7 @@
             {"min": 50000, "rate": 0.05}
           ]
         },
-        "TRI_ALLIANCE_DELPHI": {
+        "TRI_ALLIANCE_DELPHI_FREINAGE": {
           "tiers": [
             {"min": 20000, "rate": 0.04},
             {"min": 30000, "rate": 0.06},

@@ -9,13 +9,14 @@ from app.services.tier_engine import compute_tier
 from app.models import Contract, ContractRule, ContractOverride, RuleScope, TargetType
 
 # Prime fixe Contrat Warning (TTC) — les 3 seuils TRI doivent être atteints ensemble.
+# Delphi = freinage seul (TRI_ALLIANCE_DELPHI_FREINAGE), pas le CA Delphi toutes familles.
 # Montant HT = TTC / 1.20 pour rester cohérent avec la facturation TVA de l'Espace Client / PDF.
-WARNING_PRIME_TTC = 3000.0
-WARNING_PRIME_HT = round(WARNING_PRIME_TTC / 1.20, 2)  # 2500.00
+WARNING_PRIME_TTC = 1500.0
+WARNING_PRIME_HT = round(WARNING_PRIME_TTC / 1.20, 2)  # 1250.00
 WARNING_PRIME_REQUIRES = (
-    ("TRI_SCHAEFFLER", "Schaeffler", 70000.0),
-    ("TRI_ALLIANCE_DELPHI", "Delphi", 150000.0),
-    ("TRI_ALLIANCE_SOGEFI", "Sogefi / Coopers", 20000.0),
+    ("TRI_SCHAEFFLER", "Schaeffler", 60000.0),
+    ("TRI_ALLIANCE_DELPHI_FREINAGE", "Delphi Freinage", 120000.0),
+    ("TRI_ALLIANCE_SOGEFI", "Cooper Sogefi", 15000.0),
 )
 
 # EXADIS : le CA Prodex compte pour le palier, pas pour le montant versé.
@@ -188,7 +189,7 @@ def evaluate_warning_prime(
     year: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Évalue la prime Warning (3000 € TTC) si les 3 CA tri-partites sont atteints.
+    Évalue la prime Warning (1 500 € TTC) si les 3 CA tri-partites sont atteints.
     Applicable uniquement en RFA 2026+ (jamais en vue RFA 2025).
     Retourne None si le contrat n'est pas Warning ou si l'année < 2026.
     """

@@ -6253,6 +6253,40 @@ async def nathalie_kbis_extract(kbis: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lecture du Kbis impossible : {e}")
 
+@router.get("/nathalie/agents")
+def nathalie_agents(session: Session = Depends(get_session)):
+    """Agents Union = comptes commercial ou admin actifs, plus les noms déjà posés sur une fiche."""
+    from app.services.commercial_scope import list_union_agents
+    agents = list_union_agents(session)
+    known = {a["label"].upper() for a in agents}
+    try:
+        for client in nathalie_service.get_clients():
+            raw = (client.get("agent_union") or "").strip()
+            if not raw or raw.upper() in known:
+                continue
+            known.add(raw.upper())
+            agents.append({"label": raw, "username": None, "role": "HISTORIQUE"})
+    except Exception:
+        pass
+    agents.sort(key=lambda item: item["label"].casefold())
+    return {"agents": agents}
+
+
+@router.post("/nathalie/groupe/agent")
+def nathalie_assign_groupe_agent(payload: dict = Body(...)):
+    """Affecte un seul agent à tous les magasins d'un groupe réel."""
+    from app.services import nathalie_adherents
+    try:
+        return nathalie_adherents.assign_groupe_agent(
+            payload.get("groupe") or "",
+            payload.get("agent_union") or "",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Affectation du groupe impossible : {e}")
+
+
 @router.get("/nathalie/clients")
 async def nathalie_clients(ouverture_only: bool = False):
     """

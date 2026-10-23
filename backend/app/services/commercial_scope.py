@@ -25,6 +25,9 @@ USERNAME_TO_COMMERCIAL = {
     "ALYA": "Alya",
     "CORALIE": "Coralie",
     "EMERIC": "Emeric",
+    "RYHAN": "Ryhan Julien",
+    "RACHIDA": "Rachida Amazal",
+    "AMAZAL": "Rachida Amazal",
     # Vanessa est full-access ; mapping utile si un jour on retire l'exception
     "VANESSA": "Vanessa",
 }
@@ -39,7 +42,60 @@ CANONICAL_COMMERCIALS = {
     "ALYA": "Alya",
     "CORALIE": "Coralie",
     "MARTIAL": "Martial",
+    "RYHAN": "Ryhan Julien",
+    "RYHAN JULIEN": "Ryhan Julien",
+    "RACHIDA": "Rachida Amazal",
+    "RACHIDA AMAZAL": "Rachida Amazal",
+    "AMAZAL": "Rachida Amazal",
 }
+
+
+def agent_label_for_user(user: Optional[User]) -> Optional[str]:
+    """Libellé Agent Union d'un compte : nom affiché, sinon identifiant."""
+    if not user:
+        return None
+    uname = (getattr(user, "username", None) or "").strip().upper()
+    if uname in USERNAME_TO_COMMERCIAL:
+        return USERNAME_TO_COMMERCIAL[uname]
+    raw = (getattr(user, "display_name", None) or getattr(user, "username", None) or "").strip()
+    if not raw:
+        return None
+    known = set(CANONICAL_COMMERCIALS.values())
+    label = canonical_commercial_label(raw)
+    if label in known:
+        return label
+    parts = []
+    for word in re.split(r"\s+", raw):
+        bits = [p[:1].upper() + p[1:].lower() for p in word.split("-") if p]
+        if bits:
+            parts.append("-".join(bits))
+    return " ".join(parts) or raw
+
+
+def list_union_agents(session) -> list:
+    """Comptes Union actifs (commercial ou admin). Chaque accès devient un agent."""
+    from sqlmodel import select
+
+    rows = session.exec(select(User).where(User.is_active == True)).all()  # noqa: E712
+    agents = []
+    seen = set()
+    for user in rows:
+        if _role_str(user) not in (UserRole.COMMERCIAL.value, UserRole.ADMIN.value):
+            continue
+        label = agent_label_for_user(user)
+        if not label:
+            continue
+        key = label.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        agents.append({
+            "label": label,
+            "username": user.username,
+            "role": _role_str(user),
+        })
+    agents.sort(key=lambda item: item["label"].casefold())
+    return agents
 
 
 def canonical_commercial_label(value: Optional[str]) -> Optional[str]:
@@ -83,19 +139,7 @@ def resolve_commercial_scope(user: Optional[User]) -> Optional[str]:
     if _role_str(user) != UserRole.COMMERCIAL.value:
         return None
 
-    uname = (user.username or "").strip().upper()
-    if uname in USERNAME_TO_COMMERCIAL:
-        return USERNAME_TO_COMMERCIAL[uname]
-
-    # Fallback : 1er mot du display_name (ex. "RAYANE HAMAD" → Rayane)
-    display = (user.display_name or "").strip()
-    if display:
-        first = display.split()[0]
-        return first[:1].upper() + first[1:].lower() if first else None
-
-    if uname:
-        return uname[:1].upper() + uname[1:].lower()
-    return None
+    return agent_label_for_user(user)
 
 
 def entity_in_commercial_scope(

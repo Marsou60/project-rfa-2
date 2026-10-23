@@ -65,9 +65,9 @@ def test_warning_prime_triggered_adds_ht_to_grand_total():
     recap_ca = {
         "global": {"GLOBAL_ACR": 0.0, "GLOBAL_ALLIANCE": 0.0, "GLOBAL_DCA": 0.0, "GLOBAL_EXADIS": 0.0},
         "tri": {
-            "TRI_SCHAEFFLER": 70000.0,
-            "TRI_ALLIANCE_DELPHI": 150000.0,
-            "TRI_ALLIANCE_SOGEFI": 20000.0,
+            "TRI_SCHAEFFLER": 60000.0,
+            "TRI_ALLIANCE_DELPHI_FREINAGE": 120000.0,
+            "TRI_ALLIANCE_SOGEFI": 15000.0,
         },
     }
     contract = _warning_contract()
@@ -83,9 +83,9 @@ def test_warning_prime_not_in_rfa_2025():
     recap_ca = {
         "global": {},
         "tri": {
-            "TRI_SCHAEFFLER": 70000.0,
-            "TRI_ALLIANCE_DELPHI": 150000.0,
-            "TRI_ALLIANCE_SOGEFI": 20000.0,
+            "TRI_SCHAEFFLER": 60000.0,
+            "TRI_ALLIANCE_DELPHI_FREINAGE": 120000.0,
+            "TRI_ALLIANCE_SOGEFI": 15000.0,
         },
     }
     contract = _warning_contract()
@@ -100,9 +100,10 @@ def test_warning_prime_missing_one_threshold():
     recap_ca = {
         "global": {},
         "tri": {
-            "TRI_SCHAEFFLER": 70000.0,
-            "TRI_ALLIANCE_DELPHI": 149999.0,
-            "TRI_ALLIANCE_SOGEFI": 20000.0,
+            "TRI_SCHAEFFLER": 60000.0,
+            "TRI_ALLIANCE_DELPHI": 200000.0,
+            "TRI_ALLIANCE_DELPHI_FREINAGE": 119999.0,
+            "TRI_ALLIANCE_SOGEFI": 15000.0,
         },
     }
     prime = evaluate_warning_prime(recap_ca, _warning_contract(), year=2026)

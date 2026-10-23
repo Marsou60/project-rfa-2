@@ -2716,7 +2716,7 @@ function ClientRfa2026Section({
                 <p className="text-sm mt-1">
                   {triggered
                     ? 'Les 3 objectifs tripartites Alliance sont atteints — prime ajoutée à votre RFA 2026.'
-                    : 'Atteignez les 3 objectifs ci-dessous pour débloquer la prime de 3 000 € TTC (RFA 2026 uniquement).'}
+                    : `Atteignez les 3 objectifs ci-dessous pour débloquer la prime de ${fmt(prime.amount_ttc || 0)} TTC (RFA 2026 uniquement).`}
                 </p>
                 <ul className="mt-2 space-y-1 text-sm">
                   {conditions.map((c) => (

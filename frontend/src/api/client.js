@@ -1057,6 +1057,19 @@ export const exportSmartPlansExcel = async (importId) => {
 
 // ==================== NATHALIE — Ouverture de comptes ====================
 
+export const nathalieGetAgents = async () => {
+  const response = await api.get('/nathalie/agents')
+  return response.data
+}
+
+export const nathalieAssignGroupe = async (groupe, agentUnion) => {
+  const response = await api.post('/nathalie/groupe/agent', {
+    groupe,
+    agent_union: agentUnion,
+  })
+  return response.data
+}
+
 export const nathalieGetClients = async (ouvertureOnly = false) => {
   const response = await api.get('/nathalie/clients', { params: { ouverture_only: ouvertureOnly } })
   return response.data
