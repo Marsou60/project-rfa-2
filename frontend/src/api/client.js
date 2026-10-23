@@ -1102,6 +1102,31 @@ export const nathalieSendEmails = async (codeUnion, supplierNames, ccEmails = nu
   return response.data
 }
 
+export const getClientNotes = async (codeUnion) => {
+  const response = await api.get(`/notes/client/${encodeURIComponent(codeUnion)}`)
+  return response.data
+}
+
+export const addClientNote = async (codeUnion, note) => {
+  const response = await api.post(`/notes/client/${encodeURIComponent(codeUnion)}`, {
+    note_simple: note,
+    type_note: 'NOTE SIMPLE',
+  })
+  return response.data
+}
+
+export const uploadClientDocument = async (codeUnion, kind, file) => {
+  const formData = new FormData()
+  formData.append('kind', kind)
+  formData.append('file', file)
+  const response = await api.post(
+    `/nathalie/client/${encodeURIComponent(codeUnion)}/document`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 },
+  )
+  return response.data
+}
+
 export const nathalieGetClientDetail = async (codeUnion) => {
   const response = await api.get(`/nathalie/client/${codeUnion}`)
   return response.data

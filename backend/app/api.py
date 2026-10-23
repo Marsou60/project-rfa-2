@@ -6399,6 +6399,55 @@ async def nathalie_send_emails(body: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=500, detail=f"Erreur envoi email : {str(e)}")
 
 
+@router.get("/notes/client/{code_union}")
+def list_client_notes(code_union: str, _user: User = Depends(require_staff)):
+    """Journal de visites / notes terrain d'un adhérent."""
+    from app.services.client_notes import list_notes
+    try:
+        notes = list_notes(code_union)
+        return {"notes": notes, "total": len(notes)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lecture des notes impossible : {e}")
+
+
+@router.post("/notes/client/{code_union}")
+def create_client_note(
+    code_union: str,
+    payload: dict = Body(...),
+    user: User = Depends(require_staff),
+):
+    """Ajoute une note. Visible ensuite sur le site et la PWA."""
+    from app.services.client_notes import add_note, note_author
+    try:
+        note = add_note(
+            code_union,
+            payload.get("note_simple") or payload.get("note") or "",
+            note_author(user),
+            payload.get("type_note") or "NOTE SIMPLE",
+        )
+        return note
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Enregistrement de la note impossible : {e}")
+
+
+@router.post("/nathalie/client/{code_union}/document")
+async def nathalie_upload_document(
+    code_union: str,
+    kind: str = Form(...),
+    file: UploadFile = File(...),
+    _user: User = Depends(require_staff),
+):
+    """Dépose un RIB, un Kbis ou une pièce d'identité sur la fiche."""
+    try:
+        return nathalie_service.upload_client_document(code_union, kind, file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Dépôt du document impossible : {e}")
+
+
 @router.get("/nathalie/client/{code_union}")
 async def nathalie_client_detail(code_union: str):
     """Détail complet d'un adhérent + tâches associées (Sheets, best-effort)."""

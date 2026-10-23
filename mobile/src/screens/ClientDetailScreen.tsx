@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -34,8 +35,10 @@ import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
 import { describeCotisation } from '../utils/cotisationStatus';
 import { downloadBlob } from '../utils/downloadBlob';
+import { ClientFichePanel } from '../components/ClientFichePanel';
+import { getClientFiche } from '../api/fiches';
 
-type TabId = 'rfa' | 'mois' | 'marques' | 'familles' | 'contrat';
+type TabId = 'rfa' | 'mois' | 'marques' | 'familles' | 'contrat' | 'fiche';
 
 type Props = {
   codeUnion?: string | null;
@@ -44,14 +47,17 @@ type Props = {
   initialTab?: TabId;
   bleedStatusBar?: boolean;
   showBack?: boolean;
+  /** Fiche Nathalie, notes et dépôt de pièces : équipe Union uniquement. */
+  staffFiche?: boolean;
 };
 
-const TABS: { id: TabId; label: string; icon: IconName }[] = [
-  { id: 'rfa', label: 'RFA', icon: 'cash-outline' },
+const BASE_TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: 'mois', label: 'Mensuel', icon: 'calendar-outline' },
+  { id: 'rfa', label: 'RFA', icon: 'cash-outline' },
   { id: 'marques', label: 'Marques', icon: 'pricetags-outline' },
   { id: 'familles', label: 'Familles', icon: 'grid-outline' },
   { id: 'contrat', label: 'Contrat', icon: 'document-text-outline' },
+  { id: 'fiche', label: 'Fiche', icon: 'business-outline' },
 ];
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -85,9 +91,10 @@ export function ClientDetailScreen({
   codeUnion,
   groupeClient,
   label,
-  initialTab = 'rfa',
+  initialTab = 'mois',
   bleedStatusBar = false,
   showBack = false,
+  staffFiche = false,
 }: Props) {
   const [tab, setTab] = useState<TabId>(initialTab);
   const [dash, setDash] = useState<ClientDashboardResponse | null>(null);
@@ -95,55 +102,86 @@ export function ClientDetailScreen({
   const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(null);
   const [pdfMeta, setPdfMeta] = useState<ContractPdfMeta | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rfaLoading, setRfaLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prodexNotice, setProdexNotice] = useState(true);
+  const [missingDocs, setMissingDocs] = useState<string[] | null>(null);
   const insets = useSafeAreaInsets();
+  const tabs = staffFiche ? BASE_TABS : BASE_TABS.filter((item) => item.id !== 'fiche');
 
   const entityId = (codeUnion || groupeClient || '').toString();
   const mode: 'client' | 'group' = codeUnion ? 'client' : 'group';
+  const [entityKey, setEntityKey] = useState(entityId);
+  if (entityKey !== entityId) {
+    setEntityKey(entityId);
+    setDash(null);
+    setRfa(null);
+    setMonthly(null);
+    setPdfMeta(null);
+    setLoading(true);
+    setRfaLoading(true);
+    setError(null);
+  }
 
   useEffect(() => {
     setTab(initialTab);
   }, [initialTab]);
 
+  useEffect(() => {
+    if (!staffFiche || !codeUnion) {
+      setMissingDocs(null);
+      return;
+    }
+    let cancel = false;
+    getClientFiche(codeUnion)
+      .then((fiche) => {
+        if (cancel) return;
+        setMissingDocs(fiche?.missing_docs?.length ? fiche.missing_docs : null);
+      })
+      .catch(() => {
+        if (!cancel) setMissingDocs(null);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [staffFiche, codeUnion]);
+
   const load = useCallback(async () => {
     if (!codeUnion && !groupeClient) {
       setLoading(false);
+      setRfaLoading(false);
       return;
     }
     setLoading(true);
+    setRfaLoading(true);
     setError(null);
-    try {
-      const [d, r, m] = await Promise.all([
-        getClientDashboard({ codeUnion, groupeClient }),
-        getClientRfa({ codeUnion, groupeClient, year: 2026 }),
-        getClientMonthlyEvolution({ codeUnion, groupeClient }).catch(() => null),
-      ]);
-      setDash(d);
-      setRfa(r);
-      setMonthly(m);
-      try {
-        setPdfMeta(
-          await getContractPdfMeta({
-            mode,
-            id: entityId,
-            groupeClient: codeUnion ? null : groupeClient,
-          }),
-        );
-      } catch {
-        setPdfMeta({ available: false });
-      }
-    } catch (e: unknown) {
-      const msg =
-        (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
-          ?.detail ||
-        (e as { message?: string })?.message ||
-        'Erreur de chargement';
-      setError(String(msg));
-    } finally {
-      setLoading(false);
-    }
+    const monthlyTask = getClientMonthlyEvolution({ codeUnion, groupeClient })
+      .then((m) => setMonthly(m))
+      .catch(() => setMonthly(null))
+      .finally(() => setLoading(false));
+    const dashTask = getClientDashboard({ codeUnion, groupeClient })
+      .then((d) => setDash(d))
+      .catch(() => setDash({ available: false, message: 'Détail marques et familles indisponible.' }));
+    const rfaTask = getClientRfa({ codeUnion, groupeClient, year: 2026 })
+      .then((r) => setRfa(r))
+      .catch((e: unknown) => {
+        const msg =
+          (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
+            ?.detail ||
+          (e as { message?: string })?.message ||
+          'Erreur de chargement RFA';
+        setRfa({ available: false, message: String(msg) });
+      })
+      .finally(() => setRfaLoading(false));
+    const pdfTask = getContractPdfMeta({
+      mode,
+      id: entityId,
+      groupeClient: codeUnion ? null : groupeClient,
+    })
+      .then((meta) => setPdfMeta(meta))
+      .catch(() => setPdfMeta({ available: false }));
+    await Promise.all([monthlyTask, dashTask, rfaTask, pdfTask]);
   }, [codeUnion, groupeClient, entityId, mode]);
 
   useFocusEffect(
@@ -217,7 +255,7 @@ export function ClientDetailScreen({
         style={styles.tabsScroll}
         contentContainerStyle={styles.tabs}
       >
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <Pressable
             key={t.id}
             style={[styles.tab, tab === t.id && styles.tabActive]}
@@ -234,29 +272,63 @@ export function ClientDetailScreen({
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
+      <Modal visible={Boolean(missingDocs?.length)} transparent animationType="fade" onRequestClose={() => setMissingDocs(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.alertKicker}>Document manquant</Text>
+            <Text style={styles.modalTitle}>Il manque {(missingDocs || []).join(', ')}.</Text>
+            <Text style={styles.modalText}>Ouvrez l’onglet Fiche pour déposer le RIB, le Kbis ou la pièce d’identité.</Text>
+            <Pressable
+              style={styles.alertBtn}
+              onPress={() => {
+                setMissingDocs(null);
+                setTab('fiche');
+              }}
+              accessibilityRole="button"
+            >
+              <Text style={styles.alertBtnText}>Voir la fiche</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
       {codeUnion ? (
         <View style={styles.bannerWrap}>
           <ImpayesBanner codeUnion={codeUnion} />
         </View>
       ) : null}
 
-      {tab === 'rfa' ? (
-        <View style={{ flex: 1 }}>
-          <RfaPanel codeUnion={codeUnion} groupeClient={groupeClient} title={title} />
+      <View style={tab === 'rfa' ? styles.rfaSlot : styles.rfaHidden} pointerEvents={tab === 'rfa' ? 'auto' : 'none'}>
+        <RfaPanel
+          codeUnion={codeUnion}
+          groupeClient={groupeClient}
+          title={title}
+          seed={rfa}
+          seedMonthly={monthly}
+          busy={rfaLoading}
+          onRefresh={load}
+        />
+      </View>
+      {staffFiche && codeUnion ? (
+        <View style={tab === 'fiche' ? styles.rfaSlot : styles.rfaHidden}>
+          <ScrollView contentContainerStyle={styles.scroll}>
+            <ClientFichePanel codeUnion={codeUnion} />
+          </ScrollView>
         </View>
-      ) : (
+      ) : null}
+
+      {tab !== 'rfa' && tab !== 'fiche' ? (
         <ScrollView
           contentContainerStyle={styles.scroll}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.orange} />}
         >
-          {loading && !dash && !rfa ? (
+          {loading && !monthly && tab === 'mois' ? (
             <ActivityIndicator color={colors.orange} style={{ marginTop: 24 }} />
           ) : null}
 
           {tab === 'mois' && (
             <>
               <Text style={styles.hint}>
-                Achats mois par mois vs 2025. Tapez un mois pour le détail par plateforme.
+                Chiffre par plateforme. Tapez une plateforme pour voir chaque mois.
               </Text>
               <MonthlyCaCard data={monthly} />
             </>
@@ -288,8 +360,10 @@ export function ClientDetailScreen({
                 Touche une ligne pour dérouler (plateforme, famille, sous-famille…).
               </Text>
 
-              {!dash?.available ? (
-                <Text style={styles.muted}>{dash?.message || 'Pas de détail Pure Data.'}</Text>
+              {!dash ? (
+                <ActivityIndicator color={colors.orange} style={{ marginTop: 24 }} />
+              ) : !dash.available ? (
+                <Text style={styles.muted}>{dash.message || 'Pas de détail Pure Data.'}</Text>
               ) : (
                 <HierarchyList
                   nodes={tab === 'marques' ? dash.by_marque || [] : dash.by_famille || []}
@@ -357,13 +431,15 @@ export function ClientDetailScreen({
             </View>
           )}
         </ScrollView>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  rfaSlot: { flex: 1 },
+  rfaHidden: { display: 'none' },
   header: { paddingHorizontal: spacing.lg, paddingBottom: 10, gap: 4 },
   title: { color: colors.white, fontSize: 26, fontWeight: '800', letterSpacing: -0.4, lineHeight: 32 },
   codeLine: { color: colors.muted, fontSize: 15, fontWeight: '600' },
@@ -433,4 +509,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pdfBtnText: { color: colors.white, fontWeight: '800' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.72)', justifyContent: 'flex-end', padding: spacing.lg },
+  modalCard: { backgroundColor: colors.bgElevated, borderRadius: 18, padding: spacing.lg, gap: 8 },
+  alertKicker: { color: colors.red, fontWeight: '800', textTransform: 'uppercase', fontSize: 12 },
+  modalTitle: { color: colors.white, fontSize: 20, fontWeight: '800' },
+  modalText: { color: colors.muted, fontSize: 14 },
+  alertBtn: { marginTop: 8, backgroundColor: colors.red, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  alertBtnText: { color: colors.white, fontWeight: '800' },
 });

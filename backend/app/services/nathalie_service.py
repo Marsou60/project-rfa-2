@@ -1129,6 +1129,38 @@ async def update_client_full(
     return result
 
 
+_DOC_URL_FIELDS = {
+    "rib": "rib_url",
+    "kbis": "kbis_url",
+    "piece_identite": "piece_identite_url",
+}
+
+
+def upload_client_document(code_union: str, kind: str, file: UploadFile) -> Dict[str, Any]:
+    """Dépose une seule pièce (RIB, Kbis ou CNI) dans le dossier Drive et la fiche."""
+    field = _DOC_URL_FIELDS.get((kind or "").strip())
+    if not field:
+        raise ValueError("Pièce inconnue. Choisissez RIB, Kbis ou pièce d'identité.")
+    if not _has_upload(file):
+        raise ValueError("Fichier manquant.")
+    existing = nathalie_adherents.get_by_code(code_union)
+    if not existing:
+        raise ValueError(f"Client {code_union} introuvable")
+    nom = (existing.get("nom_client") or "").strip() or existing.get("code_union")
+    folder_id, drive_link, _ = _ensure_client_folder(existing, nom)
+    if not folder_id:
+        raise ValueError("Dossier Drive introuvable pour ce client.")
+    link = upload_file_to_drive(folder_id, file)
+    nathalie_adherents.patch_drive_docs(existing["code_union"], {
+        "drive_folder_id": folder_id,
+        "drive_link": drive_link,
+        field: link,
+        "drive_checked_at": nathalie_adherents._now(),
+    })
+    client = nathalie_adherents.get_by_code(existing["code_union"])
+    return {"success": True, "client": client, "kind": kind, "link": link}
+
+
 def delete_client_full(code_union: str, *, trash_drive: bool = True) -> Dict[str, Any]:
     existing = nathalie_adherents.get_by_code(code_union)
     if not existing:

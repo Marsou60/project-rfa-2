@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026, upsertCotisation } from '../api/client'
 import ImpayesAdherentBanner from '../components/ImpayesAdherentBanner'
+import ClientFichePanel from '../components/ClientFichePanel'
 import ClientFusionControl from '../components/ClientFusionControl'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
@@ -778,6 +779,10 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
               nomMagasin={entity.nom_client || ''}
               onChanged={() => setFusionTick((n) => n + 1)}
             />
+          )}
+
+          {mode === 'client' && !isAdherent && (entity.code_union || entity.id) && (
+            <ClientFichePanel codeUnion={entity.code_union || entity.id} />
           )}
 
           {mode === 'client' && (entity.code_union || entity.id) && (
