@@ -685,12 +685,143 @@ def _search_drive_folders(drive, code_union: str) -> List[Dict[str, Any]]:
 def _list_folder_children(drive, folder_id: str) -> List[Dict[str, Any]]:
     safe = folder_id.replace("'", "\\'")
     q = f"'{safe}' in parents and trashed=false"
-    return _list_drive_files(
-        drive,
-        q=q,
-        pageSize=80,
-        fields="files(id,name,mimeType,webViewLink,modifiedTime)",
-    )
+    files: List[Dict[str, Any]] = []
+    token = None
+    while len(files) < 200:
+        kwargs: Dict[str, Any] = {
+            "q": q,
+            "pageSize": 100,
+            "fields": "nextPageToken, files(id,name,mimeType,webViewLink,modifiedTime)",
+        }
+        if token:
+            kwargs["pageToken"] = token
+        try:
+            resp = drive.files().list(
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                **kwargs,
+            ).execute()
+        except Exception:
+            if files:
+                raise
+            resp = drive.files().list(**kwargs).execute()
+        files.extend(resp.get("files") or [])
+        token = resp.get("nextPageToken")
+        if not token:
+            break
+    return files[:200]
+
+
+_DRIVE_FILE_ID_RE = re.compile(r"/d/([a-zA-Z0-9_-]{10,})|[?&]id=([a-zA-Z0-9_-]{10,})")
+_DOC_LINK_FIELDS = (
+    ("rib_url", "rib"),
+    ("kbis_url", "kbis"),
+    ("piece_identite_url", "piece_identite"),
+)
+
+
+def extract_drive_file_id(link: Optional[str]) -> Optional[str]:
+    match = _DRIVE_FILE_ID_RE.search(link or "")
+    if not match:
+        return None
+    return match.group(1) or match.group(2)
+
+
+def _drive_item_link(item: Optional[Dict[str, Any]], fallback: Optional[str] = None) -> Optional[str]:
+    link = (item or {}).get("webViewLink")
+    if link:
+        return link
+    file_id = (item or {}).get("id")
+    if file_id:
+        return f"https://drive.google.com/file/d/{file_id}/view"
+    return fallback
+
+
+def resolve_drive_doc_links(stored: Optional[Dict[str, Any]], children: List[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+    """Garde un lien si le fichier est encore dans le dossier, même avec un nom quelconque.
+
+    S'il a été supprimé, reprend un fichier du dossier dont le nom correspond
+    (RIB, Kbis, CNI). Sinon le lien est vidé.
+    """
+    live = {item.get("id"): item for item in children or [] if item.get("id")}
+    classified: Dict[str, Dict[str, Any]] = {}
+    for item in children or []:
+        kind = classify_drive_filename(item.get("name") or "")
+        if kind in ("rib", "kbis", "piece_identite") and kind not in classified:
+            classified[kind] = item
+    resolved: Dict[str, Optional[str]] = {}
+    stored = stored or {}
+    for field, kind in _DOC_LINK_FIELDS:
+        current = stored.get(field) or ""
+        file_id = extract_drive_file_id(current)
+        if file_id and file_id in live:
+            resolved[field] = _drive_item_link(live[file_id], current)
+            continue
+        resolved[field] = _drive_item_link(classified.get(kind))
+    return resolved
+
+
+def drive_doc_links_changed(stored: Optional[Dict[str, Any]], resolved: Dict[str, Optional[str]]) -> bool:
+    stored = stored or {}
+    for field, _kind in _DOC_LINK_FIELDS:
+        old = extract_drive_file_id(stored.get(field)) or (stored.get(field) or "")
+        new = extract_drive_file_id(resolved.get(field)) or (resolved.get(field) or "")
+        if old != new:
+            return True
+    return False
+
+
+def _drive_folder_state(drive, folder_id: str) -> str:
+    """alive | gone | unknown. unknown = ne pas effacer les liens."""
+    try:
+        meta = drive.files().get(
+            fileId=folder_id,
+            fields="id,trashed,mimeType",
+            supportsAllDrives=True,
+        ).execute()
+    except Exception as exc:
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        if status == 404 or "not found" in str(exc).lower():
+            return "gone"
+        return "unknown"
+    if meta.get("trashed"):
+        return "gone"
+    if meta.get("mimeType") and meta.get("mimeType") != "application/vnd.google-apps.folder":
+        return "gone"
+    return "alive"
+
+
+def _refresh_client_drive_docs_now(client: Dict[str, Any]) -> Dict[str, Any]:
+    drive = _get_drive_client()
+    state = _drive_folder_state(drive, client["drive_folder_id"])
+    if state == "unknown":
+        return client
+    if state == "gone":
+        resolved = {field: None for field, _kind in _DOC_LINK_FIELDS}
+    else:
+        children = _list_folder_children(drive, client["drive_folder_id"])
+        resolved = resolve_drive_doc_links(client, children)
+    if not drive_doc_links_changed(client, resolved):
+        return client
+    updated = nathalie_adherents.patch_drive_docs(client["code_union"], {
+        "rib_url": resolved["rib_url"],
+        "kbis_url": resolved["kbis_url"],
+        "piece_identite_url": resolved["piece_identite_url"],
+        "drive_checked_at": nathalie_adherents._now(),
+    }, clear=True)
+    return updated or client
+
+
+def refresh_client_drive_docs(client: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Revérifie le dossier Drive à l'ouverture d'une fiche et retire les pièces supprimées."""
+    if not client or not client.get("code_union") or not client.get("drive_folder_id"):
+        return client
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(_refresh_client_drive_docs_now, client).result(timeout=12)
+    except Exception:
+        return client
 
 
 def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, Any]:
@@ -801,20 +932,25 @@ def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, 
             "has_piece_identite": bool(piece),
             "docs_ok": bool(rib and kbis and piece),
         }
+        resolved = resolve_drive_doc_links(client, children)
+        result["has_rib"] = bool(resolved["rib_url"])
+        result["has_kbis"] = bool(resolved["kbis_url"])
+        result["has_piece_identite"] = bool(resolved["piece_identite_url"])
+        result["docs_ok"] = bool(result["has_rib"] and result["has_kbis"] and result["has_piece_identite"])
         if persist:
             patch = {
                 "drive_folder_id": result["folder_id"],
                 "drive_link": result["drive_link"],
-                "rib_url": (rib or {}).get("link"),
-                "kbis_url": (kbis or {}).get("link"),
-                "piece_identite_url": (piece or {}).get("link"),
+                "rib_url": resolved["rib_url"],
+                "kbis_url": resolved["kbis_url"],
+                "piece_identite_url": resolved["piece_identite_url"],
                 "drive_checked_at": nathalie_adherents._now(),
             }
             for slot in PHOTO_SLOTS:
                 link = (photos.get(slot["kind"]) or {}).get("link")
                 if link:
                     patch[slot["url_key"]] = link
-            nathalie_adherents.patch_drive_docs(code, patch)
+            nathalie_adherents.patch_drive_docs(code, patch, clear=True)
         return result
     except Exception as exc:
         return _fail(exc)
@@ -870,26 +1006,16 @@ def sync_drive_dossiers() -> Dict[str, Any]:
         if folder:
             matched += 1
             children = _list_folder_children(drive, folder["id"])
-            classified: Dict[str, Dict[str, Any]] = {}
-            for item in children:
-                kind = classify_drive_filename(item.get("name") or "")
-                if kind and kind not in classified:
-                    classified[kind] = {
-                        "link": item.get("webViewLink"),
-                        "name": item.get("name"),
-                    }
-            rib = classified.get("rib")
-            kbis = classified.get("kbis")
-            piece = classified.get("piece_identite")
+            resolved = resolve_drive_doc_links(client, children)
             nathalie_adherents.patch_drive_docs(code, {
                 "drive_folder_id": folder.get("id"),
                 "drive_link": folder.get("webViewLink") or f"https://drive.google.com/drive/folders/{folder.get('id')}",
-                "rib_url": (rib or {}).get("link"),
-                "kbis_url": (kbis or {}).get("link"),
-                "piece_identite_url": (piece or {}).get("link"),
+                "rib_url": resolved["rib_url"],
+                "kbis_url": resolved["kbis_url"],
+                "piece_identite_url": resolved["piece_identite_url"],
                 "drive_checked_at": now,
-            })
-            if rib and kbis and piece:
+            }, clear=True)
+            if resolved["rib_url"] and resolved["kbis_url"] and resolved["piece_identite_url"]:
                 complets += 1
             else:
                 en_cours += 1
@@ -1134,11 +1260,17 @@ _DOC_URL_FIELDS = {
     "kbis": "kbis_url",
     "piece_identite": "piece_identite_url",
 }
+_DOC_DRIVE_NAMES = {
+    "rib": "RIB",
+    "kbis": "Kbis",
+    "piece_identite": "Piece identite",
+}
 
 
 def upload_client_document(code_union: str, kind: str, file: UploadFile) -> Dict[str, Any]:
     """Dépose une seule pièce (RIB, Kbis ou CNI) dans le dossier Drive et la fiche."""
-    field = _DOC_URL_FIELDS.get((kind or "").strip())
+    kind = (kind or "").strip()
+    field = _DOC_URL_FIELDS.get(kind)
     if not field:
         raise ValueError("Pièce inconnue. Choisissez RIB, Kbis ou pièce d'identité.")
     if not _has_upload(file):
@@ -1150,7 +1282,7 @@ def upload_client_document(code_union: str, kind: str, file: UploadFile) -> Dict
     folder_id, drive_link, _ = _ensure_client_folder(existing, nom)
     if not folder_id:
         raise ValueError("Dossier Drive introuvable pour ce client.")
-    link = upload_file_to_drive(folder_id, file)
+    link = upload_file_to_drive(folder_id, file, f"{_DOC_DRIVE_NAMES[kind]}{_file_ext(file)}")
     nathalie_adherents.patch_drive_docs(existing["code_union"], {
         "drive_folder_id": folder_id,
         "drive_link": drive_link,

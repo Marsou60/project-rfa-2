@@ -16,8 +16,10 @@ import {
   addClientNote,
   getClientFiche,
   getClientNotes,
+  polishClientNote,
   uploadClientDocument,
 } from '../api/fiches';
+import { Icon } from './Icon';
 import { colors, spacing } from '../theme';
 
 const DOCS = [
@@ -67,6 +69,9 @@ export function ClientFichePanel({ codeUnion }: { codeUnion: string }) {
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  const [rawDraft, setRawDraft] = useState<string | null>(null);
+  const [claudeText, setClaudeText] = useState<string | null>(null);
   const [uploading, setUploading] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +92,9 @@ export function ClientFichePanel({ codeUnion }: { codeUnion: string }) {
   useEffect(() => {
     setFiche(null);
     setNotes([]);
+    setDraft('');
+    setRawDraft(null);
+    setClaudeText(null);
     load();
   }, [load]);
 
@@ -99,13 +107,32 @@ export function ClientFichePanel({ codeUnion }: { codeUnion: string }) {
     setSaving(true);
     setError(null);
     try {
-      const created = await addClientNote(codeUnion, text);
+      const created = await addClientNote(codeUnion, text, claudeText);
       setNotes((prev) => [created, ...prev]);
       setDraft('');
+      setRawDraft(null);
+      setClaudeText(null);
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Note non enregistrée.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const improve = async () => {
+    const text = draft.trim();
+    if (!text || polishing) return;
+    setPolishing(true);
+    setError(null);
+    try {
+      const improved = await polishClientNote(text);
+      setRawDraft((prev) => prev ?? text);
+      setClaudeText(improved);
+      setDraft(improved);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Claude n’a pas pu réécrire la note.');
+    } finally {
+      setPolishing(false);
     }
   };
 
@@ -180,18 +207,57 @@ export function ClientFichePanel({ codeUnion }: { codeUnion: string }) {
       <TextInput
         value={draft}
         onChangeText={setDraft}
-        placeholder="Note de visite…"
-        placeholderTextColor={colors.muted2}
+        placeholder="Ce qui s'est dit au magasin, même en vrac."
+        placeholderTextColor="#C8BBA4"
         multiline
         style={styles.input}
+        accessibilityLabel="Note de visite"
       />
-      <Pressable style={styles.save} onPress={save} disabled={saving || !draft.trim()} accessibilityRole="button">
+      <Pressable
+        style={[styles.claude, (polishing || saving || !draft.trim()) && styles.disabled]}
+        onPress={improve}
+        disabled={polishing || saving || !draft.trim()}
+        accessibilityRole="button"
+        accessibilityLabel="Améliorer la note avec Claude"
+        accessibilityState={{ disabled: polishing || saving || !draft.trim(), busy: polishing }}
+      >
+        {polishing ? <ActivityIndicator color="#1A140C" /> : <Icon name="sparkles" size={16} color="#1A140C" />}
+        <Text style={styles.claudeText}>{polishing ? 'Claude réécrit…' : 'Améliorer avec Claude'}</Text>
+      </Pressable>
+      <Pressable
+        style={[styles.save, (saving || polishing || !draft.trim()) && styles.disabled]}
+        onPress={save}
+        disabled={saving || polishing || !draft.trim()}
+        accessibilityRole="button"
+      >
         <Text style={styles.saveText}>{saving ? 'Enregistrement…' : 'Enregistrer la note'}</Text>
       </Pressable>
+      {rawDraft != null ? (
+        <Pressable
+          onPress={() => {
+            setDraft(rawDraft);
+            setRawDraft(null);
+            setClaudeText(null);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Revenir à mon texte"
+        >
+          <Text style={styles.undo}>Revenir à mon texte</Text>
+        </Pressable>
+      ) : null}
       {notes.map((note) => (
-        <View key={note.id} style={styles.note}>
-          <Text style={styles.meta}>{[note.auteur, whenLabel(note.created_at)].filter(Boolean).join(' · ')}</Text>
+        <View key={note.id} style={[styles.note, note.note_ia ? styles.noteClaude : null]}>
+          <View style={styles.noteHead}>
+            <Text style={styles.noteAuthor}>{note.auteur || 'Union'}</Text>
+            <Text style={styles.meta}>{whenLabel(note.created_at)}</Text>
+          </View>
           <Text style={styles.noteBody}>{note.note_simple}</Text>
+          {note.note_ia ? (
+            <View style={styles.claudeMark}>
+              <Icon name="sparkles" size={13} color="#F6C453" />
+              <Text style={styles.claudeMarkText}>Relue par Claude</Text>
+            </View>
+          ) : null}
         </View>
       ))}
       {!loading && notes.length === 0 ? <Text style={styles.meta}>Aucune note pour l’instant.</Text> : null}
@@ -212,7 +278,7 @@ const styles = StyleSheet.create({
   docMissing: { borderColor: colors.red, backgroundColor: 'rgba(248,113,113,0.12)' },
   docText: { color: colors.white, fontWeight: '800', fontSize: 13 },
   input: {
-    minHeight: 88,
+    minHeight: 104,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.cardBorder,
@@ -220,16 +286,35 @@ const styles = StyleSheet.create({
     color: colors.white,
     padding: spacing.md,
     textAlignVertical: 'top',
+    fontSize: 15,
+    lineHeight: 22,
   },
+  claude: {
+    backgroundColor: '#F6C453',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  claudeText: { color: '#1A140C', fontWeight: '800', fontSize: 15 },
   save: { backgroundColor: colors.orange, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   saveText: { color: colors.white, fontWeight: '800' },
+  disabled: { opacity: 0.4 },
+  undo: { color: '#F6C453', fontWeight: '700', textDecorationLine: 'underline' },
   note: {
     backgroundColor: colors.card,
     borderRadius: 12,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    gap: 4,
+    gap: 6,
   },
-  noteBody: { color: colors.text, fontSize: 14, lineHeight: 20 },
+  noteClaude: { backgroundColor: '#2A2112', borderColor: '#6B5428' },
+  noteHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+  noteAuthor: { color: colors.white, fontWeight: '800', fontSize: 14, flexShrink: 1 },
+  noteBody: { color: colors.text, fontSize: 15, lineHeight: 22 },
+  claudeMark: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  claudeMarkText: { color: '#F6C453', fontSize: 12, fontWeight: '800' },
 });

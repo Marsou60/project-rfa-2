@@ -798,8 +798,12 @@ def reassign_code_union_portfolio(
     return counts
 
 
-def patch_drive_docs(code_union: str, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Met à jour uniquement les liens Drive / pièces, sans toucher au reste de la fiche."""
+def patch_drive_docs(code_union: str, fields: Dict[str, Any], *, clear: bool = False) -> Optional[Dict[str, Any]]:
+    """Met à jour uniquement les liens Drive / pièces, sans toucher au reste de la fiche.
+
+    Avec clear=True, un RIB / Kbis / pièce d'identité explicitement vide est effacé.
+    C'est le cas quand le fichier a été supprimé du dossier Drive.
+    """
     ensure_tables()
     existing = get_by_code(code_union)
     if not existing:
@@ -817,11 +821,23 @@ def patch_drive_docs(code_union: str, fields: Dict[str, Any]) -> Optional[Dict[s
         "drive_link",
         "drive_checked_at",
     }
-    updates = {k: v for k, v in fields.items() if k in allowed and v not in (None, "")}
-    if not updates:
+    clearable = {"rib_url", "kbis_url", "piece_identite_url"}
+    updates: Dict[str, Any] = {}
+    clears: List[str] = []
+    for key, value in fields.items():
+        if key not in allowed:
+            continue
+        if value in (None, ""):
+            if clear and key in clearable:
+                clears.append(key)
+            continue
+        updates[key] = value
+    if not updates and not clears:
         return existing
     updates["updated_at"] = _now()
-    sets = ", ".join(f"{k} = :{k}" for k in updates)
+    assignments = [f"{key} = :{key}" for key in updates]
+    assignments.extend(f"{key} = NULL" for key in clears)
+    sets = ", ".join(assignments)
     updates["code"] = clean_code_union(code_union)
     with engine.begin() as conn:
         conn.execute(

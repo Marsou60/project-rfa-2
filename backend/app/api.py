@@ -6424,12 +6424,25 @@ def create_client_note(
             payload.get("note_simple") or payload.get("note") or "",
             note_author(user),
             payload.get("type_note") or "NOTE SIMPLE",
+            payload.get("note_ia"),
         )
         return note
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Enregistrement de la note impossible : {e}")
+
+
+@router.post("/notes/polish")
+def polish_client_note(payload: dict = Body(...), _user: User = Depends(require_staff)):
+    """Réécrit une note de visite avec Claude, sans l'enregistrer."""
+    from app.services.note_polish import polish_note
+    try:
+        return {"note_ia": polish_note(payload.get("note") or payload.get("note_simple") or "")}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=502, detail="Claude n'a pas pu réécrire la note. Réessayez.")
 
 
 @router.post("/nathalie/client/{code_union}/document")
@@ -6449,12 +6462,14 @@ async def nathalie_upload_document(
 
 
 @router.get("/nathalie/client/{code_union}")
-async def nathalie_client_detail(code_union: str):
+async def nathalie_client_detail(code_union: str, user: Optional[User] = Depends(get_current_user)):
     """Détail complet d'un adhérent + tâches associées (Sheets, best-effort)."""
     try:
         client = nathalie_service.get_client_by_code(code_union)
         if not client:
             raise HTTPException(status_code=404, detail=f"Client {code_union} introuvable")
+        if user and user.role in (UserRole.ADMIN, UserRole.COMMERCIAL):
+            client = nathalie_service.refresh_client_drive_docs(client) or client
         try:
             tasks = nathalie_service.get_tasks(code_union=code_union)
         except Exception:

@@ -22,6 +22,7 @@ export type ClientNote = {
   code_union?: string;
   type_note?: string;
   note_simple: string;
+  note_ia?: string | null;
   auteur?: string;
   created_at?: string;
 };
@@ -41,12 +42,18 @@ export async function getClientNotes(codeUnion: string): Promise<ClientNote[]> {
   return (data?.notes || []) as ClientNote[];
 }
 
-export async function addClientNote(codeUnion: string, note: string): Promise<ClientNote> {
+export async function addClientNote(codeUnion: string, note: string, noteIa?: string | null): Promise<ClientNote> {
   const { data } = await api.post(`/notes/client/${encodeURIComponent(codeUnion)}`, {
     note_simple: note,
+    note_ia: noteIa || undefined,
     type_note: 'NOTE SIMPLE',
   });
   return data as ClientNote;
+}
+
+export async function polishClientNote(note: string): Promise<string> {
+  const { data } = await api.post('/notes/polish', { note }, { timeout: 45000 });
+  return (data?.note_ia || '') as string;
 }
 
 export async function uploadClientDocument(

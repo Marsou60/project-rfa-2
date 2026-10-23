@@ -11,7 +11,10 @@ from app.services.nathalie_service import (
     classify_drive_filename,
     default_perimetre,
     dept_from_postal,
+    drive_doc_links_changed,
     extract_code_from_folder_name,
+    extract_drive_file_id,
+    resolve_drive_doc_links,
     score_drive_folder_name,
 )
 
@@ -141,6 +144,48 @@ def test_sync_liste_client_2_swallows_errors(monkeypatch):
     monkeypatch.setattr("app.services.nathalie_service._delete_liste_client_2_row", boom)
     assert "sheets down" in _sync_liste_client_2(delete_code="M0001")
     assert _sync_liste_client_2(None) is None
+
+
+def test_deleted_drive_file_drops_the_stored_link():
+    stored = {
+        "rib_url": "https://drive.google.com/file/d/AAA111BBBB/view?usp=drivesdk",
+        "kbis_url": "https://drive.google.com/file/d/BBB222CCCC/view",
+        "piece_identite_url": "https://drive.google.com/file/d/CCC333DDDD/view",
+    }
+    children = [{
+        "id": "BBB222CCCC",
+        "name": "IMG_2048.jpg",
+        "webViewLink": "https://drive.google.com/file/d/BBB222CCCC/view",
+    }]
+    resolved = resolve_drive_doc_links(stored, children)
+    assert resolved["rib_url"] is None
+    assert "BBB222CCCC" in resolved["kbis_url"]
+    assert resolved["piece_identite_url"] is None
+    assert drive_doc_links_changed(stored, resolved) is True
+    assert extract_drive_file_id(stored["rib_url"]) == "AAA111BBBB"
+
+
+def test_generic_filename_stays_while_the_file_is_still_there():
+    stored = {"rib_url": "https://drive.google.com/file/d/AAA111BBBB/view?usp=drivesdk"}
+    children = [{
+        "id": "AAA111BBBB",
+        "name": "scan.pdf",
+        "webViewLink": "https://drive.google.com/file/d/AAA111BBBB/view",
+    }]
+    resolved = resolve_drive_doc_links(stored, children)
+    assert "AAA111BBBB" in resolved["rib_url"]
+    assert drive_doc_links_changed(stored, resolved) is False
+
+
+def test_named_replacement_fills_a_deleted_slot():
+    stored = {"rib_url": "https://drive.google.com/file/d/OLDFILEID1/view"}
+    children = [{
+        "id": "NEWFILEID1",
+        "name": "RIB garage.pdf",
+        "webViewLink": "https://drive.google.com/file/d/NEWFILEID1/view",
+    }]
+    resolved = resolve_drive_doc_links(stored, children)
+    assert "NEWFILEID1" in resolved["rib_url"]
 
 
 def test_dossier_complet_requires_rib_kbis_and_identity():

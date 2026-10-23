@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { addClientNote, getClientNotes, nathalieGetClientDetail, uploadClientDocument } from '../api/client'
+import { Loader2, Sparkles } from 'lucide-react'
+import { addClientNote, getClientNotes, nathalieGetClientDetail, polishClientNote, uploadClientDocument } from '../api/client'
 
 const DOCS = [
   { kind: 'rib', label: 'RIB', missing: 'RIB' },
@@ -27,6 +28,9 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [polishing, setPolishing] = useState(false)
+  const [rawDraft, setRawDraft] = useState(null)
+  const [claudeText, setClaudeText] = useState(null)
   const [uploading, setUploading] = useState('')
   const [error, setError] = useState(null)
   const [alertOpen, setAlertOpen] = useState(false)
@@ -35,6 +39,9 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
     let cancel = false
     setFiche(null)
     setNotes([])
+    setDraft('')
+    setRawDraft(null)
+    setClaudeText(null)
     setAlertOpen(false)
     setError(null)
     setLoading(true)
@@ -71,14 +78,39 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
     setSaving(true)
     setError(null)
     try {
-      const created = await addClientNote(codeUnion, text)
+      const created = await addClientNote(codeUnion, text, claudeText)
       setNotes((prev) => [created, ...prev])
       setDraft('')
+      setRawDraft(null)
+      setClaudeText(null)
     } catch (err) {
       setError(err?.response?.data?.detail || 'Note non enregistrée.')
     } finally {
       setSaving(false)
     }
+  }
+
+  const improve = async () => {
+    const text = draft.trim()
+    if (!text || polishing) return
+    setPolishing(true)
+    setError(null)
+    try {
+      const improved = await polishClientNote(text)
+      setRawDraft((prev) => prev ?? text)
+      setClaudeText(improved)
+      setDraft(improved)
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Claude n\'a pas pu réécrire la note.')
+    } finally {
+      setPolishing(false)
+    }
+  }
+
+  const restoreDraft = () => {
+    if (rawDraft != null) setDraft(rawDraft)
+    setRawDraft(null)
+    setClaudeText(null)
   }
 
   const sendDoc = async (kind, file) => {
@@ -172,26 +204,56 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Note de visite, rappel, ce qui s'est dit au magasin…"
-          className={`w-full min-h-[88px] rounded-xl px-3 py-2 text-sm ${dark ? 'bg-slate-950 border border-white/15 text-white' : 'border border-gray-200'}`}
+          placeholder="Ce qui s'est dit au magasin, même en vrac."
+          aria-label="Note de visite"
+          className={`w-full min-h-[104px] rounded-xl px-3 py-2.5 text-sm leading-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F6C453] selection:bg-[#F6C453] selection:text-[#1A140C] ${dark ? 'bg-slate-950 border border-white/15 text-white placeholder:text-[#C8BBA4]' : 'border border-gray-200 text-gray-900 placeholder:text-[#6B5E4E]'}`}
         />
-        <button
-          type="button"
-          onClick={saveNote}
-          disabled={saving || !draft.trim()}
-          className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40"
-        >
-          {saving ? 'Enregistrement…' : 'Enregistrer la note'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={improve}
+            disabled={polishing || saving || !draft.trim()}
+            aria-busy={polishing}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-transform duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:translate-y-0 disabled:opacity-40 ${dark ? 'bg-[#F6C453] text-[#1A140C] shadow-[0_10px_24px_rgba(246,196,83,0.22)] hover:bg-[#FFD56A] focus-visible:outline-[#F6C453]' : 'bg-[#1A140C] text-[#F6C453] shadow-[0_10px_24px_rgba(26,20,12,0.18)] hover:bg-[#2C2418] focus-visible:outline-[#1A140C]'}`}
+          >
+            {polishing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
+            {polishing ? 'Claude réécrit…' : 'Améliorer avec Claude'}
+          </button>
+          <button
+            type="button"
+            onClick={saveNote}
+            disabled={saving || polishing || !draft.trim()}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-40"
+          >
+            {saving ? 'Enregistrement…' : 'Enregistrer la note'}
+          </button>
+          {rawDraft != null ? (
+            <button type="button" onClick={restoreDraft} className={`text-sm font-semibold underline-offset-4 hover:underline ${dark ? 'text-[#F6C453]' : 'text-[#1A140C]'}`}>
+              Revenir à mon texte
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <ul className="space-y-2 max-h-80 overflow-auto">
-        {notes.map((note) => (
-          <li key={note.id} className={`rounded-xl px-3 py-2 text-sm ${dark ? 'bg-black/20' : 'bg-gray-50'}`}>
-            <p className={`text-[11px] ${muted}`}>{[note.auteur, formatWhen(note.created_at), note.type_note].filter(Boolean).join(' · ')}</p>
-            <p className={`whitespace-pre-wrap mt-1 ${body}`}>{note.note_simple}</p>
-          </li>
-        ))}
+      <ul className="space-y-3 max-h-80 overflow-auto">
+        {notes.map((note) => {
+          const reviewed = Boolean(note.note_ia)
+          return (
+            <li key={note.id} className={`rounded-xl px-3 py-3 text-sm ${reviewed ? (dark ? 'bg-[#F6C453]/12' : 'bg-[#FFF8E8]') : (dark ? 'bg-black/20' : 'bg-gray-50')}`}>
+              <div className="flex items-baseline justify-between gap-3">
+                <p className={`font-semibold ${reviewed ? (dark ? 'text-[#F3E6C4]' : 'text-[#1A140C]') : title}`}>{note.auteur || 'Union'}</p>
+                <time className={`text-xs shrink-0 ${reviewed ? (dark ? 'text-[#F3E6C4]' : 'text-[#6B5428]') : muted}`} dateTime={note.created_at || undefined}>{formatWhen(note.created_at)}</time>
+              </div>
+              <p className={`whitespace-pre-wrap mt-2 leading-6 ${body}`}>{note.note_simple}</p>
+              {reviewed ? (
+                <p className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold ${dark ? 'text-[#F6C453]' : 'text-[#6B5428]'}`}>
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  Relue par Claude
+                </p>
+              ) : null}
+            </li>
+          )
+        })}
         {!loading && notes.length === 0 ? <li className={`text-sm ${muted}`}>Aucune note pour l'instant.</li> : null}
       </ul>
     </section>

@@ -51,17 +51,26 @@ def list_notes(code_union: str, limit: int = 80) -> List[Dict[str, Any]]:
     return [_public(row) for row in rows]
 
 
-def add_note(code_union: str, note: str, auteur: str, type_note: str = "NOTE SIMPLE") -> Dict[str, Any]:
+def add_note(
+    code_union: str,
+    note: str,
+    auteur: str,
+    type_note: str = "NOTE SIMPLE",
+    note_ia: Optional[str] = None,
+) -> Dict[str, Any]:
     code = (code_union or "").strip().upper()
     if not code:
         raise ValueError("Code Union manquant.")
     body = clean_note(note)
     kind = (type_note or "NOTE SIMPLE").strip()[:40] or "NOTE SIMPLE"
+    improved = (note_ia or "").strip()
+    if len(improved) > MAX_NOTE:
+        improved = improved[:MAX_NOTE]
     sql = """
         INSERT INTO notes_clients
-            (code_union, type_note, note_simple, auteur, traite, sheets_synced, imported)
+            (code_union, type_note, note_simple, note_ia, auteur, traite, sheets_synced, imported)
         VALUES
-            (:code, :type_note, :note, :auteur, false, false, false)
+            (:code, :type_note, :note, :note_ia, :auteur, false, false, false)
         RETURNING id, code_union, type_note, note_simple, note_ia, auteur,
                   date_rappel, traite, created_at
     """
@@ -70,6 +79,7 @@ def add_note(code_union: str, note: str, auteur: str, type_note: str = "NOTE SIM
             "code": code,
             "type_note": kind,
             "note": body,
+            "note_ia": improved or None,
             "auteur": (auteur or "Union")[:120],
         }).mappings().one()
     return _public(row)

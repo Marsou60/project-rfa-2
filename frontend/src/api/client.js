@@ -1107,12 +1107,18 @@ export const getClientNotes = async (codeUnion) => {
   return response.data
 }
 
-export const addClientNote = async (codeUnion, note) => {
+export const addClientNote = async (codeUnion, note, noteIa = null) => {
   const response = await api.post(`/notes/client/${encodeURIComponent(codeUnion)}`, {
     note_simple: note,
+    note_ia: noteIa || undefined,
     type_note: 'NOTE SIMPLE',
   })
   return response.data
+}
+
+export const polishClientNote = async (note) => {
+  const response = await api.post('/notes/polish', { note }, { timeout: 45000 })
+  return response.data?.note_ia || ''
 }
 
 export const uploadClientDocument = async (codeUnion, kind, file) => {
