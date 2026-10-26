@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -30,6 +31,11 @@ type Props = {
   codeUnion?: string | null;
   groupeClient?: string | null;
   title?: string;
+  /** Données déjà demandées par la fiche, pour afficher la RFA sans second calcul. */
+  seed?: ClientRfaResponse | null;
+  seedMonthly?: ClientMonthlyEvolution | null;
+  busy?: boolean;
+  onRefresh?: () => void;
 };
 
 const SILVER_MIN = 100001;
@@ -75,18 +81,33 @@ function cotisationFootnote(c?: CotisationPayload | null): string | null {
   return `Cotisation Union ${fmtEuro(amount)}, non déduite de ce montant.`;
 }
 
+function lineHit(label: string, query: string): boolean {
+  const q = query.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  if (!q) return true;
+  return label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().includes(q);
+}
+
 function lineAmount(item: RfaLine): number {
   if (item.total != null) return asNum(item.total);
   if (item.value != null) return asNum(item.value);
   return asNum(item.rfa) + asNum(item.bonus);
 }
 
-export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
-  const [data, setData] = useState<ClientRfaResponse | null>(null);
-  const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(null);
-  const [loading, setLoading] = useState(true);
+export function RfaPanel({
+  codeUnion,
+  groupeClient,
+  title,
+  seed,
+  seedMonthly,
+  busy = false,
+  onRefresh,
+}: Props) {
+  const [data, setData] = useState<ClientRfaResponse | null>(seed ?? null);
+  const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(seedMonthly ?? null);
+  const [loading, setLoading] = useState(!onRefresh && !seed);
   const [error, setError] = useState<string | null>(null);
   const [prodexNotice, setProdexNotice] = useState(false);
+  const [lineQuery, setLineQuery] = useState('');
   const { logos } = useSupplierLogos();
 
   const load = useCallback(async () => {
@@ -118,10 +139,17 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
     }
   }, [codeUnion, groupeClient]);
 
+  useEffect(() => {
+    setData(seed ?? null);
+    setMonthly(seedMonthly ?? null);
+    if (onRefresh) setLoading(false);
+  }, [seed, seedMonthly, codeUnion, groupeClient, onRefresh]);
+
   useFocusEffect(
     useCallback(() => {
+      if (onRefresh) return;
       load();
-    }, [load]),
+    }, [load, onRefresh]),
   );
 
   const derived = useMemo(() => {
@@ -221,7 +249,9 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
     };
   }, [data]);
 
-  if (loading && !data) {
+  const refresh = onRefresh || load;
+
+  if ((busy || loading) && !data) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.orange} size="large" />
@@ -234,7 +264,7 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
     return (
       <View style={styles.center}>
         <Text style={styles.error}>{error}</Text>
-        <Pressable style={styles.retry} onPress={load}>
+        <Pressable style={styles.retry} onPress={refresh}>
           <Text style={styles.retryText}>Réessayer</Text>
         </Pressable>
       </View>
@@ -263,7 +293,9 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
   return (
     <ScrollView
       contentContainerStyle={styles.scroll}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.orange} />}
+      refreshControl={
+        <RefreshControl refreshing={onRefresh ? busy : loading} onRefresh={refresh} tintColor={colors.orange} />
+      }
     >
       <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
       <HeroCaCard
@@ -332,12 +364,21 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
         </View>
       ) : null}
 
+      <TextInput
+        value={lineQuery}
+        onChangeText={setLineQuery}
+        placeholder="Rechercher LUK, Valeo, ACR…"
+        placeholderTextColor={colors.muted2}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        style={styles.search}
+      />
       <Text style={styles.section}>Plateformes</Text>
-      <Text style={styles.sectionHint}>Tap pour ouvrir le barème · jauge = progression vers le prochain palier</Text>
-      {d.globalItems.length === 0 ? (
-        <Text style={styles.muted}>Aucun CA plateforme</Text>
+      <Text style={styles.sectionHint}>Une ligne. Tapez pour le barème.</Text>
+      {d.globalItems.filter(([, it]) => lineHit(it.label || '', lineQuery)).length === 0 ? (
+        <Text style={styles.muted}>{lineQuery.trim() ? 'Aucune plateforme' : 'Aucun CA plateforme'}</Text>
       ) : (
-        d.globalItems.map(([key, it]) => {
+        d.globalItems.filter(([, it]) => lineHit(it.label || '', lineQuery)).map(([key, it]) => {
           const tRfa = parseTiers(it.tiers_rfa);
           const tBonus = parseTiers(it.tiers_bonus);
           const prog = globalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null);
@@ -387,6 +428,7 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
                     : null
               }
               onOpenNotice={key === 'GLOBAL_EXADIS' ? () => setProdexNotice(true) : null}
+              forceOpen={lineQuery.trim().length >= 2 && lineHit(it.label || '', lineQuery)}
             />
           );
         })
@@ -411,10 +453,10 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
           </Text>
         </View>
       ) : null}
-      {d.triItems.length === 0 ? (
-        <Text style={styles.muted}>Aucune ligne tripartite avec CA / paliers</Text>
+      {d.triItems.filter(([, it]) => lineHit(it.label || '', lineQuery)).length === 0 ? (
+        <Text style={styles.muted}>{lineQuery.trim() ? 'Aucune tripartite' : 'Aucune ligne tripartite avec CA / paliers'}</Text>
       ) : (
-        d.triItems.map(([key, it]) => {
+        d.triItems.filter(([, it]) => lineHit(it.label || '', lineQuery)).map(([key, it]) => {
           const tiers = parseTiers(it.tiers);
           const prog = triProgress(it.ca || 0, tiers, it.ca_exclu ? it.ca_remunere : null);
           if (it.ca_exclu) prog.currentValue = lineAmount(it);
@@ -445,6 +487,7 @@ export function RfaPanel({ codeUnion, groupeClient, title }: Props) {
                   ? `Dont ${fmtEuro(it.ca_exclu)} Prodex non rémunéré. Palier sur ${fmtEuro(it.ca || 0)}, RFA sur ${fmtEuro(it.ca_remunere || 0)}.`
                   : null
               }
+              forceOpen={lineQuery.trim().length >= 2 && lineHit(it.label || '', lineQuery)}
             />
           );
         })
@@ -464,6 +507,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   scroll: { padding: spacing.lg, paddingBottom: 40, backgroundColor: colors.bg, gap: 10 },
+  search: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 12,
+    color: colors.white,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+  },
   title: { fontSize: 24, fontWeight: '800', color: colors.white },
   meta: { color: colors.muted, flex: 1 },
   muted: { color: colors.muted, textAlign: 'center', marginBottom: 8 },

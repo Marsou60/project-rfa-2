@@ -24,6 +24,7 @@ type Props = {
   proj?: { ca?: number; rate?: number; value?: number } | null;
   note?: string | null;
   onOpenNotice?: (() => void) | null;
+  forceOpen?: boolean;
 };
 
 function Gauge({ progress, tone }: { progress: number; tone: 'green' | 'amber' | 'orange' | 'cyan' | 'muted' }) {
@@ -60,8 +61,10 @@ export function RfaProgressCard({
   proj,
   note = null,
   onOpenNotice = null,
+  forceOpen = false,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const shown = forceOpen || open;
   const hasRfaBonus = tiersRfa.length > 0 || tiersBonus.length > 0;
   const hasTri = tiersTri.length > 0;
   const hasLadder = hasRfaBonus || hasTri;
@@ -102,10 +105,29 @@ export function RfaProgressCard({
         <Text style={[styles.label, { flex: 1 }]} numberOfLines={1}>
           {label}
         </Text>
-        <Text style={styles.ca}>{fmtEuro(ca)}</Text>
-        <Text style={styles.chevron}>{open ? '▲' : '▼'}</Text>
+        <Text style={styles.chevron}>{shown ? '▲' : '▼'}</Text>
+      </View>
+      <View style={styles.facts}>
+        <View style={styles.fact}>
+          <Text style={styles.factLabel}>CA réalisé</Text>
+          <Text style={styles.factValue}>{fmtEuro(ca)}</Text>
+        </View>
+        <View style={[styles.fact, styles.factEnd]}>
+          <Text style={styles.factLabel}>RFA projetée</Text>
+          <Text style={styles.factProj}>
+            {proj && proj.value != null ? fmtEuro(proj.value) : '—'}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.gaugeRow}>
+        <View style={{ flex: 1 }}>
+          <Gauge progress={prog.progress} tone={tone} />
+        </View>
+        <Text style={styles.gaugePct}>{Math.round(prog.progress)} %</Text>
       </View>
 
+      {shown ? (
+        <View>
       {projectedUnlock ? (
         <View style={styles.badgeRow}>
           <Text style={styles.badgeAmber}>À date : verrouillé</Text>
@@ -113,7 +135,6 @@ export function RfaProgressCard({
         </View>
       ) : null}
       {locked && !projectedUnlock ? <Text style={styles.badgeAmber}>Réservé Silver & Gold</Text> : null}
-
       <View style={styles.metaRow}>
         <Text style={styles.meta}>
           Taux {fmtPct(prog.rate)}
@@ -125,12 +146,8 @@ export function RfaProgressCard({
           {locked && !projectedUnlock ? '0 € à date' : `${fmtEuro(prog.currentValue)} à date`}
         </Text>
       </View>
-
       {note ? <Text style={styles.hint}>{note}</Text> : null}
-
-      <Gauge progress={prog.progress} tone={tone} />
-      <Text style={styles.gaugeCaption}>Palier RFA · {Math.round(prog.progress)} %</Text>
-
+      <Text style={styles.gaugeCaption}>Palier · {Math.round(prog.progress)} %</Text>
       {prog.achieved ? (
         <Text style={styles.statusOk}>Palier maximal atteint</Text>
       ) : prog.nextMin != null ? (
@@ -142,15 +159,12 @@ export function RfaProgressCard({
       ) : (
         <Text style={styles.hint}>Sous le 1er palier — RFA 0 € tant que le seuil n’est pas atteint</Text>
       )}
-
       {prog.rate === 0 && prog.nextMin != null && !locked ? (
         <Text style={styles.whyZero}>
           Pourquoi 0 € ? CA sous le seuil {fmtEuro(prog.nextMin)} (manque {fmtEuro(prog.missing)}).
         </Text>
       ) : null}
-
       {lockHint ? <Text style={styles.hint}>{lockHint}</Text> : null}
-
       {proj && (proj.value != null || proj.ca) ? (
         <View style={styles.projBox}>
           <Text style={styles.projTitle}>RFA estimée au 31 décembre</Text>
@@ -159,8 +173,7 @@ export function RfaProgressCard({
           </Text>
         </View>
       ) : null}
-
-      {open && hasRfaBonus ? (
+      {hasRfaBonus ? (
         <View style={styles.ladder}>
           {levelLabel ? <Text style={styles.ladderTitle}>{levelLabel}</Text> : null}
           <Text style={styles.ladderTitle}>Barème RFA + Bonus</Text>
@@ -181,7 +194,7 @@ export function RfaProgressCard({
         </View>
       ) : null}
 
-      {open && hasTri ? (
+      {hasTri ? (
         <View style={styles.ladder}>
           <Text style={styles.ladderTitle}>Paliers</Text>
           {tiersTri.map((t) => {
@@ -198,6 +211,8 @@ export function RfaProgressCard({
           })}
         </View>
       ) : null}
+        </View>
+      ) : null}
     </Pressable>
     {onOpenNotice ? <ProdexFicheNote onOpen={onOpenNotice} /> : null}
     </View>
@@ -207,16 +222,31 @@ export function RfaProgressCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card,
-    borderRadius: 14,
-    padding: spacing.md,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    marginBottom: 10,
-    gap: 8,
+    marginBottom: 6,
+    gap: 6,
   },
   cardNoTier: { borderColor: '#7F1D1D', backgroundColor: '#1A0F12' },
   cardLocked: { borderColor: '#92400E', backgroundColor: '#1A1408' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  facts: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  fact: { gap: 1 },
+  factEnd: { alignItems: 'flex-end' },
+  factLabel: {
+    color: colors.muted2,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  factValue: { color: colors.white, fontWeight: '700', fontSize: 15, fontVariant: ['tabular-nums'] },
+  factProj: { color: '#67E8F9', fontWeight: '800', fontSize: 15, fontVariant: ['tabular-nums'] },
+  gaugeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  gaugePct: { color: colors.muted, fontSize: 11, fontWeight: '700', width: 36, textAlign: 'right' },
   label: { color: colors.white, fontWeight: '800', fontSize: 14 },
   ca: { color: colors.white, fontWeight: '700', fontVariant: ['tabular-nums'] },
   chevron: { color: colors.muted2, fontSize: 10, marginLeft: 4 },
@@ -253,7 +283,7 @@ const styles = StyleSheet.create({
   metaNext: { color: '#FBBF24', fontWeight: '800' },
   rfaAmt: { color: colors.green, fontWeight: '800', fontSize: 13 },
   gaugeTrack: {
-    height: 10,
+    height: 8,
     borderRadius: 999,
     backgroundColor: colors.bgElevated,
     overflow: 'hidden',

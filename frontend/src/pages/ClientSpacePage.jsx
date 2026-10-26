@@ -2274,8 +2274,34 @@ function Rfa26ProgressCard({
   projTierGroups = null,
   projLevelLabel = null,
   footnote = null,
+  forceOpen = false,
 }) {
   const [open, setOpen] = useState(false)
+  const shown = forceOpen || open
+  const projectedRfa = proj && proj.value != null ? fmt(proj.value) : '—'
+  const summary = (barClass) => (
+    <>
+      <div className="flex items-center gap-3 min-w-0">
+        {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={22} />}
+        <span className="font-semibold text-slate-900 text-sm flex-1 min-w-0 truncate">{label}</span>
+        <div className="text-right shrink-0">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">CA réalisé</div>
+          <div className="text-sm font-semibold tabular-nums text-slate-900">{fmt(ca)}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">RFA projetée</div>
+          <div className="text-sm font-semibold tabular-nums text-cyan-800">{projectedRfa}</div>
+        </div>
+        <svg className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${shown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1 h-2 rounded-full bg-slate-200/80 overflow-hidden">
+          <div className={`h-full rounded-full ${barClass}`} style={{ width: `${Math.min(prog.progress || 0, 100)}%` }} />
+        </div>
+        <span className="w-9 text-right text-[11px] font-semibold tabular-nums text-slate-500">{Math.round(prog.progress || 0)}%</span>
+      </div>
+    </>
+  )
   const achieved = prog.achieved
   const hasLadder = tierGroups.some((g) => g.tiers?.length > 0)
   const hasProjLadder = projTierGroups && projTierGroups.some((g) => g.tiers?.length > 0)
@@ -2308,41 +2334,29 @@ function Rfa26ProgressCard({
     if (rate === 0 && sorted[0]) rate = sorted[0].rate
     return (
       <div
-        className={`rounded-xl border-2 border-cyan-300 bg-white p-4 ${hasLadder ? 'cursor-pointer hover:border-cyan-400' : ''}`}
-        onClick={() => hasLadder && setOpen((o) => !o)}
+        className="rounded-xl border-2 border-cyan-300 bg-white px-3 py-2.5 cursor-pointer hover:border-cyan-400"
+        onClick={() => setOpen((o) => !o)}
       >
-        <div className="flex items-center gap-2 mb-2">
-          {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={24} />}
-          <span className="font-bold text-slate-800 text-sm flex-1 truncate">{label}</span>
-          <span className="font-mono text-sm text-slate-700">{fmt(ca)}</span>
-          {hasLadder && (
-            <svg className={`w-4 h-4 text-cyan-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">À date : verrouillé</span>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-300">Fin 2026 : débloqué</span>
-        </div>
-        <div className="flex items-center justify-between text-xs mb-1.5">
-          <span className="text-slate-500">Taux marque {fmtPct(rate || prog.rate)}</span>
-          <span className="text-amber-700 font-semibold">0 € RFA à date</span>
-        </div>
-        <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
-          <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.min(prog.progress || 0, 100)}%` }} />
-        </div>
-        <p className="text-[11px] text-slate-500 mt-1.5">
-          {prog.nextMin != null
-            ? <>Palier marque : encore <strong>{fmt(prog.missing)}</strong> sur cette ligne</>
-            : <>Palier marque atteint — encaissement dès Silver</>}
-        </p>
-        <Rfa26ProjectionBlock
-          proj={proj}
-          fmt={fmt}
-          fmtPct={fmtPct}
-          title="RFA projetée (Silver atteint)"
-          hint={projLevelLabel || 'Silver+'}
-        />
-        {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel} />}
+        {summary('bg-cyan-500')}
+        {shown && (
+          <div className="mt-3 pt-3 border-t border-cyan-100" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">À date : verrouillé</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-300">Fin 2026 : débloqué</span>
+            </div>
+            <div className="flex items-center justify-between text-xs mb-1.5">
+              <span className="text-slate-500">Taux marque {fmtPct(rate || prog.rate)}</span>
+              <span className="text-amber-700 font-semibold">0 € RFA à date</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              {prog.nextMin != null
+                ? <>Palier marque : encore <strong>{fmt(prog.missing)}</strong> sur cette ligne</>
+                : <>Palier marque atteint — encaissement dès Silver</>}
+            </p>
+            <Rfa26ProjectionBlock proj={proj} fmt={fmt} fmtPct={fmtPct} title="RFA projetée (Silver atteint)" hint={projLevelLabel || 'Silver+'} />
+            {hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel} />}
+          </div>
+        )}
       </div>
     )
   }
@@ -2359,111 +2373,78 @@ function Rfa26ProgressCard({
     const potentialValue = rate * ca
     return (
       <div
-        className={`rounded-xl border border-amber-300 bg-amber-50/70 p-4 ${hasLadder ? 'cursor-pointer hover:border-amber-400' : ''}`}
-        onClick={() => hasLadder && setOpen((o) => !o)}
+        className="rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 cursor-pointer hover:border-amber-400"
+        onClick={() => setOpen((o) => !o)}
       >
-        <div className="flex items-center gap-2 mb-2">
-          {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={24} />}
-          <span className="font-bold text-amber-950 text-sm flex-1 truncate">{label}</span>
-          <span className="font-mono text-sm text-amber-900">{fmt(ca)}</span>
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-200 text-amber-900">🔒</span>
-          {hasLadder && (
-            <svg className={`w-4 h-4 text-amber-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-          )}
-        </div>
-        <div className="flex items-center justify-between text-xs mb-2">
-          <span className="text-amber-800 font-semibold">Réservé Silver &amp; Gold</span>
-          {potentialValue > 0 && (
-            <span className="text-amber-900">Potentiel <strong>{fmt(potentialValue)}</strong> · {fmtPct(rate)}</span>
-          )}
-        </div>
-        {lockHint && <p className="text-[11px] text-amber-800/90 leading-snug mb-2">{lockHint}</p>}
-        <div className="h-2.5 rounded-full bg-amber-100 overflow-hidden opacity-70">
-          <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.min(prog.progress || 0, 100)}%` }} />
-        </div>
-        <Rfa26ProjectionBlock proj={proj} fmt={fmt} fmtPct={fmtPct} title="Projection fin 2026" />
-        {open && hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel} />}
+        {summary('bg-amber-400')}
+        {shown && (
+          <div className="mt-3 pt-3 border-t border-amber-200" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between text-xs mb-2">
+              <span className="text-amber-800 font-semibold">Réservé Silver &amp; Gold</span>
+              {potentialValue > 0 && (
+                <span className="text-amber-900">Potentiel <strong>{fmt(potentialValue)}</strong> · {fmtPct(rate)}</span>
+              )}
+            </div>
+            {lockHint && <p className="text-[11px] text-amber-800/90 leading-snug mb-2">{lockHint}</p>}
+            <Rfa26ProjectionBlock proj={proj} fmt={fmt} fmtPct={fmtPct} title="Projection fin 2026" />
+            {hasLadder && <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel} />}
+          </div>
+        )}
       </div>
     )
   }
 
   return (
     <div
-      className={`rounded-xl border bg-white p-4 ${hasLadder ? 'cursor-pointer hover:border-indigo-300' : ''} ${
+      className={`rounded-xl border bg-white px-3 py-2.5 cursor-pointer hover:border-indigo-300 ${
         achieved ? 'border-emerald-300 bg-emerald-50/40' : near ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200'
       }`}
-      onClick={() => hasLadder && setOpen((o) => !o)}
+      onClick={() => setOpen((o) => !o)}
     >
-      <div className="flex items-center gap-2 mb-2">
-        {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={24} />}
-        <span className="font-bold text-gray-800 text-sm flex-1 truncate">{label}</span>
-        <span className="font-mono text-sm text-gray-900">{fmt(ca)}</span>
-        {hasLadder && (
-          <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between text-xs mb-1.5">
-        <span className="text-gray-500">
-          Taux {fmtPct(prog.rate)}
-          {!achieved && prog.nextRate != null && <span className="text-amber-600 font-semibold"> → {fmtPct(prog.nextRate)}</span>}
-        </span>
-        <span className="font-bold text-emerald-600">{fmt(prog.currentValue)} RFA</span>
-      </div>
-      {footnote && (
-        <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 mb-1.5 leading-snug">
-          {footnote}
-        </p>
-      )}
-      {exclusion?.exclu > 0 && (
-        <p className="text-[11px] text-slate-600 mb-1.5 leading-snug">
-          Dont {fmt(exclusion.exclu)} Prodex non rémunéré. Palier sur {fmt(ca)}, RFA sur {fmt(exclusion.remunere)}.
-        </p>
-      )}
-      {onOpenNotice && (
-        <div className="mb-2">
-          <ProdexFicheNote onOpen={onOpenNotice} />
-        </div>
-      )}
-
-      <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
-        <div
-          className={`h-full rounded-full ${achieved ? 'bg-emerald-500' : near ? 'bg-amber-500' : 'bg-indigo-500'}`}
-          style={{ width: `${prog.progress}%` }}
-        />
-      </div>
-      <div className="flex items-center justify-between text-[11px] mt-1.5">
-        {achieved ? (
-          <span className="text-emerald-600 font-semibold">✓ Palier maximal atteint</span>
-        ) : prog.nextMin != null ? (
-          <span className="text-gray-500">Encore <strong className="text-gray-800">{fmt(prog.missing)}</strong> pour <strong className="text-emerald-600">+{fmt(prog.projectedGain)}</strong> de RFA</span>
-        ) : (
-          <span className="text-gray-400">Palier atteint</span>
-        )}
-        <span className="text-gray-400">{Math.round(prog.progress)}%</span>
-      </div>
-
-      <Rfa26ProjectionBlock
-        proj={proj}
-        fmt={fmt}
-        fmtPct={fmtPct}
-        title="Projection fin 2026"
-        hint={projLevelLabel || null}
-      />
-
-      {open && hasLadder && (
-        <>
-          <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel || 'Barème à date'} />
-          {hasProjLadder && proj && (
-            <Rfa26TierLadder
-              tierGroups={projTierGroups}
-              ca={proj.ca || 0}
-              fmt={fmt}
-              fmtPct={fmtPct}
-              levelLabel={projLevelLabel ? `Barème ${projLevelLabel}` : 'Barème projection'}
-            />
+      {summary(achieved ? 'bg-emerald-500' : near ? 'bg-amber-500' : 'bg-indigo-500')}
+      {shown && (
+        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-gray-500">
+              Taux {fmtPct(prog.rate)}
+              {!achieved && prog.nextRate != null && <span className="text-amber-600 font-semibold"> → {fmtPct(prog.nextRate)}</span>}
+            </span>
+            <span className="font-bold text-emerald-600">{fmt(prog.currentValue)} RFA</span>
+          </div>
+          {footnote && (
+            <p className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 leading-snug">{footnote}</p>
           )}
-        </>
+          {exclusion?.exclu > 0 && (
+            <p className="text-[11px] text-slate-600 leading-snug">
+              Dont {fmt(exclusion.exclu)} Prodex non rémunéré. Palier sur {fmt(ca)}, RFA sur {fmt(exclusion.remunere)}.
+            </p>
+          )}
+          {onOpenNotice && <ProdexFicheNote onOpen={onOpenNotice} />}
+          <div className="text-[11px] text-gray-500">
+            {achieved ? (
+              <span className="text-emerald-600 font-semibold">Palier maximal atteint</span>
+            ) : prog.nextMin != null ? (
+              <>Encore <strong className="text-gray-800">{fmt(prog.missing)}</strong> pour <strong className="text-emerald-600">+{fmt(prog.projectedGain)}</strong> de RFA · {Math.round(prog.progress)}%</>
+            ) : (
+              <span>Palier atteint</span>
+            )}
+          </div>
+          <Rfa26ProjectionBlock proj={proj} fmt={fmt} fmtPct={fmtPct} title="Projection fin 2026" hint={projLevelLabel || null} />
+          {hasLadder && (
+            <>
+              <Rfa26TierLadder tierGroups={tierGroups} ca={ca} fmt={fmt} fmtPct={fmtPct} levelLabel={levelLabel || 'Barème à date'} />
+              {hasProjLadder && proj && (
+                <Rfa26TierLadder
+                  tierGroups={projTierGroups}
+                  ca={proj.ca || 0}
+                  fmt={fmt}
+                  fmtPct={fmtPct}
+                  levelLabel={projLevelLabel ? `Barème ${projLevelLabel}` : 'Barème projection'}
+                />
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   )
@@ -2484,6 +2465,8 @@ function ClientRfa2026Section({
   const [loading, setLoading] = useState(false)
   const [logos, setLogos] = useState({})
   const [cotisBusy, setCotisBusy] = useState(false)
+  const [lineQuery, setLineQuery] = useState('')
+  const [lineFocus, setLineFocus] = useState(false)
 
   const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
   const fmtPct = (r) => new Intl.NumberFormat('fr-FR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(r || 0)
@@ -2569,6 +2552,12 @@ function ClientRfa2026Section({
   const triItems = Object.entries(rfa.tri || {})
     .filter(([, v]) => (v.ca || 0) > 0)
     .filter(([, v]) => rfa26ParseTiers(v.tiers).length > 0)
+  const lineNeedle = lineQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+  const lineHit = (label) => !lineNeedle || String(label || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().includes(lineNeedle)
+  const lineSuggestions = lineNeedle.length < 1 ? [] : [
+    ...globalItems.filter(([, it]) => (it.ca || 0) > 0 && lineHit(it.label)).map(([, it]) => ({ label: it.label, kind: 'Plateforme' })),
+    ...triItems.filter(([, it]) => lineHit(it.label)).map(([, it]) => ({ label: it.label, kind: 'Tripartite' })),
+  ].slice(0, 8)
   const projected = data.rfa_projected || null
   const projGrand = projected?.totals?.grand_total || null
   const projectedLevel = data.projected_level || null
@@ -3038,15 +3027,43 @@ function ClientRfa2026Section({
           </div>
         )}
 
+        <div className="relative">
+          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Rechercher une ligne</label>
+          <input
+            value={lineQuery}
+            onChange={(e) => setLineQuery(e.target.value)}
+            onFocus={() => setLineFocus(true)}
+            onBlur={() => setTimeout(() => setLineFocus(false), 150)}
+            placeholder="Ex. LUK, Valeo, ACR…"
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          />
+          {lineFocus && lineSuggestions.length > 0 && (
+            <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+              {lineSuggestions.map((s) => (
+                <li key={`${s.kind}-${s.label}`}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50"
+                    onMouseDown={() => setLineQuery(s.label)}
+                  >
+                    <span className="font-medium text-slate-900">{s.label}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{s.kind}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         {globalItems.length > 0 && (
           <div>
             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Plateformes</h4>
             <p className="text-[12px] text-gray-400 mb-3">
-              À date + projection fin d&apos;année (CA · taux · RFA). Cliquez pour le barème.
+              Une ligne par fournisseur. Cliquez pour le barème et la projection.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
               {globalItems
-                .filter(([, it]) => (it.ca || 0) > 0)
+                .filter(([, it]) => (it.ca || 0) > 0 && lineHit(it.label))
                 .map(([key, it]) => {
                   const tRfa = rfa26ParseTiers(it.tiers_rfa)
                   const tBonus = rfa26ParseTiers(it.tiers_bonus)
@@ -3092,6 +3109,7 @@ function ClientRfa2026Section({
                       projTierGroups={projTierGroups}
                       projLevelLabel={projLevelId || null}
                       footnote={challengeNote}
+                      forceOpen={lineNeedle.length >= 2 && lineHit(it.label)}
                     />
                   )
                 })}
@@ -3133,9 +3151,9 @@ function ClientRfa2026Section({
               </p>
             </div>
           )}
-          {triItems.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {triItems.map(([key, it]) => {
+          {triItems.filter(([, it]) => lineHit(it.label)).length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              {triItems.filter(([, it]) => lineHit(it.label)).map(([key, it]) => {
                 const tiers = rfa26ParseTiers(it.tiers)
                 const prog = rfa26TriProgress(it.ca || 0, tiers, it.ca_exclu ? it.ca_remunere : null)
                 if (it.ca_exclu && it.value != null) prog.currentValue = it.value
@@ -3159,6 +3177,7 @@ function ClientRfa2026Section({
                     projectedUnlock={triProjectedUnlock}
                     lockHint={triFullyLocked ? lockHintBase : null}
                     projLevelLabel={projLevelId || null}
+                    forceOpen={lineNeedle.length >= 2 && lineHit(it.label)}
                   />
                 )
               })}
