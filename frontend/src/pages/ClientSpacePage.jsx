@@ -781,10 +781,6 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
             />
           )}
 
-          {mode === 'client' && !isAdherent && (entity.code_union || entity.id) && (
-            <ClientFichePanel codeUnion={entity.code_union || entity.id} />
-          )}
-
           {mode === 'client' && (entity.code_union || entity.id) && (
             <div className="mb-4">
               <ImpayesAdherentBanner
@@ -843,6 +839,19 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
               >
                 📊 Dashboard Pure Data
               </button>
+              {mode === 'client' && !isAdherent && (entity.code_union || entity.id) && (
+                <button
+                  type="button"
+                  onClick={() => setActiveViewTab('fiche')}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                    activeViewTab === 'fiche'
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Fiche et notes
+                </button>
+              )}
             </div>
           </div>
 
@@ -1405,6 +1414,10 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
               codeUnion={mode === 'client' ? entity?.code_union : null}
               groupeClient={mode === 'group' ? entity?.groupe_client : null}
             />
+          )}
+
+          {activeViewTab === 'fiche' && mode === 'client' && !isAdherent && (entity.code_union || entity.id) && (
+            <ClientFichePanel codeUnion={entity.code_union || entity.id} />
           )}
         </>
       )}
@@ -2467,6 +2480,7 @@ function ClientRfa2026Section({
   const [cotisBusy, setCotisBusy] = useState(false)
   const [lineQuery, setLineQuery] = useState('')
   const [lineFocus, setLineFocus] = useState(false)
+  const [summaryOpen, setSummaryOpen] = useState(false)
 
   const fmt = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v || 0)
   const fmtPct = (r) => new Intl.NumberFormat('fr-FR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(r || 0)
@@ -2789,7 +2803,37 @@ function ClientRfa2026Section({
           GOLD_MIN={GOLD_MIN}
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setSummaryOpen((open) => !open)}
+            className="w-full px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-left hover:bg-slate-50"
+            aria-expanded={summaryOpen}
+          >
+            <div className="min-w-[9rem]">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                À date{monthName ? ` · ${monthName}` : ''}
+              </div>
+              <div className="text-lg font-black text-emerald-700 leading-tight">{fmt(grand)}</div>
+              <div className="text-[11px] text-slate-500">
+                CA {fmt(caGlobal)}
+                {isLevelBased && levelId ? ` · ${levelId}` : ''}
+                {cotAmount > 0 && cotFacture ? ` · nette ${fmt(rfaNet)}` : ''}
+              </div>
+            </div>
+            <div className="min-w-[9rem]">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-700">Projection 2026</div>
+              <div className="text-lg font-black text-cyan-800 leading-tight">{projGrand != null ? fmt(projGrand) : '—'}</div>
+              <div className="text-[11px] text-slate-500">
+                CA {caProjectedForCmp != null ? fmt(caProjectedForCmp) : '—'}
+                {cmpDeltaPct != null ? ` · ${cmpDeltaPct >= 0 ? '+' : ''}${cmpDeltaPct.toFixed(1).replace('.', ',')} % vs 2025` : ''}
+              </div>
+            </div>
+            <span className="ml-auto text-xs font-semibold text-slate-500">{summaryOpen ? 'Masquer' : 'Détail'}</span>
+            <svg className={`w-4 h-4 text-slate-400 transition-transform ${summaryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          {summaryOpen && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 border-t border-slate-100">
           <div className="rounded-2xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5">
             <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-3">
               À date{monthName ? ` · ${monthName}` : ''} · réalisé
@@ -3005,6 +3049,8 @@ function ClientRfa2026Section({
               </div>
             )}
           </div>
+        </div>
+          )}
         </div>
 
         {nextObjective && (

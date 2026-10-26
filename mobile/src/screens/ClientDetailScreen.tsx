@@ -57,7 +57,7 @@ const BASE_TABS: { id: TabId; label: string; icon: IconName }[] = [
   { id: 'marques', label: 'Marques', icon: 'pricetags-outline' },
   { id: 'familles', label: 'Familles', icon: 'grid-outline' },
   { id: 'contrat', label: 'Contrat', icon: 'document-text-outline' },
-  { id: 'fiche', label: 'Fiche', icon: 'business-outline' },
+  { id: 'fiche', label: 'Fiche et notes', icon: 'business-outline' },
 ];
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
