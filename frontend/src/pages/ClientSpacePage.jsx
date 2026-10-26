@@ -2288,37 +2288,62 @@ function Rfa26ProgressCard({
   projLevelLabel = null,
   footnote = null,
   forceOpen = false,
+  accent = 'platform',
 }) {
   const [open, setOpen] = useState(false)
+  const [logoErr, setLogoErr] = useState(false)
   const shown = forceOpen || open
   const projectedRfa = proj && proj.value != null ? fmt(proj.value) : '—'
-  const summary = (barClass) => (
-    <>
-      <div className="flex items-center gap-3 min-w-0">
-        {logoPlatform && <CmsPlatformLogo platform={logoPlatform} logos={logos} size={22} />}
-        <span className="font-semibold text-slate-900 text-sm flex-1 min-w-0 truncate">{label}</span>
-        <div className="text-right shrink-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">CA réalisé</div>
-          <div className="text-sm font-semibold tabular-nums text-slate-900">{fmt(ca)}</div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">RFA projetée</div>
-          <div className="text-sm font-semibold tabular-nums text-cyan-800">{projectedRfa}</div>
-        </div>
-        <svg className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${shown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="flex-1 h-2 rounded-full bg-slate-200/80 overflow-hidden">
-          <div className={`h-full rounded-full ${barClass}`} style={{ width: `${Math.min(prog.progress || 0, 100)}%` }} />
-        </div>
-        <span className="w-9 text-right text-[11px] font-semibold tabular-nums text-slate-500">{Math.round(prog.progress || 0)}%</span>
-      </div>
-    </>
-  )
   const achieved = prog.achieved
+  const near = !achieved && prog.nextMin != null && prog.progress >= 80
+  const pct = Math.min(Math.max(prog.progress || 0, 0), 100)
+  const fillClass = projectedUnlock
+    ? 'bg-cyan-300'
+    : locked
+      ? 'bg-amber-200'
+      : achieved
+        ? 'bg-emerald-300'
+        : near
+          ? 'bg-amber-300'
+          : accent === 'tri'
+            ? 'bg-violet-300'
+            : 'bg-sky-300'
+  const marqueSlug = !logoPlatform ? pdSlug(label) : ''
+  const summary = (
+    <div className="relative min-h-[52px]">
+      <div className="absolute inset-0 bg-slate-50" />
+      <div className={`absolute inset-y-0 left-0 ${fillClass}`} style={{ width: `${pct}%` }} />
+      <div className="relative flex items-center gap-3 px-3 py-2.5 min-w-0">
+        {logoPlatform ? (
+          <CmsPlatformLogo platform={logoPlatform} logos={logos} size={32} />
+        ) : marqueSlug && !logoErr ? (
+          <img
+            src={`/marques/${marqueSlug}.png`}
+            alt=""
+            onError={() => setLogoErr(true)}
+            className="h-8 w-8 rounded-md object-contain bg-white border border-black/5 shrink-0"
+          />
+        ) : (
+          <span className="h-8 w-8 rounded-md shrink-0 flex items-center justify-center text-[10px] font-black text-white bg-violet-600">
+            {pdInitials(label)}
+          </span>
+        )}
+        <span className="font-semibold text-slate-950 text-sm flex-1 min-w-0 truncate">{label}</span>
+        <div className="text-right shrink-0">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">CA réalisé</div>
+          <div className="text-sm font-semibold tabular-nums text-slate-950">{fmt(ca)}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">RFA projetée</div>
+          <div className="text-sm font-semibold tabular-nums text-slate-950">{projectedRfa}</div>
+        </div>
+        <span className="w-10 text-right text-xs font-bold tabular-nums text-slate-700">{Math.round(pct)}%</span>
+        <svg className={`w-4 h-4 shrink-0 text-slate-500 transition-transform ${shown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </div>
+    </div>
+  )
   const hasLadder = tierGroups.some((g) => g.tiers?.length > 0)
   const hasProjLadder = projTierGroups && projTierGroups.some((g) => g.tiers?.length > 0)
-  const near = !achieved && prog.nextMin != null && prog.progress >= 80
 
   if (!hasTiers) {
     return (
@@ -2347,12 +2372,12 @@ function Rfa26ProgressCard({
     if (rate === 0 && sorted[0]) rate = sorted[0].rate
     return (
       <div
-        className="rounded-xl border-2 border-cyan-300 bg-white px-3 py-2.5 cursor-pointer hover:border-cyan-400"
+        className="rounded-xl border-2 border-cyan-300 bg-white overflow-hidden cursor-pointer hover:border-cyan-400"
         onClick={() => setOpen((o) => !o)}
       >
-        {summary('bg-cyan-500')}
+        {summary}
         {shown && (
-          <div className="mt-3 pt-3 border-t border-cyan-100" onClick={(e) => e.stopPropagation()}>
+          <div className="px-3 pb-3 pt-3 border-t border-cyan-100" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">À date : verrouillé</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-300">Fin 2026 : débloqué</span>
@@ -2386,12 +2411,12 @@ function Rfa26ProgressCard({
     const potentialValue = rate * ca
     return (
       <div
-        className="rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 cursor-pointer hover:border-amber-400"
+        className="rounded-xl border border-amber-300 bg-white overflow-hidden cursor-pointer hover:border-amber-400"
         onClick={() => setOpen((o) => !o)}
       >
-        {summary('bg-amber-400')}
+        {summary}
         {shown && (
-          <div className="mt-3 pt-3 border-t border-amber-200" onClick={(e) => e.stopPropagation()}>
+          <div className="px-3 pb-3 pt-3 border-t border-amber-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="text-amber-800 font-semibold">Réservé Silver &amp; Gold</span>
               {potentialValue > 0 && (
@@ -2409,14 +2434,14 @@ function Rfa26ProgressCard({
 
   return (
     <div
-      className={`rounded-xl border bg-white px-3 py-2.5 cursor-pointer hover:border-indigo-300 ${
-        achieved ? 'border-emerald-300 bg-emerald-50/40' : near ? 'border-amber-300 bg-amber-50/30' : 'border-gray-200'
-      }`}
+      className={`rounded-xl border bg-white overflow-hidden cursor-pointer ${
+        accent === 'tri' ? 'border-violet-200 hover:border-violet-400' : 'border-sky-200 hover:border-sky-400'
+      } ${achieved ? 'border-emerald-300' : near ? 'border-amber-300' : ''}`}
       onClick={() => setOpen((o) => !o)}
     >
-      {summary(achieved ? 'bg-emerald-500' : near ? 'bg-amber-500' : 'bg-indigo-500')}
+      {summary}
       {shown && (
-        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2" onClick={(e) => e.stopPropagation()}>
+        <div className="px-3 pb-3 pt-3 border-t border-slate-100 space-y-2" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-500">
               Taux {fmtPct(prog.rate)}
@@ -2562,7 +2587,6 @@ function ClientRfa2026Section({
   const SILVER_MIN = 100001
   const GOLD_MIN = 300001
   const gapToSilver = Math.max(SILVER_MIN - caGlobal, 0)
-  const gapToGold = Math.max(GOLD_MIN - caGlobal, 0)
   const triItems = Object.entries(rfa.tri || {})
     .filter(([, v]) => (v.ca || 0) > 0)
     .filter(([, v]) => rfa26ParseTiers(v.tiers).length > 0)
@@ -2619,46 +2643,6 @@ function ClientRfa2026Section({
     ? data.rfa_projected_net
     : (projGrand != null ? (cotFacture ? Math.max(projGrand - cotAmount, 0) : projGrand) : null)
 
-  const platformOpps = globalItems
-    .filter(([, it]) => (it.ca || 0) > 0)
-    .map(([key, it]) => {
-      const tRfa = rfa26ParseTiers(it.tiers_rfa)
-      const tBonus = rfa26ParseTiers(it.tiers_bonus)
-      const prog = rfa26GlobalProgress(it.ca || 0, tRfa, tBonus, it.ca_exclu ? it.ca_remunere : null)
-      return { key, label: it.label, prog }
-    })
-    .filter((x) => x.prog.nextMin != null && x.prog.projectedGain > 0)
-    .sort((a, b) => b.prog.projectedGain - a.prog.projectedGain)
-  const bestOpp = platformOpps[0] || null
-
-  let nextObjective = null
-  if (isLevelBased && levelId === 'CLASSIQUE' && gapToSilver > 0) {
-    nextObjective = {
-      title: 'Objectif : Silver',
-      body: `Encore ${fmt(gapToSilver)} de CA global pour débloquer les tripartites.`,
-      progress: Math.min((caGlobal / SILVER_MIN) * 100, 100),
-    }
-  } else if (isLevelBased && levelId === 'SILVER' && gapToGold > 0) {
-    nextObjective = {
-      title: 'Objectif : Gold',
-      body: `Encore ${fmt(gapToGold)} de CA global pour le bonus Union supérieur.`,
-      progress: Math.min((caGlobal / GOLD_MIN) * 100, 100),
-    }
-  } else if (bestOpp) {
-    nextObjective = {
-      title: `Prochain palier · ${bestOpp.label}`,
-      body: `Encore ${fmt(bestOpp.prog.missing)} pour +${fmt(bestOpp.prog.projectedGain)} de RFA.`,
-      progress: bestOpp.prog.progress,
-    }
-  } else {
-    nextObjective = {
-      title: 'Objectifs atteints',
-      body: 'Paliers maximaux atteints sur les plateformes suivies.',
-      progress: 100,
-      done: true,
-    }
-  }
-
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="bg-gradient-to-r from-indigo-700 to-indigo-600 px-5 py-4">
@@ -2690,6 +2674,30 @@ function ClientRfa2026Section({
       </div>
 
       <div className="p-5 space-y-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-2xl bg-slate-900 text-white px-4 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Chiffre 2025</div>
+            <div className="mt-1 text-2xl font-black tabular-nums leading-none">{caN1 != null ? fmt(caN1) : '—'}</div>
+            <div className="mt-2 text-[11px] text-slate-400">CA complet · vue RFA</div>
+          </div>
+          <div className="rounded-2xl bg-emerald-700 text-white px-4 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-100">Chiffre 2026</div>
+            <div className="mt-1 text-2xl font-black tabular-nums leading-none">{fmt(caGlobal)}</div>
+            <div className="mt-2 text-[11px] text-emerald-100">
+              À date{monthName ? ` · ${monthName}` : ''}
+              {isLevelBased && levelId ? ` · ${levelId}` : ''}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-cyan-800 text-white px-4 py-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-cyan-100">Projection RFA</div>
+            <div className="mt-1 text-2xl font-black tabular-nums leading-none">{projGrand != null ? fmt(projGrand) : '—'}</div>
+            <div className="mt-2 text-[11px] text-cyan-100">
+              {projLabel || 'Fin 2026'}
+              {cotAmount > 0 && cotFacture && projNet != null ? ` · nette ${fmt(projNet)}` : ''}
+            </div>
+          </div>
+        </div>
+
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] text-amber-900">
           Chiffres estimatifs — module en validation. Ne pas communiquer tels quels aux adhérents.
         </div>
@@ -2810,26 +2818,8 @@ function ClientRfa2026Section({
             className="w-full px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-left hover:bg-slate-50"
             aria-expanded={summaryOpen}
           >
-            <div className="min-w-[9rem]">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-                À date{monthName ? ` · ${monthName}` : ''}
-              </div>
-              <div className="text-lg font-black text-emerald-700 leading-tight">{fmt(grand)}</div>
-              <div className="text-[11px] text-slate-500">
-                CA {fmt(caGlobal)}
-                {isLevelBased && levelId ? ` · ${levelId}` : ''}
-                {cotAmount > 0 && cotFacture ? ` · nette ${fmt(rfaNet)}` : ''}
-              </div>
-            </div>
-            <div className="min-w-[9rem]">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-700">Projection 2026</div>
-              <div className="text-lg font-black text-cyan-800 leading-tight">{projGrand != null ? fmt(projGrand) : '—'}</div>
-              <div className="text-[11px] text-slate-500">
-                CA {caProjectedForCmp != null ? fmt(caProjectedForCmp) : '—'}
-                {cmpDeltaPct != null ? ` · ${cmpDeltaPct >= 0 ? '+' : ''}${cmpDeltaPct.toFixed(1).replace('.', ',')} % vs 2025` : ''}
-              </div>
-            </div>
-            <span className="ml-auto text-xs font-semibold text-slate-500">{summaryOpen ? 'Masquer' : 'Détail'}</span>
+            <span className="text-sm font-semibold text-slate-800">Cotisation, niveau et comparaison 2025</span>
+            <span className="ml-auto text-xs font-semibold text-slate-500">{summaryOpen ? 'Masquer' : 'Ouvrir'}</span>
             <svg className={`w-4 h-4 text-slate-400 transition-transform ${summaryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
           </button>
           {summaryOpen && (
@@ -3053,26 +3043,6 @@ function ClientRfa2026Section({
           )}
         </div>
 
-        {nextObjective && (
-          <div className={`rounded-2xl border px-4 py-3.5 ${nextObjective.done ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50/50'}`}>
-            <div className="flex items-start gap-3">
-              <div className={`mt-0.5 w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-sm ${nextObjective.done ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
-                {nextObjective.done ? '✓' : '🎯'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className={`text-sm font-bold ${nextObjective.done ? 'text-emerald-900' : 'text-amber-950'}`}>{nextObjective.title}</div>
-                <p className={`text-[13px] mt-0.5 ${nextObjective.done ? 'text-emerald-800' : 'text-amber-900/90'}`}>{nextObjective.body}</p>
-                <div className="mt-2.5 h-2.5 rounded-full bg-white/70 border border-black/5 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${nextObjective.done ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                    style={{ width: `${Math.min(nextObjective.progress || 0, 100)}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="relative">
           <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Rechercher une ligne</label>
           <input
@@ -3103,7 +3073,7 @@ function ClientRfa2026Section({
 
         {globalItems.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Plateformes</h4>
+            <h4 className="text-xs font-bold text-sky-700 uppercase tracking-wider mb-1">Plateformes</h4>
             <p className="text-[12px] text-gray-400 mb-3">
               Une ligne par fournisseur. Cliquez pour le barème et la projection.
             </p>
@@ -3163,8 +3133,8 @@ function ClientRfa2026Section({
           </div>
         )}
 
-        <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-4">
-          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Tripartites</h4>
+        <div className="rounded-xl border border-violet-100 bg-white p-4">
+          <h4 className="text-xs font-bold text-violet-700 uppercase tracking-wider mb-1">Tripartites</h4>
           <p className="text-[12px] text-gray-400 mb-3">
             {triProjectedUnlock
               ? 'À date encore Classique — mais la projection Silver les débloque (cartes cyan)'
@@ -3211,6 +3181,7 @@ function ClientRfa2026Section({
                     logoPlatform={null}
                     logos={logos}
                     label={it.label}
+                    accent="tri"
                     ca={it.ca || 0}
                     prog={prog}
                     hasTiers={tiers.length > 0}
