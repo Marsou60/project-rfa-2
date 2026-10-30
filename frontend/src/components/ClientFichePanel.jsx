@@ -21,7 +21,47 @@ function formatWhen(value) {
   return date.toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-export default function ClientFichePanel({ codeUnion, tone = 'light', showIdentity = true }) {
+export function MissingDocsAlert({ codeUnion, onOpen }) {
+  const [fiche, setFiche] = useState(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    let cancel = false
+    setFiche(null)
+    setOpen(false)
+    nathalieGetClientDetail(codeUnion)
+      .then((detail) => {
+        if (cancel) return
+        const next = detail?.client || null
+        setFiche(next)
+        if (next?.missing_docs?.length) setOpen(true)
+      })
+      .catch(() => {})
+    return () => { cancel = true }
+  }, [codeUnion])
+
+  const missing = fiche?.missing_docs || []
+  if (!open || missing.length === 0) return null
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4 bg-slate-950/60" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 text-gray-900 shadow-xl">
+        <p className="text-xs uppercase tracking-wide text-red-500 font-bold">Document manquant</p>
+        <p className="mt-2 text-lg font-bold">Il manque {missing.join(', ')} sur {fiche?.nom_client || codeUnion}.</p>
+        <p className="mt-1 text-sm text-gray-500">Vous pouvez déposer la pièce depuis cette fiche.</p>
+        <button
+          type="button"
+          onClick={() => { setOpen(false); onOpen?.() }}
+          className="mt-4 w-full rounded-xl bg-red-600 text-white font-semibold py-2.5"
+        >
+          Voir la fiche
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default function ClientFichePanel({ codeUnion, tone = 'light', showIdentity = true, showMissingAlert = true }) {
   const dark = tone === 'dark'
   const [fiche, setFiche] = useState(null)
   const [notes, setNotes] = useState([])
@@ -147,7 +187,7 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
       {loading ? <p className={`text-sm ${muted}`}>Chargement de la fiche…</p> : null}
       {error ? <p className="text-sm text-red-500">{error}</p> : null}
 
-      {alertOpen && missing.length > 0 && (
+      {showMissingAlert && alertOpen && missing.length > 0 && (
         <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4 bg-slate-950/60" role="dialog" aria-modal="true">
           <div className={`w-full max-w-md rounded-2xl p-5 shadow-xl ${dark ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'}`}>
             <p className="text-xs uppercase tracking-wide text-red-500 font-bold">Document manquant</p>

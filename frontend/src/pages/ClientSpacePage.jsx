@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { getEntities, getEntityFull, getSupplierLogos, getImageUrl, exportEntityPdf, getContractPdfMeta, downloadContractPdf, getSmartPlans, getCotisations, getBonuses, getClientMonthlyEvolution, getPureDataCumulativeClientDashboard, getClientRfa2026, upsertCotisation } from '../api/client'
 import ImpayesAdherentBanner from '../components/ImpayesAdherentBanner'
-import ClientFichePanel from '../components/ClientFichePanel'
+import ClientFichePanel, { MissingDocsAlert } from '../components/ClientFichePanel'
 import ClientFusionControl from '../components/ClientFusionControl'
 import { useSupplierFilter } from '../context/SupplierFilterContext'
 import AdsTicker from '../components/AdsTicker'
@@ -781,6 +781,13 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
             />
           )}
 
+          {mode === 'client' && !isAdherent && (entity.code_union || entity.id) && (
+            <MissingDocsAlert
+              codeUnion={entity.code_union || entity.id}
+              onOpen={() => setActiveViewTab('fiche')}
+            />
+          )}
+
           {mode === 'client' && (entity.code_union || entity.id) && (
             <div className="mb-4">
               <ImpayesAdherentBanner
@@ -1417,7 +1424,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
           )}
 
           {activeViewTab === 'fiche' && mode === 'client' && !isAdherent && (entity.code_union || entity.id) && (
-            <ClientFichePanel codeUnion={entity.code_union || entity.id} />
+            <ClientFichePanel codeUnion={entity.code_union || entity.id} showMissingAlert={false} />
           )}
         </>
       )}
@@ -2210,61 +2217,13 @@ function Rfa26ProjectionBlock({ proj, fmt, fmtPct, title = 'Projection fin 2026'
   )
 }
 
-function Rfa26Readme({ isLevelBased, contractName, fmt, SILVER_MIN, GOLD_MIN }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-left"
-      >
-        <span className="text-sm font-bold text-indigo-900">Lisez-moi — comment lire cette page</span>
-        <svg className={`w-4 h-4 text-indigo-500 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-      </button>
-      {open && (
-        <div className="px-3.5 pb-3.5 text-[13px] text-indigo-950/90 space-y-3 border-t border-indigo-100 pt-3">
-          <p>
-            Contrat : <strong>{contractName}</strong>. Les montants sont estimés à partir du Pure Data cumulé.
-          </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
-            <div className="rounded-lg bg-white border border-emerald-200 px-2.5 py-2">
-              <div className="font-bold text-emerald-700">Vert</div>
-              <div className="text-slate-600">RFA / CA <strong>à date</strong>, ou projection <strong>en hausse</strong> vs N-1</div>
-            </div>
-            <div className="rounded-lg bg-white border border-cyan-300 px-2.5 py-2">
-              <div className="font-bold text-cyan-700">Cyan</div>
-              <div className="text-slate-600">Projection <strong>fin d&apos;année</strong> si le rythme se maintient</div>
-            </div>
-            <div className="rounded-lg bg-white border border-amber-300 px-2.5 py-2">
-              <div className="font-bold text-amber-700">Ambre / Rose</div>
-              <div className="text-slate-600">Action à faire, ou projection <strong>en baisse</strong> vs N-1</div>
-            </div>
-          </div>
-          {isLevelBased ? (
-            <div className="space-y-1.5">
-              <p className="font-semibold text-indigo-900">Logique Adhérents 2026 (CA global ACR+Alliance+DCA+Exadis)</p>
-              <ul className="list-disc pl-4 space-y-1 text-slate-700">
-                <li><strong>Classique</strong> (≥ 25 k€) : RFA + Bonus plateformes. Pas de tripartites.</li>
-                <li><strong>Silver</strong> (≥ {fmt(SILVER_MIN)}) : meilleurs taux + <strong>tripartites débloquées</strong>.</li>
-                <li><strong>Gold</strong> (≥ {fmt(GOLD_MIN)}) : bonus Union supérieur.</li>
-                <li><strong>EXADIS / Prodex</strong> : le CA Prodex compte pour le palier, la RFA se calcule sur le CA hors Prodex.</li>
-              </ul>
-              <p className="text-slate-600">
-                Si votre projection dépasse le seuil Silver/Gold, la page affiche déjà le niveau et les tripartites <strong>comme en fin d&apos;année</strong> (bloc cyan), même si à date vous n&apos;y êtes pas encore.
-              </p>
-            </div>
-          ) : (
-            <p className="text-slate-700">
-              Contrat spécifique : les paliers affichés sont ceux de <strong>{contractName}</strong> (pas Classique/Silver/Gold).
-              Tripartites et plateformes suivent ce contrat uniquement.
-              Chez EXADIS, le CA Prodex compte pour le palier et il est retiré du montant versé.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  )
+function triPlatformFromKey(key) {
+  const k = String(key || '').toUpperCase()
+  if (k.startsWith('TRI_ACR')) return 'ACR'
+  if (k.startsWith('TRI_DCA')) return 'DCA'
+  if (k.startsWith('TRI_EXADIS')) return 'EXADIS'
+  if (k.startsWith('TRI_ALLIANCE') || k === 'TRI_SCHAEFFLER' || k.startsWith('TRI_PURFLUX')) return 'ALLIANCE'
+  return ''
 }
 
 function Rfa26ProgressCard({
@@ -2289,6 +2248,7 @@ function Rfa26ProgressCard({
   footnote = null,
   forceOpen = false,
   accent = 'platform',
+  platformLogo = '',
 }) {
   const [open, setOpen] = useState(false)
   const [logoErr, setLogoErr] = useState(false)
@@ -2314,6 +2274,7 @@ function Rfa26ProgressCard({
       <div className="absolute inset-0 bg-slate-50" />
       <div className={`absolute inset-y-0 left-0 ${fillClass}`} style={{ width: `${pct}%` }} />
       <div className="relative flex items-center gap-3 px-3 py-2.5 min-w-0">
+        {platformLogo ? <CmsPlatformLogo platform={platformLogo} logos={logos} size={28} /> : null}
         {logoPlatform ? (
           <CmsPlatformLogo platform={logoPlatform} logos={logos} size={32} />
         ) : marqueSlug && !logoErr ? (
@@ -2585,7 +2546,6 @@ function ClientRfa2026Section({
   const levelId = isLevelBased ? (contractLevel?.id || null) : null
   const triEnabled = isLevelBased ? contractLevel?.tripartites_enabled === true : true
   const SILVER_MIN = 100001
-  const GOLD_MIN = 300001
   const gapToSilver = Math.max(SILVER_MIN - caGlobal, 0)
   const triItems = Object.entries(rfa.tri || {})
     .filter(([, v]) => (v.ca || 0) > 0)
@@ -2698,10 +2658,6 @@ function ClientRfa2026Section({
           </div>
         </div>
 
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] text-amber-900">
-          Chiffres estimatifs — module en validation. Ne pas communiquer tels quels aux adhérents.
-        </div>
-
         {data.fusion?.codes?.length > 1 && (
           <div className="rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-2.5 text-[13px] text-sky-950">
             <strong>Comptes fusionnés.</strong> Le chiffre d’affaires de {data.fusion.codes.join(' + ')}
@@ -2802,14 +2758,6 @@ function ClientRfa2026Section({
             </div>
           </div>
         )}
-
-        <Rfa26Readme
-          isLevelBased={isLevelBased}
-          contractName={contractName}
-          fmt={fmt}
-          SILVER_MIN={SILVER_MIN}
-          GOLD_MIN={GOLD_MIN}
-        />
 
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           <button
@@ -3182,6 +3130,7 @@ function ClientRfa2026Section({
                     logos={logos}
                     label={it.label}
                     accent="tri"
+                    platformLogo={triPlatformFromKey(key)}
                     ca={it.ca || 0}
                     prog={prog}
                     hasTiers={tiers.length > 0}
