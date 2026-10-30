@@ -2226,6 +2226,63 @@ function triPlatformFromKey(key) {
   return ''
 }
 
+const MARQUE_SKIP = new Set([
+  'ACR', 'DCA', 'EXADIS', 'ALLIANCE', 'GLOBAL',
+  'FREINAGE', 'EMBRAYAGE', 'FILTRE', 'FILTRATION', 'DISTRIBUTION',
+  'ETANCHEITE', 'THERMIQUE', 'PSD', 'MT', 'AMORTISSEURS', 'ROULEMENTS',
+  'ADD', 'MACHINE', 'TOURNANTE', 'LIAISON', 'SOL', 'FILTER',
+])
+const MARQUE_FILE_ALIASES = {
+  KYB: 'KAYABA',
+  COOPERS: 'COOPERSFIAAM',
+  MANN: 'KNECHT',
+}
+
+function brandSlugCandidates(fieldKey, label) {
+  const text = String(label || '')
+  const paren = [...text.matchAll(/\(([^)]+)\)/g)].map((match) => match[1])
+  const withoutParen = text.replace(/\([^)]*\)/g, ' ')
+  const afterDash = withoutParen.split(/[–—-]/).slice(1).join(' ')
+  const keyRest = String(fieldKey || '')
+    .replace(/^TRI_/, '')
+    .replace(/^(ACR|DCA|EXADIS|ALLIANCE)_/, '')
+    .replace(/_/g, ' ')
+  const chunks = [afterDash, keyRest, ...paren, withoutParen]
+  const out = []
+  for (const chunk of chunks) {
+    for (const part of String(chunk).split(/[^A-Za-z0-9]+/)) {
+      const slug = pdSlug(part)
+      if (!slug || slug.length < 2 || MARQUE_SKIP.has(slug)) continue
+      const file = MARQUE_FILE_ALIASES[slug] || slug
+      if (!out.includes(file)) out.push(file)
+    }
+  }
+  return out
+}
+
+function MarqueLogo({ label, fieldKey, size = 32 }) {
+  const candidates = brandSlugCandidates(fieldKey, label)
+  const [index, setIndex] = useState(0)
+  const slug = candidates[index]
+  const px = `${size}px`
+  if (!slug) {
+    return (
+      <span className="rounded-md shrink-0 flex items-center justify-center text-[10px] font-black text-white bg-violet-600" style={{ width: px, height: px }}>
+        {pdInitials(label)}
+      </span>
+    )
+  }
+  return (
+    <img
+      src={`/marques/${slug}.png`}
+      alt=""
+      onError={() => setIndex((current) => current + 1)}
+      className="rounded-md object-contain bg-white border border-black/5 shrink-0"
+      style={{ width: px, height: px }}
+    />
+  )
+}
+
 function Rfa26ProgressCard({
   logoPlatform,
   logos,
@@ -2246,13 +2303,12 @@ function Rfa26ProgressCard({
   projTierGroups = null,
   projLevelLabel = null,
   footnote = null,
-  forceOpen = false,
   accent = 'platform',
   platformLogo = '',
+  fieldKey = '',
 }) {
   const [open, setOpen] = useState(false)
-  const [logoErr, setLogoErr] = useState(false)
-  const shown = forceOpen || open
+  const shown = open
   const projectedRfa = proj && proj.value != null ? fmt(proj.value) : '—'
   const achieved = prog.achieved
   const near = !achieved && prog.nextMin != null && prog.progress >= 80
@@ -2268,7 +2324,6 @@ function Rfa26ProgressCard({
           : accent === 'tri'
             ? 'bg-violet-300'
             : 'bg-sky-300'
-  const marqueSlug = !logoPlatform ? pdSlug(label) : ''
   const summary = (
     <div className="relative min-h-[52px]">
       <div className="absolute inset-0 bg-slate-50" />
@@ -2277,17 +2332,8 @@ function Rfa26ProgressCard({
         {platformLogo ? <CmsPlatformLogo platform={platformLogo} logos={logos} size={28} /> : null}
         {logoPlatform ? (
           <CmsPlatformLogo platform={logoPlatform} logos={logos} size={32} />
-        ) : marqueSlug && !logoErr ? (
-          <img
-            src={`/marques/${marqueSlug}.png`}
-            alt=""
-            onError={() => setLogoErr(true)}
-            className="h-8 w-8 rounded-md object-contain bg-white border border-black/5 shrink-0"
-          />
         ) : (
-          <span className="h-8 w-8 rounded-md shrink-0 flex items-center justify-center text-[10px] font-black text-white bg-violet-600">
-            {pdInitials(label)}
-          </span>
+          <MarqueLogo label={label} fieldKey={fieldKey} size={32} />
         )}
         <span className="font-semibold text-slate-950 text-sm flex-1 min-w-0 truncate">{label}</span>
         <div className="text-right shrink-0">
@@ -3056,7 +3102,7 @@ function ClientRfa2026Section({
                     : null
                   return (
                     <Rfa26ProgressCard
-                      key={key}
+                      key={`${key}:${lineNeedle}`}
                       logoPlatform={key.replace('GLOBAL_', '')}
                       logos={logos}
                       label={it.label}
@@ -3073,7 +3119,6 @@ function ClientRfa2026Section({
                       projTierGroups={projTierGroups}
                       projLevelLabel={projLevelId || null}
                       footnote={challengeNote}
-                      forceOpen={lineNeedle.length >= 2 && lineHit(it.label)}
                     />
                   )
                 })}
@@ -3125,12 +3170,13 @@ function ClientRfa2026Section({
                 const proj = pjt ? { ca: pjt.ca || 0, rate: pjt.rate || 0, value: pjt.value || 0 } : null
                 return (
                   <Rfa26ProgressCard
-                    key={key}
+                    key={`${key}:${lineNeedle}`}
                     logoPlatform={null}
                     logos={logos}
                     label={it.label}
                     accent="tri"
                     platformLogo={triPlatformFromKey(key)}
+                    fieldKey={key}
                     ca={it.ca || 0}
                     prog={prog}
                     hasTiers={tiers.length > 0}
@@ -3143,7 +3189,6 @@ function ClientRfa2026Section({
                     projectedUnlock={triProjectedUnlock}
                     lockHint={triFullyLocked ? lockHintBase : null}
                     projLevelLabel={projLevelId || null}
-                    forceOpen={lineNeedle.length >= 2 && lineHit(it.label)}
                   />
                 )
               })}
