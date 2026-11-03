@@ -59,26 +59,29 @@ PHOTO_SLOTS = [
 # ── Constantes ───────────────────────────────────────────────────────────────
 
 SPREADSHEET_ID = "1C9UzZlLm6fnjNe4zbXfkDGqMEzbSQrHTuEP0BALN7X0"
-DRIVE_ROOT_ID = "1MYSliOgtVE89YJ4aUqPVj0NdTkx_HeS5"
+# Drive partagé 02_ADHERENTS (les anciens dossiers Mon Drive sont des copies OLD_, en lecture seule).
+DRIVE_ROOT_ID = "0AF_M3TO22mtmUk9PVA"
 
 SHEET_CLIENTS    = "LISTE CLIENT 2"
 # Feuille contacts fournisseurs (si renommée, définir CONTACT_FOURNISSEURS_SHEET dans .env)
 SHEET_SUPPLIERS  = os.environ.get("CONTACT_FOURNISSEURS_SHEET", "CONTACT FOURNISSEURS ")
 SHEET_TASKS      = "TACHE CLIENTS"
 
-# IDs des dossiers Drive par groupe (sous ADHERENTS)
+# IDs des dossiers du drive partagé 02_ADHERENTS.
+# EMERIC n'a pas de dossier : il retombe sur INDEPENDANTS.
 DRIVE_FOLDERS = {
-    "INDEPENDANT": "1GRcpfjc4PqGQT1cwMRFn1LFZ2suctiwk",
-    "MAGASIN":     "1GRcpfjc4PqGQT1cwMRFn1LFZ2suctiwk",
-    "JUMBO":       "1f3st2KMi-OvIjgK7PDvRhe8Im2HFSmGw",
-    "EMERIC":      "1Ko3a16Ppn_VrVLPjHKgXHs2lMjN28kEL",
-    "APA":         "1IDG1y8w2ccLgJid0w2D-QxrAlqpoBv5C",
-    "MOURAD":      "1p3bZxj1F-NE6CclZKQ5fNhE1590sZ3X8",
-    "DISCOUNT":    "1tPB595WC7alCuhtVGaJDbyrwZjWoWLYN",
-    "LYONNAIS":    "1d57aZjaFRw8RSDbosWNWgCLM3IFQd0PE",
-    "STARCOM":     "1cljTqnufHf6PC6xJ7kGn6jIYRkPa0MZF",
-    "CENTER":      "1i7eoeaRvZeKXHq_yZE9sCkoEzkFs4ZQV",
-    "CODIFA":      "1Ko3a16Ppn_VrVLPjHKgXHs2lMjN28kEL",
+    "INDEPENDANT": "1zTmBQtVoayosD9hPNwwdh9bjHQFTQfTy",
+    "MAGASIN":     "1zTmBQtVoayosD9hPNwwdh9bjHQFTQfTy",
+    "JUMBO":       "1imO-aK6Yk7kreawJbIMng_oA2tJMDPgm",
+    "APA":         "1v5WrP_HQVEajBAz-x4cVkJhJUWwBp8UO",
+    "MOURAD":      "1v-5so-0_H1M0QQ-Ju9IBCRSUVpAoFbqJ",
+    "DISCOUNT":    "15dYbUZFbEm5zgSGWUHGpYqoJxO5gmW87",
+    "LYONNAIS":    "1UTNGgwG527bFtpBNxhoeshw6npMKjddj",
+    "STARCOM":     "1z3LLX7IiyOdOtL9XkkzXd6n3KS04lD6E",
+    "CENTER":      "1B7ju5iZA1p5-yvqy5VasVb7lW6k7e33d",
+    "CODIFA":      "1wbD97TC9bTbxyZnZmhFFvMXW8aW3gSTT",
+    "LIFTING":     "1_OpVklbkKnYErAgNrFPg8CrSdJSjkQKM",
+    "SMP":         "1r-dwefDyLD9OWmhAqrlEC-rZZcFyN_S7",
 }
 
 # LISTE CLIENT 2 — colonnes figées (0 = A). Ne pas décaler.
@@ -502,26 +505,40 @@ def get_next_code_union() -> str:
     return nathalie_adherents.next_code_union("M")
 
 
-def _drive_parent_exists(drive, folder_id: str) -> bool:
+def _drive_can_add(drive, folder_id: str) -> bool:
+    """Le dossier existe et le compte peut y créer un fichier (pas une copie OLD_ en lecture seule)."""
+    if not folder_id:
+        return False
     try:
         meta = drive.files().get(
             fileId=folder_id,
-            fields="id,trashed",
+            fields="id,trashed,capabilities(canAddChildren)",
             supportsAllDrives=True,
         ).execute()
-        return not meta.get("trashed")
     except Exception:
         return False
+    if meta.get("trashed"):
+        return False
+    return bool((meta.get("capabilities") or {}).get("canAddChildren"))
 
 
 def _resolve_drive_parent(drive, parent_id: str) -> str:
-    """Si l'ID mappé a été déplacé / supprimé, retombe sur INDEPENDANTS puis ADHERENTS."""
-    if parent_id and _drive_parent_exists(drive, parent_id):
+    """Refuse un parent visible mais non modifiable (copies OLD_ après le rangement)."""
+    if _drive_can_add(drive, parent_id):
         return parent_id
     independants = DRIVE_FOLDERS.get("INDEPENDANT") or DRIVE_ROOT_ID
-    if _drive_parent_exists(drive, independants):
+    if _drive_can_add(drive, independants):
         return independants
-    return DRIVE_ROOT_ID
+    if _drive_can_add(drive, DRIVE_ROOT_ID):
+        return DRIVE_ROOT_ID
+    raise PermissionError(
+        "Aucun dossier du drive 02_ADHERENTS n'est accessible en écriture."
+    )
+
+
+def _client_folder_name(code: str, nom: str) -> str:
+    """Même forme que les dossiers rangés : « M0343 _ NOM »."""
+    return f"{(code or '').strip()} _ {(nom or '').strip()}".strip()
 
 
 def create_drive_folder(parent_id: str, name: str) -> str:
@@ -629,7 +646,11 @@ def score_drive_folder_name(folder_name: str, code_union: str, nom_client: str =
     nom = (nom_client or "").strip().upper()
     rest = name.split(":", 1)[-1].strip() if ":" in name else name
     name_ok = _drive_names_overlap(nom, rest) if nom else True
-    if name.startswith(f"{code} :") or name.startswith(f"{code}:"):
+    if (
+        name.startswith(f"{code} :")
+        or name.startswith(f"{code}:")
+        or name.startswith(f"{code} _")
+    ):
         return 100 if name_ok else 15
     if name.startswith(f"{code} ") or name == code:
         return 80 if name_ok else 15
@@ -655,20 +676,26 @@ def _drive_names_overlap(nom_client: str, folder_rest: str) -> bool:
     return bool(tokens) and any(t in rest for t in tokens)
 
 
+def _drive_list(drive, **kwargs):
+    """Liste y compris les drives partagés. Sans corpora=allDrives, 02_ADHERENTS est invisible."""
+    try:
+        return drive.files().list(
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            corpora="allDrives",
+            **kwargs,
+        ).execute()
+    except Exception:
+        return drive.files().list(**kwargs).execute()
+
+
 def _list_drive_files(drive, **kwargs) -> List[Dict[str, Any]]:
     params = {
         "pageSize": kwargs.pop("pageSize", 50),
         "fields": kwargs.pop("fields", "files(id,name,mimeType,webViewLink,parents)"),
         **kwargs,
     }
-    try:
-        return drive.files().list(
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-            **params,
-        ).execute().get("files") or []
-    except Exception:
-        return drive.files().list(**params).execute().get("files") or []
+    return _drive_list(drive, **params).get("files") or []
 
 
 def _search_drive_folders(drive, code_union: str) -> List[Dict[str, Any]]:
@@ -696,11 +723,7 @@ def _list_folder_children(drive, folder_id: str) -> List[Dict[str, Any]]:
         if token:
             kwargs["pageToken"] = token
         try:
-            resp = drive.files().list(
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True,
-                **kwargs,
-            ).execute()
+            resp = _drive_list(drive, **kwargs)
         except Exception:
             if files:
                 raise
@@ -793,22 +816,39 @@ def _drive_folder_state(drive, folder_id: str) -> str:
 
 def _refresh_client_drive_docs_now(client: Dict[str, Any]) -> Dict[str, Any]:
     drive = _get_drive_client()
-    state = _drive_folder_state(drive, client["drive_folder_id"])
+    code = (client.get("code_union") or "").strip()
+    shared = _find_client_folder(drive, code, client.get("nom_client") or "")
+    folder_id = (shared or {}).get("id") or client.get("drive_folder_id")
+    if not folder_id:
+        return client
+    state = _drive_folder_state(drive, folder_id)
     if state == "unknown":
         return client
     if state == "gone":
+        children = []
         resolved = {field: None for field, _kind in _DOC_LINK_FIELDS}
     else:
-        children = _list_folder_children(drive, client["drive_folder_id"])
+        children = _list_folder_children(drive, folder_id)
         resolved = resolve_drive_doc_links(client, children)
-    if not drive_doc_links_changed(client, resolved):
+    photos = _photo_links(children)
+    moved = bool(shared and shared.get("id") and shared.get("id") != client.get("drive_folder_id"))
+    photos_changed = any(
+        (extract_drive_file_id(client.get(key)) or "") != (extract_drive_file_id(link) or "")
+        for key, link in photos.items()
+    )
+    if not moved and not photos_changed and not drive_doc_links_changed(client, resolved):
         return client
-    updated = nathalie_adherents.patch_drive_docs(client["code_union"], {
+    patch = {
         "rib_url": resolved["rib_url"],
         "kbis_url": resolved["kbis_url"],
         "piece_identite_url": resolved["piece_identite_url"],
         "drive_checked_at": nathalie_adherents._now(),
-    }, clear=True)
+        **photos,
+    }
+    if moved:
+        patch["drive_folder_id"] = shared["id"]
+        patch["drive_link"] = shared.get("webViewLink") or f"https://drive.google.com/drive/folders/{shared['id']}"
+    updated = nathalie_adherents.patch_drive_docs(client["code_union"], patch, clear=True)
     return updated or client
 
 
@@ -875,15 +915,20 @@ def inspect_client_drive(code_union: str, *, persist: bool = True) -> Dict[str, 
                 except Exception:
                     folder = None
 
+        nom_client = client.get("nom_client") or ""
+        shared = _find_client_folder(drive, code, nom_client)
+        if shared:
+            folder = shared
+
         if not folder:
             candidates = _search_drive_folders(drive, code)
             ranked = sorted(
                 candidates,
-                key=lambda f: score_drive_folder_name(f.get("name") or "", code, client.get("nom_client") or ""),
+                key=lambda f: score_drive_folder_name(f.get("name") or "", code, nom_client),
                 reverse=True,
             )
             folder = next(
-                (f for f in ranked if score_drive_folder_name(f.get("name") or "", code, client.get("nom_client") or "") >= 80),
+                (f for f in ranked if score_drive_folder_name(f.get("name") or "", code, nom_client) >= 80),
                 None,
             )
 
@@ -964,13 +1009,41 @@ def extract_code_from_folder_name(name: str) -> Optional[str]:
     return match.group(1).upper() if match else None
 
 
+def _photo_links(children: List[Dict[str, Any]]) -> Dict[str, Optional[str]]:
+    classified: Dict[str, Dict[str, Any]] = {}
+    for item in children or []:
+        kind = classify_drive_filename(item.get("name") or "")
+        if kind and kind not in classified:
+            classified[kind] = item
+    links: Dict[str, Optional[str]] = {}
+    for slot in PHOTO_SLOTS:
+        item = classified.get(slot["kind"])
+        links[slot["url_key"]] = _drive_item_link(item) if item else None
+    return links
+
+
 def _list_child_folders(drive, parent_id: str) -> List[Dict[str, Any]]:
     safe = parent_id.replace("'", "\\'")
-    q = (
+    query = (
         f"'{safe}' in parents and mimeType='application/vnd.google-apps.folder' "
         "and trashed=false"
     )
-    return _list_drive_files(drive, q=q, pageSize=1000)
+    folders: List[Dict[str, Any]] = []
+    token = None
+    while True:
+        kwargs: Dict[str, Any] = {
+            "q": query,
+            "pageSize": 200,
+            "fields": "nextPageToken, files(id,name,webViewLink)",
+        }
+        if token:
+            kwargs["pageToken"] = token
+        resp = _drive_list(drive, **kwargs)
+        folders.extend(resp.get("files") or [])
+        token = resp.get("nextPageToken")
+        if not token:
+            break
+    return folders
 
 
 def sync_drive_dossiers() -> Dict[str, Any]:
@@ -997,6 +1070,7 @@ def sync_drive_dossiers() -> Dict[str, Any]:
     matched = 0
     en_cours = 0
     complets = 0
+    missing: List[str] = []
     now = nathalie_adherents._now()
     for client in nathalie_adherents.list_clients():
         code = (client.get("code_union") or "").upper()
@@ -1014,12 +1088,14 @@ def sync_drive_dossiers() -> Dict[str, Any]:
                 "kbis_url": resolved["kbis_url"],
                 "piece_identite_url": resolved["piece_identite_url"],
                 "drive_checked_at": now,
+                **_photo_links(children),
             }, clear=True)
             if resolved["rib_url"] and resolved["kbis_url"] and resolved["piece_identite_url"]:
                 complets += 1
             else:
                 en_cours += 1
         else:
+            missing.append(code)
             nathalie_adherents.patch_drive_docs(code, {"drive_checked_at": now})
             en_cours += 1
         checked += 1
@@ -1030,6 +1106,7 @@ def sync_drive_dossiers() -> Dict[str, Any]:
         "checked": checked,
         "en_cours": en_cours,
         "complets": complets,
+        "missing_codes": missing,
     }
 
 
@@ -1065,16 +1142,50 @@ def _upload_client_files(folder_id: str, files: Optional[Dict[str, UploadFile]])
     return links
 
 
+def _find_client_folder(drive, code: str, nom: str = "") -> Optional[Dict[str, Any]]:
+    """Dossier du code dans les groupes du drive 02_ADHERENTS, pas dans les copies OLD_."""
+    safe = (code or "").replace("'", "\\'").strip()
+    if not safe:
+        return None
+    parents = list(dict.fromkeys(DRIVE_FOLDERS.values()))
+    parent_q = " or ".join(f"'{parent_id}' in parents" for parent_id in parents)
+    query = (
+        "mimeType='application/vnd.google-apps.folder' and trashed=false "
+        f"and name contains '{safe}' and ({parent_q})"
+    )
+    files = _list_drive_files(
+        drive,
+        q=query,
+        pageSize=30,
+        fields="files(id,name,webViewLink,parents,capabilities(canAddChildren))",
+    )
+    ranked = sorted(
+        files,
+        key=lambda item: score_drive_folder_name(item.get("name") or "", safe, nom),
+        reverse=True,
+    )
+    for folder in ranked:
+        score = score_drive_folder_name(folder.get("name") or "", safe, nom)
+        can_add = (folder.get("capabilities") or {}).get("canAddChildren")
+        if score >= 80 and can_add is not False:
+            return folder
+    return None
+
+
 def _ensure_client_folder(client: Dict[str, Any], nom: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    drive = _get_drive_client()
+    code = (client.get("code_union") or "").strip()
     folder_id = client.get("drive_folder_id")
     drive_link = client.get("drive_link")
-    if folder_id:
+    found = _find_client_folder(drive, code, nom)
+    if found and found.get("id"):
+        link = found.get("webViewLink") or f"https://drive.google.com/drive/folders/{found['id']}"
+        return found["id"], link, None
+    if folder_id and _drive_can_add(drive, folder_id):
         return folder_id, drive_link, None
     groupe_key = _normalize_group_key(client.get("groupe") or "")
     parent_folder_id = DRIVE_FOLDERS.get(groupe_key, DRIVE_FOLDERS["MAGASIN"])
-    code = client.get("code_union")
-    folder_name = f"{code} : {nom}"
-    folder_id = create_drive_folder(parent_folder_id, folder_name)
+    folder_id = create_drive_folder(parent_folder_id, _client_folder_name(code, nom))
     drive_link = f"https://drive.google.com/drive/folders/{folder_id}"
     return folder_id, drive_link, None
 
@@ -1109,7 +1220,7 @@ async def create_client_full(
 
     code_union = get_next_code_union()
     data["code_union"] = code_union
-    folder_name = f"{code_union} : {nom}"
+    folder_name = _client_folder_name(code_union, nom)
     folder_id = None
     drive_link = None
     drive_warning = None
@@ -1333,6 +1444,8 @@ def _normalize_group_key(groupe_input: str) -> str:
     if "STARCOM" in s: return "STARCOM"
     if "CENTER" in s: return "CENTER"
     if "CODIFA" in s: return "CODIFA"
+    if "LIFTING" in s: return "LIFTING"
+    if "SMP" in s: return "SMP"
     return "MAGASIN" # Par défaut indépendant
 
 

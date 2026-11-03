@@ -1,0 +1,7 @@
+backend/SAMPLES
+backend/venv
+frontend/node_modules
+mobile/node_modules
+.git
+**/.env
+**/.env.*

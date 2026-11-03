@@ -821,7 +821,16 @@ def patch_drive_docs(code_union: str, fields: Dict[str, Any], *, clear: bool = F
         "drive_link",
         "drive_checked_at",
     }
-    clearable = {"rib_url", "kbis_url", "piece_identite_url"}
+    clearable = {
+        "rib_url",
+        "kbis_url",
+        "piece_identite_url",
+        "photo_devanture_url",
+        "photo_comptoir_url",
+        "photo_stock_url",
+        "photo_autre_1_url",
+        "photo_autre_2_url",
+    }
     updates: Dict[str, Any] = {}
     clears: List[str] = []
     for key, value in fields.items():

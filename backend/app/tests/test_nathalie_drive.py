@@ -35,6 +35,7 @@ def test_classify_rib_kbis_id():
 
 def test_score_existing_drive_folder():
     assert score_drive_folder_name("M0160 : GARAGE DUPONT", "M0160", "GARAGE DUPONT") == 100
+    assert score_drive_folder_name("M0160 _ GARAGE DUPONT", "M0160", "GARAGE DUPONT") == 100
     assert score_drive_folder_name("M0160 GARAGE", "M0160") == 80
     assert score_drive_folder_name("Dossier M0160 archives", "M0160") >= 50
     assert score_drive_folder_name("Autre magasin", "M0160") == 0
@@ -53,6 +54,8 @@ def test_normalize_group_key():
     assert _normalize_group_key("groupe center") == "CENTER"
     assert _normalize_group_key("CODIFA") == "CODIFA"
     assert _normalize_group_key("INDEPENDANT UNION") == "MAGASIN"
+    assert _normalize_group_key("GROUPE SMP") == "SMP"
+    assert _normalize_group_key("GROUPE LIFTING") == "LIFTING"
 
 
 def test_client_to_sheet_row_mapping():

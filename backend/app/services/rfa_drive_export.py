@@ -28,7 +28,14 @@ def _find_or_create_folder(drive, name: str, parent_id: str) -> str:
         "mimeType='application/vnd.google-apps.folder' and trashed=false "
         f"and name='{escaped_name}' and '{parent_id}' in parents"
     )
-    existing = drive.files().list(q=q, fields="files(id,name)", pageSize=1).execute().get("files", [])
+    existing = drive.files().list(
+        q=q,
+        fields="files(id,name)",
+        pageSize=1,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+        corpora="allDrives",
+    ).execute().get("files", [])
     if existing:
         return existing[0]["id"]
 
@@ -39,6 +46,7 @@ def _find_or_create_folder(drive, name: str, parent_id: str) -> str:
             "parents": [parent_id],
         },
         fields="id",
+        supportsAllDrives=True,
     ).execute()
     return created["id"]
 
@@ -49,14 +57,28 @@ def _find_folder(drive, name: str, parent_id: str) -> str:
         "mimeType='application/vnd.google-apps.folder' and trashed=false "
         f"and name='{escaped_name}' and '{parent_id}' in parents"
     )
-    existing = drive.files().list(q=q, fields="files(id,name)", pageSize=1).execute().get("files", [])
+    existing = drive.files().list(
+        q=q,
+        fields="files(id,name)",
+        pageSize=1,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+        corpora="allDrives",
+    ).execute().get("files", [])
     return existing[0]["id"] if existing else ""
 
 
 def _find_file_by_name(drive, parent_id: str, filename: str) -> Dict[str, str]:
     escaped_name = filename.replace("'", "\\'")
     q = f"trashed=false and name='{escaped_name}' and '{parent_id}' in parents"
-    existing = drive.files().list(q=q, fields="files(id,webViewLink)", pageSize=1).execute().get("files", [])
+    existing = drive.files().list(
+        q=q,
+        fields="files(id,webViewLink)",
+        pageSize=1,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+        corpora="allDrives",
+    ).execute().get("files", [])
     if not existing:
         return {"id": "", "url": ""}
     return {
@@ -73,6 +95,7 @@ def _upload_pdf_bytes(drive, parent_id: str, filename: str, content: bytes) -> D
         body={"name": filename, "parents": [parent_id]},
         media_body=media,
         fields="id,webViewLink",
+        supportsAllDrives=True,
     ).execute()
     return {
         "id": uploaded.get("id", ""),
@@ -88,6 +111,7 @@ def _create_pilotage_sheet(sheets, drive, year_folder_id: str, year: int) -> Dic
             "parents": [year_folder_id],
         },
         fields="id,webViewLink",
+        supportsAllDrives=True,
     ).execute()
     spreadsheet_id = created["id"]
     spreadsheet_url = created.get("webViewLink", "")
