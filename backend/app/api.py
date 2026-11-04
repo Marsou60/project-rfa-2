@@ -4485,6 +4485,43 @@ async def pure_data_cumulative_client_rfa(
         )
 
         rfa_gross = float((rfa_result.get("totals") or {}).get("grand_total") or 0)
+        # La fiche ne liste que les offres encore au contrat. Une plateforme
+        # avec du chiffre mais sans palier (ancien barème retiré) ne reste pas affichée.
+        def _has_scale(item: dict, *fields: str) -> bool:
+            for field in fields:
+                value = item.get(field)
+                if isinstance(value, list) and value:
+                    return True
+            return False
+
+        kept_global = {
+            key
+            for key, item in (rfa_result.get("global") or {}).items()
+            if _has_scale(item, "tiers_rfa", "tiers_bonus")
+        }
+        kept_tri = {
+            key
+            for key, item in (rfa_result.get("tri") or {}).items()
+            if _has_scale(item, "tiers")
+        }
+        rfa_result["global"] = {
+            key: item for key, item in (rfa_result.get("global") or {}).items() if key in kept_global
+        }
+        rfa_result["tri"] = {
+            key: item for key, item in (rfa_result.get("tri") or {}).items() if key in kept_tri
+        }
+        if rfa_projected:
+            rfa_projected["global"] = {
+                key: item
+                for key, item in (rfa_projected.get("global") or {}).items()
+                if key in kept_global
+            }
+            rfa_projected["tri"] = {
+                key: item
+                for key, item in (rfa_projected.get("tri") or {}).items()
+                if key in kept_tri
+            }
+
         proj_gross = float(((rfa_projected or {}).get("totals") or {}).get("grand_total") or 0) if rfa_projected else None
         deducted = float(cotisation.get("deducted") or 0)
         proj_offered = bool(((rfa_projected or {}).get("acr_challenge") or {}).get("triggered"))
