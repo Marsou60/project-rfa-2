@@ -3186,11 +3186,28 @@ async def update_user(
         user.avatar_url = user_data.avatar_url
     if user_data.is_active is not None:
         user.is_active = user_data.is_active
-    
+
+    rights_touch = any(
+        value is not None
+        for value in (
+            user_data.role,
+            user_data.username,
+            user_data.display_name,
+            user_data.is_active,
+            user_data.linked_code_union,
+            user_data.linked_groupe,
+        )
+    )
     session.add(user)
+    if rights_touch:
+        from app.services.network_cache import invalidate_network_cache
+        invalidate_network_cache()
     session.commit()
+    if rights_touch:
+        from app.services.network_cache import invalidate_network_cache
+        invalidate_network_cache()
     session.refresh(user)
-    
+
     return _to_user_response(user)
 
 
@@ -3210,7 +3227,10 @@ async def delete_user(
         raise HTTPException(status_code=400, detail="Impossible de supprimer son propre compte")
     
     session.delete(user)
+    from app.services.network_cache import invalidate_network_cache
+    invalidate_network_cache()
     session.commit()
+    invalidate_network_cache()
     return {"message": "Utilisateur supprimé"}
 
 
@@ -3881,8 +3901,7 @@ async def pure_data_network_dashboard(
         forced = resolve_commercial_scope(user)
         if forced:
             commercial = forced
-
-        platform_months = _effective_platform_months(session, year_current)
+        scope = commercial
 
         obj_raw = _get_setting_value(session, "ca_objectif_2026")
         try:
@@ -3896,6 +3915,7 @@ async def pure_data_network_dashboard(
         except Exception:
             ca25_f = None
 
+        from app.database import release_request_connection
         from app.services.network_cache import cached_network_value
 
         cache_key = json.dumps(
@@ -3904,7 +3924,7 @@ async def pure_data_network_dashboard(
                 "y": year_current,
                 "yp": year_previous,
                 "frs": fournisseur,
-                "com": commercial,
+                "com": scope,
                 "reg": region,
                 "mq": marque,
                 "fa": famille,
@@ -3915,30 +3935,34 @@ async def pure_data_network_dashboard(
                 "full": bool(full),
                 "obj": objectif_f,
                 "n1": ca25_f,
-                "pm": platform_months,
             },
             sort_keys=True,
             default=str,
         )
+        release_request_connection(session)
 
         def _build():
-            return build_network_dashboard(
-                year_current=year_current,
-                year_previous=year_previous,
-                fournisseur=fournisseur,
-                commercial=commercial,
-                region=region,
-                marque=marque,
-                famille=famille,
-                sous_famille=sous_famille,
-                groupe_client=groupe_client,
-                objectif=objectif_f,
-                ca_n1_realise=ca25_f,
-                platform_months=platform_months,
-                alert_pct=alert_pct,
-                alert_ca_min=alert_ca_min,
-                full_lists=full,
-            )
+            from app.database import engine, lease_session
+
+            with lease_session(engine) as calc_session:
+                platform_months = _effective_platform_months(calc_session, year_current)
+                return build_network_dashboard(
+                    year_current=year_current,
+                    year_previous=year_previous,
+                    fournisseur=fournisseur,
+                    commercial=scope,
+                    region=region,
+                    marque=marque,
+                    famille=famille,
+                    sous_famille=sous_famille,
+                    groupe_client=groupe_client,
+                    objectif=objectif_f,
+                    ca_n1_realise=ca25_f,
+                    platform_months=platform_months,
+                    alert_pct=alert_pct,
+                    alert_ca_min=alert_ca_min,
+                    full_lists=full,
+                )
 
         return cached_network_value(cache_key, _build)
     except HTTPException:
@@ -3970,7 +3994,7 @@ async def pure_data_network_kpis(
         forced = resolve_commercial_scope(user)
         if forced:
             commercial = forced
-        platform_months = _effective_platform_months(session, year_current)
+        scope = commercial
         obj_raw = _get_setting_value(session, "ca_objectif_2026")
         try:
             objectif_f = float(obj_raw) if obj_raw not in (None, "") else 21000000.0
@@ -3981,32 +4005,38 @@ async def pure_data_network_kpis(
             ca25_f = float(ca25_raw) if ca25_raw not in (None, "") else None
         except Exception:
             ca25_f = None
+        from app.database import release_request_connection
+
         cache_key = json.dumps(
             {
                 "kind": "kpi",
                 "y": year_current,
                 "yp": year_previous,
-                "com": commercial,
+                "com": scope,
                 "obj": objectif_f,
                 "n1": ca25_f,
-                "pm": platform_months,
             },
             sort_keys=True,
             default=str,
         )
+        release_request_connection(session)
 
         def _build():
-            grouped, source = load_evolution_grouped_rows()
-            full = build_network_dashboard(
-                year_current=year_current,
-                year_previous=year_previous,
-                commercial=commercial,
-                objectif=objectif_f,
-                ca_n1_realise=ca25_f,
-                platform_months=platform_months,
-                preloaded_rows=grouped,
-                preloaded_source=source,
-            )
+            from app.database import engine, lease_session
+
+            with lease_session(engine) as calc_session:
+                platform_months = _effective_platform_months(calc_session, year_current)
+                grouped, source = load_evolution_grouped_rows()
+                full = build_network_dashboard(
+                    year_current=year_current,
+                    year_previous=year_previous,
+                    commercial=scope,
+                    objectif=objectif_f,
+                    ca_n1_realise=ca25_f,
+                    platform_months=platform_months,
+                    preloaded_rows=grouped,
+                    preloaded_source=source,
+                )
             return {
                 "available": full.get("available"),
                 "message": full.get("message"),
