@@ -44,13 +44,14 @@ LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
 SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Plafond volontaire, très en dessous du max_connections Supabase (60).
-# Défaut : 2 connexions + 1 dépassement = 3 par process.
-# 2 workers (non activés par le Dockerfile) = 6, sous le budget de 8.
-# Ne pas monter ces valeurs pour « utiliser » les connexions déjà prises ailleurs.
-DEFAULT_DB_POOL_SIZE = 2
-DEFAULT_DB_MAX_OVERFLOW = 1
-APP_DB_CONNECTION_BUDGET = 8
-RECOMMENDED_MAX_WORKERS = 2
+# Candidat pour le process unique réellement lancé par Railway : 5 + 5 = 10.
+# Le Dockerfile ne lance pas le second worker. L'activer en plus ferait 20
+# connexions : ce n'est pas le réglage proposé ici.
+# DB_POOL_SIZE / DB_MAX_OVERFLOW restent prioritaires s'ils sont définis.
+DEFAULT_DB_POOL_SIZE = 5
+DEFAULT_DB_MAX_OVERFLOW = 5
+APP_DB_CONNECTION_BUDGET = 10
+RECOMMENDED_MAX_WORKERS = 1
 
 
 def postgres_pool_settings() -> dict:
@@ -415,6 +416,21 @@ def unbind_lease(previous):
         _lease_local.session = None
     else:
         _lease_local.session = previous
+
+
+def release_request_connection(session) -> None:
+    """Rend la connexion de lecture avant une attente cache.
+
+    Rollback seulement : aucune écriture de cette requête n'est commise.
+    Les objets ORM de la session sont périmés ensuite. Le droit a déjà été
+    copié en valeurs simples par l'appelant. Le thread ne réutilise plus
+    cette session, donc le calcul lourd ouvre la sienne et la referme.
+    """
+    try:
+        if session is not None:
+            session.rollback()
+    finally:
+        unbind_lease(None)
 
 
 @contextmanager
