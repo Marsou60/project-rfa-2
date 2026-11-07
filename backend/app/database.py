@@ -386,10 +386,21 @@ _lease_local = threading.local()
 
 
 def leased_session():
+    # Le thread de l'endpoint prime : son bind est la session de CETTE requête.
+    local = getattr(_lease_local, "session", None)
+    if local is not None:
+        return local
     holder = _lease_holder.get()
     if holder is not None and holder.get("session") is not None:
         return holder["session"]
-    return getattr(_lease_local, "session", None)
+    return None
+
+
+def rollback_leased() -> None:
+    """Après une erreur SQL avalée : sinon Postgres refuse le reste de la requête."""
+    session = leased_session()
+    if session is not None:
+        session.rollback()
 
 
 def bind_lease(session):

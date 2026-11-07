@@ -48,6 +48,8 @@ def _platforms_from_meta() -> Set[str]:
                     out.add(p)
             return out
     except Exception as exc:
+        from app.database import rollback_leased
+        rollback_leased()
         print(f"[SALES_SOURCE] meta platforms indisponible: {exc}")
         return set()
 
@@ -162,6 +164,8 @@ def _presence_by_platform(table: str, bind) -> Tuple[Set[str], Dict[str, Set[int
         with lease_connection(bind) as conn:
             fetched = conn.execute(sql).fetchall()
     except Exception:
+        from app.database import rollback_leased
+        rollback_leased()
         return present, months
     for frs, mois in fetched:
         platform = normalize_platform(frs)

@@ -127,8 +127,11 @@ def test_grouped_kpis_match_line_by_line(tmp_path, monkeypatch):
         "projection", "objectif_pct",
     ):
         assert fast["kpis"][key] == detail["kpis"][key], key
-    assert [(p["platform"], p["current"], p["previous"]) for p in fast["platforms"]] == [
-        (p["platform"], p["current"], p["previous"]) for p in detail["platforms"]
+    assert [(p["platform"], p["current"], p["previous"], p["delta"]) for p in fast["platforms"]] == [
+        (p["platform"], p["current"], p["previous"], p["delta"]) for p in detail["platforms"]
+    ]
+    assert [(m["month"], m["current"], m["previous"]) for m in fast["months"]] == [
+        (m["month"], m["current"], m["previous"]) for m in detail["months"]
     ]
 
 
@@ -198,10 +201,12 @@ def test_entity_evolution_matches_full_scan(tmp_path, monkeypatch):
 
 def test_cache_drops_after_cumulative_write(tmp_path, monkeypatch):
     import app.services.pure_data_cumulative_supabase as cum
+    import app.services.pure_data_monthly_supabase as mon
     from app.services.network_cache import cache_generation, cached_network_value, invalidate_network_cache
 
     engine = create_engine(f"sqlite:///{tmp_path / 'cache.db'}", connect_args={"check_same_thread": False})
     monkeypatch.setattr(cum, "engine", engine)
+    monkeypatch.setattr(mon, "engine", engine)
     import app.database as db
     monkeypatch.setattr(db, "engine", engine)
     cum._ensure_table()
@@ -228,7 +233,48 @@ def test_cache_drops_after_cumulative_write(tmp_path, monkeypatch):
     assert cache_generation() > before
     assert cached_network_value("k", compute)["ca"] == 1
     assert calls["n"] == 2
+    mon._ensure_table()
+    before_month = cache_generation()
+    mon.append_monthly_rows([{
+        "mois": 2, "annee": 2026, "code_union": "FX02", "raison_sociale": "F",
+        "groupe_client": "", "region_commerciale": "", "fournisseur": "DCA",
+        "marque": "B", "groupe_frs": "", "famille": "FREINAGE", "sous_famille": "",
+        "ca": 5, "commercial": "Bob",
+    }])
+    assert cache_generation() > before_month
+    assert cached_network_value("k", compute)["ca"] == 1
+    assert calls["n"] == 3
+    before_delete = cache_generation()
+    mon.delete_monthly_rows(years=[2026], months=[2], fournisseurs=["DCA"])
+    assert cache_generation() > before_delete
+    assert cached_network_value("k", compute)["ca"] == 1
+    assert calls["n"] == 4
     invalidate_network_cache()
+
+
+def test_source_settings_invalidate_network_cache(tmp_path):
+    from sqlmodel import SQLModel
+
+    import app.database as db
+    from app.api import _upsert_setting
+    from app.services.network_cache import cache_generation
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'settings.db'}", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    original = db.engine
+    db.engine = engine
+    try:
+        with Session(engine) as session:
+            before = cache_generation()
+            _upsert_setting(session, "unrelated_key", "x")
+            assert cache_generation() == before
+            _upsert_setting(session, "pure_data_cumulative_updated_at", "2026-03-01")
+            assert cache_generation() == before + 1
+            _upsert_setting(session, "ca_objectif_2026", "100")
+            assert cache_generation() == before + 2
+    finally:
+        db.engine = original
+        engine.dispose()
 
 
 def _asgi(app, method, path, body=b"", headers=None):
@@ -269,18 +315,24 @@ def _asgi(app, method, path, body=b"", headers=None):
     return _run, status, chunks
 
 
-def test_eight_authenticated_gets_do_not_deadlock(tmp_path, monkeypatch):
-    engine = _queue_engine(f"sqlite:///{tmp_path / 'api.db'}")
-    state = _watch(engine)
-    import app.database as db
-    import app.services.pure_data_cumulative_supabase as cum
-    monkeypatch.setattr(db, "engine", engine)
-    monkeypatch.setattr(cum, "engine", engine)
+def _seed_fiche_fixture(engine):
+    """Contrat, annuaire, notes et une ligne ACR 120,50. Fixture, pas la prod."""
+    from datetime import datetime, timezone
+    import uuid
+
     from sqlmodel import SQLModel
+
+    import app.services.pure_data_cumulative_supabase as cum
+    import app.services.pure_data_monthly_supabase as mon
+    from app.database import hash_password
+    from app.models import Contract, ContractScope, User, UserRole
+    from app.services.nathalie_adherents import TABLE, ensure_tables
+
     SQLModel.metadata.create_all(engine)
     cum._ensure_table()
-    from app.database import hash_password
-    from app.models import User, UserRole
+    mon._ensure_table()
+    ensure_tables()
+    now = datetime.now(timezone.utc)
     with Session(engine) as session:
         session.add(User(
             username="staff-local",
@@ -289,63 +341,325 @@ def test_eight_authenticated_gets_do_not_deadlock(tmp_path, monkeypatch):
             is_active=True,
             display_name="Staff local",
         ))
+        session.add(User(
+            username="adherent-fx02",
+            password_hash=hash_password("local-only"),
+            role=UserRole.ADHERENT,
+            is_active=True,
+            display_name="Adhérent FX02",
+            linked_code_union="FX02",
+        ))
+        session.add(User(
+            username="rayane",
+            password_hash=hash_password("local-only"),
+            role=UserRole.COMMERCIAL,
+            is_active=True,
+            display_name="Rayane",
+        ))
+        session.add(Contract(
+            name="Fixture adhérent",
+            scope=ContractScope.ADHERENT,
+            is_default=True,
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        ))
         session.commit()
+    dialect = engine.dialect.name
+    traite = "0" if dialect == "sqlite" else "FALSE"
+    id_sql = "id INTEGER PRIMARY KEY" if dialect == "sqlite" else "id SERIAL PRIMARY KEY"
     with engine.begin() as conn:
         conn.execute(text(
             f'INSERT INTO "{cum.PURE_DATA_CUMULATIVE_TABLE}" '
-            '(mois, annee, code_union, raison_sociale, groupe_client, region_commerciale, '
-            'fournisseur, marque, groupe_frs, famille, sous_famille, ca, commercial) '
-            'VALUES (3, 2026, \'FX01\', \'Fixture\', \'G\', \'\', \'ACR\', \'BREMBO\', \'\', \'FREINAGE\', \'\', 120.5, \'Ada\')'
+            "(mois, annee, code_union, raison_sociale, groupe_client, region_commerciale, "
+            "fournisseur, marque, groupe_frs, famille, sous_famille, ca, commercial) "
+            "VALUES (3, 2026, 'FX01', 'Fixture magasin', 'G', '', 'ACR', 'BREMBO', '', "
+            "'FREINAGE', '', 120.5, 'Ada')"
         ))
         conn.execute(text(
             "CREATE TABLE IF NOT EXISTS notes_clients ("
-            "id INTEGER PRIMARY KEY, code_union TEXT, type_note TEXT, note_simple TEXT, "
-            "note_ia TEXT, auteur TEXT, date_rappel TEXT, traite INTEGER, created_at TEXT)"
+            f"{id_sql}, code_union TEXT, type_note TEXT, note_simple TEXT, "
+            "note_ia TEXT, auteur TEXT, date_rappel TEXT, traite "
+            + ("INTEGER" if dialect == "sqlite" else "BOOLEAN")
+            + ", created_at TEXT)"
         ))
+        conn.execute(text(
+            "INSERT INTO notes_clients (code_union, type_note, note_simple, auteur, traite, created_at) "
+            f"VALUES ('FX01', 'NOTE SIMPLE', 'fixture', 'Staff local', {traite}, '2026-03-01')"
+        ))
+        conn.execute(text(
+            f"INSERT INTO {TABLE} (id, code_union, nom_client, created_at, updated_at) "
+            "VALUES (:id, 'FX01', 'Fixture magasin', :created, :updated)"
+        ), {
+            "id": str(uuid.uuid4()),
+            "created": now,
+            "updated": now,
+        })
 
-    from app.main import app
 
-    async def scenario():
-        login, st, chunks = _asgi(
-            app, "POST", "/api/auth/login",
-            body=json.dumps({"username": "staff-local", "password": "local-only"}).encode(),
-            headers={"content-type": "application/json"},
-        )
-        await login()
-        assert st["code"] == 200, chunks
-        token = json.loads(b"".join(chunks))["token"]
-        headers = {"authorization": f"Bearer {token}"}
-        paths = [
-            "/api/pure-data/cumulative/client-dashboard?code_union=FX01&year_current=2026&year_previous=2025",
-            "/api/pure-data/cumulative/client-rfa?code_union=FX01&year=2026",
-            "/api/pure-data/monthly/client-evolution?code_union=FX01&year_current=2026&year_previous=2025",
-            "/api/nathalie/client/FX01",
-            "/api/impayes/by-adherent/FX01",
-            "/api/notes/client/FX01",
-            "/api/commercial/contract-pdf/meta?mode=client&id=FX01",
-            "/api/supplier-logos",
-            "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025",
-        ]
-        started = time.perf_counter()
-        runs = [_asgi(app, "GET", path, headers=headers) for path in paths]
-        await asyncio.gather(*(run() for run, _st, _ch in runs))
-        elapsed = time.perf_counter() - started
-        bodies = []
-        codes = []
-        for _run, st, chunks in runs:
-            codes.append(st.get("code"))
-            bodies.append(b"".join(chunks).decode("utf-8", "replace"))
-        return elapsed, codes, bodies
+def _login(app, username):
+    login, status, chunks = _asgi(
+        app, "POST", "/api/auth/login",
+        body=json.dumps({"username": username, "password": "local-only"}).encode(),
+        headers={"content-type": "application/json"},
+    )
+    return login, status, chunks
 
-    elapsed, codes, bodies = asyncio.run(scenario())
+
+async def _fiche_burst(app):
+    login, status, chunks = _login(app, "staff-local")
+    await login()
+    assert status["code"] == 200, b"".join(chunks)
+    token = json.loads(b"".join(chunks))["token"]
+    headers = {"authorization": f"Bearer {token}"}
+    paths = [
+        "/api/pure-data/cumulative/client-dashboard?code_union=FX01&year_current=2026&year_previous=2025",
+        "/api/pure-data/cumulative/client-rfa?code_union=FX01&year=2026",
+        "/api/pure-data/monthly/client-evolution?code_union=FX01&year_current=2026&year_previous=2025",
+        "/api/nathalie/client/FX01",
+        "/api/impayes/by-adherent/FX01",
+        "/api/notes/client/FX01",
+        "/api/commercial/contract-pdf/meta?mode=client&id=FX01",
+        "/api/supplier-logos",
+    ]
+    started = time.perf_counter()
+    runs = [_asgi(app, "GET", path, headers=headers) for path in paths]
+    await asyncio.gather(*(run() for run, _st, _ch in runs))
+    elapsed = time.perf_counter() - started
+    payloads = []
+    for _run, st, parts in runs:
+        raw = b"".join(parts).decode("utf-8", "replace")
+        payloads.append((st.get("code"), json.loads(raw) if raw else {}))
+    return elapsed, payloads
+
+
+def _assert_fiche_numbers(elapsed, payloads, state, engine):
     assert elapsed < 8, elapsed
     assert state["max"] <= 3, state
     assert engine.pool.checkedout() == 0, engine.pool.status()
-    blob = "\n".join(bodies)
-    assert "QueuePool" not in blob
-    assert "Impossible de se connecter" not in blob
-    for code, body in zip(codes, bodies):
-        assert code and (code < 500 or "Aucun contrat" in body), (code, body[:240])
+    codes = [code for code, _body in payloads]
+    assert codes == [200] * 8, payloads
+    dashboard, rfa, evolution, nathalie, impayes, notes, pdf_meta, logos = (body for _c, body in payloads)
+    assert dashboard["available"] is True
+    assert dashboard["totals"]["current"] == 120.5
+    assert dashboard["totals"]["previous"] == 0.0
+    assert rfa["available"] is True
+    assert rfa["ca"]["global"]["GLOBAL_ACR"] == 120.5
+    assert rfa["ca"]["totals"]["global_total"] == 120.5
+    assert evolution["available"] is True
+    assert round(sum(point["current"] for point in evolution["months"]), 2) == 120.5
+    assert nathalie["client"]["code_union"] == "FX01"
+    assert impayes["items"] == []
+    assert notes["total"] == 1
+    assert "available" in pdf_meta
+    assert isinstance(logos, list)
+
+
+def test_eight_authenticated_gets_do_not_deadlock(tmp_path, monkeypatch):
+    engine = _queue_engine(f"sqlite:///{tmp_path / 'api.db'}")
+    state = _watch(engine)
+    import app.database as db
+    import app.services.pure_data_cumulative_supabase as cum
+    import app.services.pure_data_monthly_supabase as mon
+    import app.services.nathalie_adherents as nath
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(cum, "engine", engine)
+    monkeypatch.setattr(mon, "engine", engine)
+    monkeypatch.setattr(nath, "engine", engine)
+    _seed_fiche_fixture(engine)
+    from app.main import app
+    elapsed, payloads = asyncio.run(_fiche_burst(app))
+    _assert_fiche_numbers(elapsed, payloads, state, engine)
+
+
+def test_postgres_fiche_burst_if_available(monkeypatch):
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        url = "postgresql+psycopg2://ubuntu@/rfa_lease_test?host=/var/run/postgresql"
+    engine = _queue_engine(url)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL local indisponible, salve HTTP non rejouée : {exc}")
+    state = _watch(engine)
+    import app.database as db
+    import app.services.pure_data_cumulative_supabase as cum
+    import app.services.pure_data_monthly_supabase as mon
+    import app.services.nathalie_adherents as nath
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(cum, "engine", engine)
+    monkeypatch.setattr(mon, "engine", engine)
+    monkeypatch.setattr(nath, "engine", engine)
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    try:
+        _seed_fiche_fixture(engine)
+        from app.main import app
+        elapsed, payloads = asyncio.run(_fiche_burst(app))
+        _assert_fiche_numbers(elapsed, payloads, state, engine)
+    finally:
+        engine.dispose()
+
+
+def test_lease_threads_do_not_share_session():
+    from app.database import bind_lease, leased_session, unbind_lease
+
+    left, right = object(), object()
+    seen = {}
+
+    def work(name, session):
+        bind_lease(session)
+        seen[name] = leased_session()
+        unbind_lease(None)
+
+    threads = [
+        threading.Thread(target=work, args=("left", left)),
+        threading.Thread(target=work, args=("right", right)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert seen["left"] is left
+    assert seen["right"] is right
+    assert leased_session() is None
+
+
+def test_lease_releases_connection_after_error(tmp_path):
+    from app.database import lease_connection, lease_session
+
+    engine = _queue_engine(f"sqlite:///{tmp_path / 'err.db'}")
+    import app.database as db
+    original = db.engine
+    db.engine = engine
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE t (v INTEGER)"))
+        with pytest.raises(RuntimeError):
+            with lease_session(engine):
+                with lease_connection(engine) as conn:
+                    conn.execute(text("SELECT v FROM t"))
+                    raise RuntimeError("annulation")
+        assert engine.pool.checkedout() == 0
+    finally:
+        db.engine = original
+        engine.dispose()
+
+
+def test_adherent_cannot_open_another_fiche(tmp_path, monkeypatch):
+    engine = _queue_engine(f"sqlite:///{tmp_path / 'authz.db'}")
+    import app.database as db
+    import app.services.pure_data_cumulative_supabase as cum
+    import app.services.pure_data_monthly_supabase as mon
+    import app.services.nathalie_adherents as nath
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(cum, "engine", engine)
+    monkeypatch.setattr(mon, "engine", engine)
+    monkeypatch.setattr(nath, "engine", engine)
+    _seed_fiche_fixture(engine)
+    from app.main import app
+
+    async def scenario():
+        login, status, chunks = _login(app, "adherent-fx02")
+        await login()
+        assert status["code"] == 200
+        token = json.loads(b"".join(chunks))["token"]
+        headers = {"authorization": f"Bearer {token}"}
+        own, own_status, own_body = _asgi(
+            app, "GET",
+            "/api/pure-data/cumulative/client-dashboard?code_union=FX01",
+            headers=headers,
+        )
+        denied, denied_status, _denied_body = _asgi(
+            app, "GET", "/api/impayes/by-adherent/FX01", headers=headers,
+        )
+        kpis, kpi_status, _kpi_body = _asgi(
+            app, "GET", "/api/pure-data/cumulative/network-kpis", headers=headers,
+        )
+        missing, missing_status, _missing_body = _asgi(
+            app, "GET", "/api/pure-data/cumulative/client-dashboard?code_union=FX01",
+            headers={"authorization": "Bearer pas-un-jeton"},
+        )
+        await asyncio.gather(own(), denied(), kpis(), missing())
+        own_json = json.loads(b"".join(own_body))
+        return (
+            own_status["code"],
+            own_json,
+            denied_status["code"],
+            kpi_status["code"],
+            missing_status["code"],
+            engine.pool.checkedout(),
+        )
+
+    own_code, own_json, denied, kpi, anon, left = asyncio.run(scenario())
+    # L'adhérent FX02 est forcé sur son code : il ne reçoit pas le CA de FX01.
+    assert own_code == 200
+    assert (own_json.get("totals") or {}).get("current") != 120.5
+    assert denied == 403
+    assert kpi == 403
+    assert anon == 401
+    assert left == 0
+
+
+def test_commercial_kpis_stay_in_portfolio(tmp_path, monkeypatch):
+    engine = _queue_engine(f"sqlite:///{tmp_path / 'scope.db'}")
+    import app.database as db
+    import app.services.pure_data_cumulative_supabase as cum
+    import app.services.pure_data_monthly_supabase as mon
+    import app.services.nathalie_adherents as nath
+    monkeypatch.setattr(db, "engine", engine)
+    monkeypatch.setattr(cum, "engine", engine)
+    monkeypatch.setattr(mon, "engine", engine)
+    monkeypatch.setattr(nath, "engine", engine)
+    _seed_fiche_fixture(engine)
+    from app.main import app
+
+    async def scenario():
+        staff_login, staff_status, staff_chunks = _login(app, "staff-local")
+        rayane_login, rayane_status, rayane_chunks = _login(app, "rayane")
+        await asyncio.gather(staff_login(), rayane_login())
+        assert staff_status["code"] == 200
+        assert rayane_status["code"] == 200
+        staff_token = json.loads(b"".join(staff_chunks))["token"]
+        rayane_token = json.loads(b"".join(rayane_chunks))["token"]
+        staff, staff_code, staff_body = _asgi(
+            app, "GET", "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025",
+            headers={"authorization": f"Bearer {staff_token}"},
+        )
+        scoped, scoped_code, scoped_body = _asgi(
+            app, "GET", "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025&commercial=Ada",
+            headers={"authorization": f"Bearer {rayane_token}"},
+        )
+        await asyncio.gather(staff(), scoped())
+        return (
+            staff_code["code"],
+            json.loads(b"".join(staff_body)),
+            scoped_code["code"],
+            json.loads(b"".join(scoped_body)),
+            engine.pool.checkedout(),
+        )
+
+    staff_code, staff_json, scoped_code, scoped_json, left = asyncio.run(scenario())
+    assert staff_code == 200
+    assert staff_json["kpis"]["ca_ytd"] == 120.5
+    assert [(p["platform"], p["current"]) for p in staff_json["platforms"]] == [("ACR", 120.5)]
+    # Le paramètre commercial=Ada est ignoré : Rayane reste sur son portefeuille vide.
+    assert scoped_code == 200
+    assert scoped_json.get("available") is False
+    assert scoped_json.get("kpis") is None
+    assert left == 0
+
+
+def test_commercial_cache_keys_do_not_cross():
+    from app.services.network_cache import cached_network_value, invalidate_network_cache
+
+    invalidate_network_cache()
+    assert cached_network_value("kpi:rayane", lambda: {"ca": 1})["ca"] == 1
+    assert cached_network_value("kpi:ada", lambda: {"ca": 2})["ca"] == 2
+    assert cached_network_value("kpi:rayane", lambda: {"ca": 9})["ca"] == 1
+    invalidate_network_cache()
 
 
 def test_postgres_lease_if_available():

@@ -218,9 +218,9 @@ def _upsert_setting(session: Session, key: str, value: str):
     st = session.exec(select(AppSettings).where(AppSettings.key == key)).first()
     if st:
         st.value = value
-        st.updated_at = datetime.now()
+        st.updated_at = datetime.now(timezone.utc)
     else:
-        session.add(AppSettings(key=key, value=value))
+        session.add(AppSettings(key=key, value=value, updated_at=datetime.now(timezone.utc)))
     if key.startswith("pure_data") or key.startswith("ca_"):
         from app.services.network_cache import invalidate_network_cache
         invalidate_network_cache()
