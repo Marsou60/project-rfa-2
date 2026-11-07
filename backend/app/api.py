@@ -221,6 +221,9 @@ def _upsert_setting(session: Session, key: str, value: str):
         st.updated_at = datetime.now()
     else:
         session.add(AppSettings(key=key, value=value))
+    if key.startswith("pure_data") or key.startswith("ca_"):
+        from app.services.network_cache import invalidate_network_cache
+        invalidate_network_cache()
 
 
 def _save_live_cache(session: Session, data_list: list, raw_columns: list, column_mapping: dict):
@@ -3893,29 +3896,136 @@ async def pure_data_network_dashboard(
         except Exception:
             ca25_f = None
 
-        return build_network_dashboard(
-            year_current=year_current,
-            year_previous=year_previous,
-            fournisseur=fournisseur,
-            commercial=commercial,
-            region=region,
-            marque=marque,
-            famille=famille,
-            sous_famille=sous_famille,
-            groupe_client=groupe_client,
-            objectif=objectif_f,
-            ca_n1_realise=ca25_f,
-            platform_months=platform_months,
-            alert_pct=alert_pct,
-            alert_ca_min=alert_ca_min,
-            full_lists=full,
+        from app.services.network_cache import cached_network_value
+
+        cache_key = json.dumps(
+            {
+                "kind": "full",
+                "y": year_current,
+                "yp": year_previous,
+                "frs": fournisseur,
+                "com": commercial,
+                "reg": region,
+                "mq": marque,
+                "fa": famille,
+                "sf": sous_famille,
+                "gr": groupe_client,
+                "ap": alert_pct,
+                "am": alert_ca_min,
+                "full": bool(full),
+                "obj": objectif_f,
+                "n1": ca25_f,
+                "pm": platform_months,
+            },
+            sort_keys=True,
+            default=str,
         )
+
+        def _build():
+            return build_network_dashboard(
+                year_current=year_current,
+                year_previous=year_previous,
+                fournisseur=fournisseur,
+                commercial=commercial,
+                region=region,
+                marque=marque,
+                famille=famille,
+                sous_famille=sous_famille,
+                groupe_client=groupe_client,
+                objectif=objectif_f,
+                ca_n1_realise=ca25_f,
+                platform_months=platform_months,
+                alert_pct=alert_pct,
+                alert_ca_min=alert_ca_min,
+                full_lists=full,
+            )
+
+        return cached_network_value(cache_key, _build)
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Erreur dashboard réseau: {str(e)}")
+
+
+@router.get("/pure-data/cumulative/network-kpis")
+async def pure_data_network_kpis(
+    year_current: int = 2026,
+    year_previous: int = 2025,
+    commercial: Optional[str] = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """
+    Chiffre d'accueil sans les classements. Même périmètre que le dashboard.
+    Les montants viennent des lignes agrégées puis du même calculateur.
+    """
+    try:
+        from app.services.commercial_scope import resolve_commercial_scope
+        from app.services.network_cache import cached_network_value
+        from app.services.pure_data_network_dashboard import build_network_dashboard
+        from app.services.pure_data_sales_source import load_evolution_grouped_rows
+
+        forced = resolve_commercial_scope(user)
+        if forced:
+            commercial = forced
+        platform_months = _effective_platform_months(session, year_current)
+        obj_raw = _get_setting_value(session, "ca_objectif_2026")
+        try:
+            objectif_f = float(obj_raw) if obj_raw not in (None, "") else 21000000.0
+        except Exception:
+            objectif_f = 21000000.0
+        ca25_raw = _get_setting_value(session, "ca_2025_realise")
+        try:
+            ca25_f = float(ca25_raw) if ca25_raw not in (None, "") else None
+        except Exception:
+            ca25_f = None
+        cache_key = json.dumps(
+            {
+                "kind": "kpi",
+                "y": year_current,
+                "yp": year_previous,
+                "com": commercial,
+                "obj": objectif_f,
+                "n1": ca25_f,
+                "pm": platform_months,
+            },
+            sort_keys=True,
+            default=str,
+        )
+
+        def _build():
+            grouped, source = load_evolution_grouped_rows()
+            full = build_network_dashboard(
+                year_current=year_current,
+                year_previous=year_previous,
+                commercial=commercial,
+                objectif=objectif_f,
+                ca_n1_realise=ca25_f,
+                platform_months=platform_months,
+                preloaded_rows=grouped,
+                preloaded_source=source,
+            )
+            return {
+                "available": full.get("available"),
+                "message": full.get("message"),
+                "data_source": full.get("data_source"),
+                "year_current": full.get("year_current"),
+                "year_previous": full.get("year_previous"),
+                "reporting_month": full.get("reporting_month"),
+                "kpis": full.get("kpis"),
+                "platforms": full.get("platforms"),
+                "months": full.get("months"),
+            }
+
+        return cached_network_value(cache_key, _build)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur KPI réseau: {str(e)}")
 
 
 @router.post("/pure-data/cumulative/import-excel")
@@ -5441,7 +5551,6 @@ async def pure_data_monthly_client_evolution(
             raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
 
     try:
-        from app.services.pure_data_sales_source import load_evolution_sales_rows
         from app.services.pure_data_import import filter_rows_by_fournisseur
         from app.services.rfa_fusion import filter_rows_for_codes, fusion_for_code
 
@@ -5469,16 +5578,21 @@ async def pure_data_monthly_client_evolution(
                         candidates.add(head)
             return candidates
 
-        all_rows, data_source = load_evolution_sales_rows()
-        if not all_rows:
-            return {"available": False, "code_union": code_union, "groupe_client": groupe_client}
-
         def _pct(delta, base):
             return (delta / base) * 100 if base else None
 
-        # Filtrage strict : client, fusion de comptes, ou groupe
+        # Filtrage strict : client, fusion de comptes, ou groupe.
+        # La source (cumulé / mensuel) reste décidée globalement par plateforme.
         fusion = fusion_for_code(session, code_union) if code_union else None
         fusion_codes = fusion["codes"] if fusion and len(fusion.get("codes") or []) >= 2 else None
+        from app.services.pure_data_sales_source import load_evolution_rows_for_entity
+        all_rows, data_source = load_evolution_rows_for_entity(
+            code_union=None if fusion_codes else code_union,
+            groupe_client=None if (fusion_codes or code_union) else groupe_client,
+            code_unions=fusion_codes,
+        )
+        if not all_rows:
+            return {"available": False, "code_union": code_union, "groupe_client": groupe_client}
         if fusion_codes:
             rows = filter_rows_for_codes(all_rows, fusion_codes)
             label = fusion["label"]

@@ -3,7 +3,7 @@ Configuration de la base de données SQLite.
 """
 from sqlmodel import SQLModel, create_engine, Session, select
 from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 import os
 import sqlite3
 import hashlib
@@ -374,11 +374,114 @@ def _ensure_enterprise_watch_tables():
         print(f"[INIT_DB] enterprise watch tables warning: {e}")
 
 
-def get_session():
-    """Retourne une session de base de données."""
+import contextvars
+import threading
+from contextlib import contextmanager
+
+# FastAPI entre dans get_session dans un thread et exécute l'endpoint dans un autre.
+# Le dict est partagé via une contextvar copiée dans le thread de travail :
+# une requête ne tient qu'une connexion, les lectures imbriquées la réutilisent.
+_lease_holder = contextvars.ContextVar("db_lease_holder", default=None)
+_lease_local = threading.local()
+
+
+def leased_session():
+    holder = _lease_holder.get()
+    if holder is not None and holder.get("session") is not None:
+        return holder["session"]
+    return getattr(_lease_local, "session", None)
+
+
+def bind_lease(session):
+    """Pose la session sur le thread qui exécute vraiment l'endpoint."""
+    previous = getattr(_lease_local, "session", None)
+    _lease_local.session = session
+    return previous
+
+
+def unbind_lease(previous):
+    if previous is None:
+        _lease_local.session = None
+    else:
+        _lease_local.session = previous
+
+
+@contextmanager
+def lease_session(bind=None):
+    """Session propriétaire, ou la session déjà ouverte sur ce thread."""
+    current = leased_session()
+    if current is not None:
+        yield current
+        return
+    eng = bind if bind is not None else engine
+    with Session(eng) as session:
+        _lease_local.session = session
+        try:
+            yield session
+        finally:
+            _lease_local.session = None
+
+
+class _SessionExecutor:
+    """Exécute sur la session déjà ouverte, sans second checkout ni connection() réentrant."""
+
+    def __init__(self, session: Session):
+        self._session = session
+
+    def execute(self, statement, params=None, **kw):
+        if params is None:
+            return self._session.execute(statement, **kw)
+        return self._session.execute(statement, params, **kw)
+
+
+@contextmanager
+def lease_connection(bind=None):
+    """SELECT. Si une session de requête est ouverte, pas de second checkout."""
+    current = leased_session()
+    if current is not None:
+        yield _SessionExecutor(current)
+        return
+    eng = bind if bind is not None else engine
+    with eng.connect() as conn:
+        yield conn
+
+
+@contextmanager
+def lease_begin(bind=None):
+    """
+    Écriture courte. Pendant une requête, savepoint sur la session déjà prise.
+    Hors requête, transaction autonome (commit immédiat), comme engine.begin().
+    """
+    current = leased_session()
+    if current is not None:
+        with current.begin_nested():
+            yield _SessionExecutor(current)
+        return
+    eng = bind if bind is not None else engine
+    with eng.begin() as conn:
+        yield conn
+
+
+async def _request_lease_holder():
+    holder: dict = {}
+    token = _lease_holder.set(holder)
+    try:
+        yield holder
+    finally:
+        _lease_holder.reset(token)
+
+
+def get_session(holder: dict = Depends(_request_lease_holder)):
+    """Une connexion pour toute la requête. Les lectures imbriquées la réutilisent."""
     try:
         with Session(engine) as session:
-            yield session
+            if holder is not None:
+                holder["session"] = session
+            try:
+                yield session
+            finally:
+                if holder is not None:
+                    holder["session"] = None
     except HTTPException:
         raise
     except Exception as e:

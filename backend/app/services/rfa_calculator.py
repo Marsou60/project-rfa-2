@@ -299,10 +299,10 @@ def load_contract_rules(contract: Contract) -> Dict[str, ContractRule]:
     override = _rules_loader_override.get()
     if override is not None:
         return override(contract)
-    from sqlmodel import Session, select
-    from app.database import engine
-    
-    with Session(engine) as session:
+    from sqlmodel import select
+    from app.database import engine, lease_session
+
+    with lease_session(engine) as session:
         statement = select(ContractRule).where(
             ContractRule.contract_id == contract.id
         )
@@ -325,9 +325,9 @@ def load_entity_overrides(target_type: str, target_value: str) -> Dict[str, Dict
             ...
         }
     """
-    from sqlmodel import Session, select
-    from app.database import engine
-    
+    from sqlmodel import select
+    from app.database import engine, lease_session
+
     override = _overrides_loader_override.get()
     if override is not None:
         return override(target_type, target_value)
@@ -341,7 +341,7 @@ def load_entity_overrides(target_type: str, target_value: str) -> Dict[str, Dict
     else:
         target_type_enum = target_type
     
-    with Session(engine) as session:
+    with lease_session(engine) as session:
         statement = select(ContractOverride).where(
             ContractOverride.target_type == target_type_enum,
             ContractOverride.target_value == normalized,

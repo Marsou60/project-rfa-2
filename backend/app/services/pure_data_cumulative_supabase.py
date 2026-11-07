@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
-from app.database import engine
+from app.database import engine, lease_connection
 
 PURE_DATA_CUMULATIVE_TABLE = "pure_data_cumulative"
 
@@ -100,7 +100,7 @@ COLUMNS = [
 
 def _table_exists() -> bool:
     try:
-        with engine.connect() as conn:
+        with lease_connection(engine) as conn:
             from sqlalchemy import text
             conn.execute(text(f'SELECT 1 FROM "{PURE_DATA_CUMULATIVE_TABLE}" LIMIT 1'))
         return True
@@ -382,6 +382,8 @@ def write_cumulative_platform_rows(
         raise ValueError(f"Aucune ligne exploitable pour {platform} apres nettoyage.")
 
     deleted, inserted = _replace_platform_rows_atomic(platform, sorted(years), clean)
+    from app.services.network_cache import invalidate_network_cache
+    invalidate_network_cache()
 
     return {
         "rows_inserted": inserted,
@@ -419,6 +421,8 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
                 execute_values(cur, sql, batch, page_size=len(batch))
                 total += len(batch)
             raw.commit()
+            from app.services.network_cache import invalidate_network_cache
+            invalidate_network_cache()
             return total
         except Exception:
             raw.rollback()
@@ -437,6 +441,8 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
             batch = [{c: v for c, v in zip(COLUMNS, t)} for t in clean[i:i + BATCH]]
             conn.execute(text(insert_sql), batch)
             total += len(batch)
+    from app.services.network_cache import invalidate_network_cache
+    invalidate_network_cache()
     return total
 
 
@@ -453,7 +459,7 @@ def read_cumulative_rows() -> Tuple[List[Dict], List[str], Dict[str, str]]:
         return [], list(COLUMNS), {col: col for col in COLUMNS}
     from sqlalchemy import text
     col_select = ", ".join(f'"{c}"' for c in COLUMNS)
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         result = conn.execute(text(f'SELECT {col_select} FROM "{PURE_DATA_CUMULATIVE_TABLE}"'))
         rows_raw = result.fetchall()
     return _materialize_rows(rows_raw), list(COLUMNS), {col: col for col in COLUMNS}
@@ -526,7 +532,7 @@ def count_cumulative_rows() -> int:
     if not _table_exists():
         return 0
     from sqlalchemy import text
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         result = conn.execute(text(f'SELECT COUNT(*) FROM "{PURE_DATA_CUMULATIVE_TABLE}"'))
         return result.scalar() or 0
 
@@ -544,7 +550,7 @@ def count_cumulative_rows_by_platform() -> Dict[str, int]:
         GROUP BY UPPER(TRIM("fournisseur"))
         '''
     )
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         for frs, n in conn.execute(sql).fetchall():
             platform = normalize_platform(frs)
             if platform:
@@ -579,7 +585,7 @@ def months_in_data_by_platform(year: Optional[int] = None) -> Dict[str, List[int
         )
         params = {}
     buckets: Dict[str, set] = {p: set() for p in CANONICAL_PLATFORMS}
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         for frs, mois in conn.execute(sql, params).fetchall():
             platform = normalize_platform(frs)
             m = _norm_month(mois)

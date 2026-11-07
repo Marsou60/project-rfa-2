@@ -212,6 +212,21 @@ export type ClientRfaResponse = {
   };
 };
 
+export async function getNetworkKpis(params?: {
+  yearCurrent?: number;
+  yearPrevious?: number;
+  commercial?: string | null;
+}): Promise<NetworkDashboard> {
+  const { data } = await api.get('/pure-data/cumulative/network-kpis', {
+    params: {
+      year_current: params?.yearCurrent ?? 2026,
+      year_previous: params?.yearPrevious ?? 2025,
+      commercial: params?.commercial || undefined,
+    },
+  });
+  return data;
+}
+
 export async function getNetworkDashboard(params?: {
   yearCurrent?: number;
   yearPrevious?: number;

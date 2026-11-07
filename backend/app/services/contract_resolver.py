@@ -13,7 +13,7 @@ IMPORTANT — séparation des années :
 """
 from sqlmodel import Session, select
 from typing import Optional, List, Set
-from app.database import engine
+from app.database import engine, lease_session
 from app.models import Contract, ContractAssignment, TargetType, ContractScope
 
 
@@ -378,7 +378,7 @@ def resolve_contract(
         year: Année RFA. None ou < 2026 = vue historique 2025.
               >= 2026 = contrat Adhérents 2026 pour la base.
     """
-    with Session(engine) as session:
+    with lease_session(engine) as session:
         raw = _resolve_raw_assignment(session, code_union, groupe_client)
         resolved = apply_year_contract_policy(raw, year, session)
         if not resolved:
@@ -396,7 +396,7 @@ class BatchContractResolver:
     Respecte la même politique d'année que resolve_contract.
     """
     def __init__(self):
-        with Session(engine) as session:
+        with lease_session(engine) as session:
             all_assignments = session.exec(select(ContractAssignment)).all()
             all_contracts = session.exec(select(Contract).where(Contract.is_active == True)).all()
             self._by_code_union: dict = {}
@@ -477,7 +477,7 @@ class BatchContractResolver:
 
 def get_contract_by_id(contract_id: int) -> Optional[Contract]:
     """Récupère un contrat par ID."""
-    with Session(engine) as session:
+    with lease_session(engine) as session:
         return session.get(Contract, contract_id)
 
 
@@ -486,7 +486,7 @@ def get_default_union_contract() -> Optional[Contract]:
     Récupère le contrat Union par défaut (scope="union").
     Si aucun contrat par défaut, retourne le premier contrat Union actif.
     """
-    with Session(engine) as session:
+    with lease_session(engine) as session:
         statement = select(Contract).where(
             Contract.scope == ContractScope.UNION,
             Contract.is_default == True,
@@ -516,7 +516,7 @@ def get_all_union_contracts() -> List[Contract]:
     """
     Récupère les contrats Union actifs (scope=UNION) dont le nom indique un usage DAF/Groupement.
     """
-    with Session(engine) as session:
+    with lease_session(engine) as session:
         statement = select(Contract).where(
             Contract.scope == ContractScope.UNION,
             Contract.is_active == True,

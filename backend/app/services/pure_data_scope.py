@@ -12,6 +12,8 @@ from typing import List, Optional, Sequence
 
 from sqlalchemy import bindparam, text
 
+from app.database import lease_connection
+
 
 def physical_order_expr(engine) -> str:
     name = engine.dialect.name
@@ -98,7 +100,7 @@ def exact_rows(
 
 def distinct_values(engine, table: str, column: str) -> List:
     sql = text(f'SELECT DISTINCT "{column}" FROM "{table}"')
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         return [row[0] for row in conn.execute(sql).fetchall()]
 
 
@@ -147,5 +149,5 @@ def fetch_scoped_raw(
     if expanding:
         stmt = stmt.bindparams(*expanding)
 
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         return list(conn.execute(stmt, params).fetchall())

@@ -57,17 +57,26 @@ def _run_sync(async_fn):
     """Exécute une coroutine sans await jusqu'à son return."""
 
     def sync_endpoint(*args, **kwargs):
-        coro = async_fn(*args, **kwargs)
+        from app.database import bind_lease, unbind_lease
+
+        session = kwargs.get("session")
+        bound = session is not None
+        token = bind_lease(session) if bound else None
         try:
-            coro.send(None)
-        except StopIteration as stop:
-            return stop.value
-        else:
-            coro.close()
-            raise RuntimeError(
-                f"{async_fn.__name__} a suspendu sur un await ; "
-                "la route doit rester sur la boucle."
-            )
+            coro = async_fn(*args, **kwargs)
+            try:
+                coro.send(None)
+            except StopIteration as stop:
+                return stop.value
+            else:
+                coro.close()
+                raise RuntimeError(
+                    f"{async_fn.__name__} a suspendu sur un await ; "
+                    "la route doit rester sur la boucle."
+                )
+        finally:
+            if bound:
+                unbind_lease(token)
 
     sync_endpoint.__name__ = async_fn.__name__
     sync_endpoint.__qualname__ = getattr(async_fn, "__qualname__", async_fn.__name__)
