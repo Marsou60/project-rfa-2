@@ -3,6 +3,7 @@ Service d'export PDF pour les rapports RFA clients.
 Export "Espace Client" : rendu identique à la page Espace Client.
 """
 import base64
+import contextvars
 import json
 import logging
 import mimetypes
@@ -274,8 +275,24 @@ def _get_rate_for_threshold(tiers: List[Dict[str, float]], threshold: Optional[f
     return rate
 
 
+_rules_map_cache_var: contextvars.ContextVar = contextvars.ContextVar(
+    "pdf_rules_map_cache", default=None
+)
+
+
 def _load_rules_map(contract_id: int, mode: str, entity_id: str) -> Dict[str, Dict]:
     """Charge les règles du contrat + overrides entité, retourne un map key -> {tiers_rfa, tiers_bonus, tiers, ...}."""
+    cache = _rules_map_cache_var.get()
+    if cache is not None:
+        # Même clé que l'ancien cache du Génie : (contrat, mode), pas l'entité.
+        key = (contract_id, mode)
+        if key not in cache:
+            cache[key] = _load_rules_map_uncached(contract_id, mode, entity_id)
+        return cache[key]
+    return _load_rules_map_uncached(contract_id, mode, entity_id)
+
+
+def _load_rules_map_uncached(contract_id: int, mode: str, entity_id: str) -> Dict[str, Dict]:
     contract = get_contract_by_id(contract_id)
     if not contract:
         return {}

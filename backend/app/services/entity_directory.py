@@ -66,18 +66,14 @@ def collect_pure_data_entities() -> Dict[str, Any]:
     groups: Dict[str, Dict[str, Any]] = {}
 
     try:
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
-        if count_monthly_rows() > 0:
-            rows, _, _ = read_monthly_rows()
-            _ingest_rows(rows, clients, groups)
+        from app.services.pure_data_monthly_supabase import read_monthly_directory_rows
+        _ingest_rows(read_monthly_directory_rows(), clients, groups)
     except Exception as e:
         print(f"[ENTITY_DIR] Lecture mensuel ignorée: {e}")
 
     try:
-        from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
-        if count_cumulative_rows() > 0:
-            rows, _, _ = read_cumulative_rows()
-            _ingest_rows(rows, clients, groups)
+        from app.services.pure_data_cumulative_supabase import read_cumulative_directory_rows
+        _ingest_rows(read_cumulative_directory_rows(), clients, groups)
     except Exception as e:
         print(f"[ENTITY_DIR] Lecture cumulé ignorée: {e}")
 
@@ -109,6 +105,8 @@ def merge_entities_into_import(import_data: ImportData) -> ImportData:
     if import_data is None:
         return import_data
 
+    from app.storage import import_data_lock
+
     if not import_data.by_client and not import_data.by_group and import_data.data:
         from app.services.compute import compute_aggregations
         try:
@@ -119,38 +117,45 @@ def merge_entities_into_import(import_data: ImportData) -> ImportData:
     pd = collect_pure_data_entities()
     global_empty, tri_empty = _empty_ca_maps()
 
-    for code, meta in (pd.get("clients") or {}).items():
-        if code in import_data.by_client:
-            continue
-        import_data.by_client[code] = {
-            "code_union": code,
-            "nom_client": meta.get("nom_client"),
-            "groupe_client": meta.get("groupe_client") or "",
-            "global": dict(global_empty),
-            "tri": dict(tri_empty),
-            "global_total": 0.0,
-            "tri_total": 0.0,
-            "grand_total": 0.0,
-            "from_pure_data": True,
-        }
+    with import_data_lock:
+        clients = dict(import_data.by_client)
+        groups = dict(import_data.by_group)
 
-    for gname, meta in (pd.get("groups") or {}).items():
-        if gname in import_data.by_group:
-            continue
-        if gname in EXCLUDED_GROUPS or gname == "SANS GROUPE":
-            continue
-        codes = list(meta.get("codes_union") or [])
-        import_data.by_group[gname] = {
-            "groupe_client": gname,
-            "nb_comptes": meta.get("nb_comptes") or len(codes),
-            "codes_union": codes,
-            "global": dict(global_empty),
-            "tri": dict(tri_empty),
-            "global_total": 0.0,
-            "tri_total": 0.0,
-            "grand_total": 0.0,
-            "from_pure_data": True,
-        }
+        for code, meta in (pd.get("clients") or {}).items():
+            if code in clients:
+                continue
+            clients[code] = {
+                "code_union": code,
+                "nom_client": meta.get("nom_client"),
+                "groupe_client": meta.get("groupe_client") or "",
+                "global": dict(global_empty),
+                "tri": dict(tri_empty),
+                "global_total": 0.0,
+                "tri_total": 0.0,
+                "grand_total": 0.0,
+                "from_pure_data": True,
+            }
+
+        for gname, meta in (pd.get("groups") or {}).items():
+            if gname in groups:
+                continue
+            if gname in EXCLUDED_GROUPS or gname == "SANS GROUPE":
+                continue
+            codes = list(meta.get("codes_union") or [])
+            groups[gname] = {
+                "groupe_client": gname,
+                "nb_comptes": meta.get("nb_comptes") or len(codes),
+                "codes_union": codes,
+                "global": dict(global_empty),
+                "tri": dict(tri_empty),
+                "global_total": 0.0,
+                "tri_total": 0.0,
+                "grand_total": 0.0,
+                "from_pure_data": True,
+            }
+
+        import_data.by_client = clients
+        import_data.by_group = groups
 
     return import_data
 
@@ -191,27 +196,28 @@ def load_pure_data_rows_for_entity(
     Charge les lignes pour une entité : cumulé d'abord, sinon mensuel.
     Retourne (rows, source) avec source in {"cumulative", "monthly", ""}.
     """
+    years = [year] if year is not None else None
     try:
-        from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
-        if count_cumulative_rows() > 0:
-            all_rows, _, _ = read_cumulative_rows()
-            filtered = filter_rows_for_entity(
-                all_rows, code_union=code_union, groupe_client=groupe_client, year=year
-            )
-            if filtered:
-                return filtered, "cumulative"
+        from app.services.pure_data_cumulative_supabase import read_cumulative_rows_scoped
+        rows, _, _ = read_cumulative_rows_scoped(
+            code_union=code_union,
+            groupe_client=groupe_client,
+            years=years,
+        )
+        if rows:
+            return rows, "cumulative"
     except Exception as e:
         print(f"[ENTITY_DIR] Cumulé indisponible: {e}")
 
     try:
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
-        if count_monthly_rows() > 0:
-            all_rows, _, _ = read_monthly_rows()
-            filtered = filter_rows_for_entity(
-                all_rows, code_union=code_union, groupe_client=groupe_client, year=year
-            )
-            if filtered:
-                return filtered, "monthly"
+        from app.services.pure_data_monthly_supabase import read_monthly_rows_scoped
+        rows, _, _ = read_monthly_rows_scoped(
+            code_union=code_union,
+            groupe_client=groupe_client,
+            years=years,
+        )
+        if rows:
+            return rows, "monthly"
     except Exception as e:
         print(f"[ENTITY_DIR] Mensuel indisponible: {e}")
 

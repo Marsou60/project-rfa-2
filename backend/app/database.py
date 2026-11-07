@@ -43,6 +43,44 @@ AVATARS_DIR        = os.path.join(_UPLOAD_BASE, "avatars")
 LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
 SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
+# Plafond volontaire, très en dessous du max_connections Supabase (60).
+# Défaut : 2 connexions + 1 dépassement = 3 par process.
+# 2 workers (non activés par le Dockerfile) = 6, sous le budget de 8.
+# Ne pas monter ces valeurs pour « utiliser » les connexions déjà prises ailleurs.
+DEFAULT_DB_POOL_SIZE = 2
+DEFAULT_DB_MAX_OVERFLOW = 1
+APP_DB_CONNECTION_BUDGET = 8
+RECOMMENDED_MAX_WORKERS = 2
+
+
+def postgres_pool_settings() -> dict:
+    """Réglages QueuePool. DB_POOL_SIZE / DB_MAX_OVERFLOW / DB_POOL_TIMEOUT."""
+    try:
+        pool_size = int(os.environ.get("DB_POOL_SIZE", str(DEFAULT_DB_POOL_SIZE)))
+    except ValueError:
+        pool_size = DEFAULT_DB_POOL_SIZE
+    try:
+        max_overflow = int(os.environ.get("DB_MAX_OVERFLOW", str(DEFAULT_DB_MAX_OVERFLOW)))
+    except ValueError:
+        max_overflow = DEFAULT_DB_MAX_OVERFLOW
+    try:
+        pool_timeout = float(os.environ.get("DB_POOL_TIMEOUT", "20"))
+    except ValueError:
+        pool_timeout = 20.0
+    if pool_size < 1:
+        pool_size = 1
+    if max_overflow < 0:
+        max_overflow = 0
+    if pool_timeout < 0:
+        pool_timeout = 0.0
+    return {
+        "pool_size": pool_size,
+        "max_overflow": max_overflow,
+        "pool_timeout": pool_timeout,
+        "pool_pre_ping": True,
+    }
+
+
 # Créer le moteur
 if _PG:
     # Connexion directe psycopg2 — contourne tout parsing d'URL
@@ -50,7 +88,12 @@ if _PG:
         import psycopg2 as _psycopg2
         def _pg_creator():
             return _psycopg2.connect(**_PG)
-        engine = create_engine("postgresql+psycopg2://", creator=_pg_creator, echo=False)
+        engine = create_engine(
+            "postgresql+psycopg2://",
+            creator=_pg_creator,
+            echo=False,
+            **postgres_pool_settings(),
+        )
     except ImportError:
         engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 else:

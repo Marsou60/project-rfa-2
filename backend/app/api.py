@@ -63,8 +63,9 @@ from app.schemas import (
 from app.database import get_session, hash_password, verify_password, UPLOADS_DIR, AVATARS_DIR, LOGOS_DIR, SUPPLIER_LOGOS_DIR
 from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, RuleScope, TargetType, OverrideTierType, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting, BonusSetting
 from app.services import nathalie_service, impayes_service
+from app.threadpool_route import ThreadpoolAPIRoute
 
-router = APIRouter()
+router = APIRouter(route_class=ThreadpoolAPIRoute)
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -1179,17 +1180,13 @@ async def get_global_recap(
 
     try:
         import json as _json
-        from app.services.contract_resolver import BatchContractResolver
         from app.models import ContractRule, ContractOverride
-        import app.services.contract_resolver as _resolver_mod
-        import app.services.rfa_calculator as _rfa_calc
+        from app.services.rfa_calculator import use_preloaded_rfa_lookups
 
-        # ── Batch 1 : résolution des contrats (3 requêtes) ──────────────
-        _batch = BatchContractResolver()
-        _orig_resolve = _resolver_mod.resolve_contract
-        _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None, year=None: _batch.resolve(code_union, groupe_client, year=year)
-
-        # ── Batch 2 : toutes les règles de contrats (1 requête) ─────────
+        # Une requête pour les règles, une pour les overrides.
+        # Le cache reste local à cette requête : on ne remplace plus les globales
+        # (resolve_contract importé ailleurs n'était de toute façon pas affecté,
+        # et le remplacement fuyait dès que deux requêtes tournaient ensemble).
         _all_rules     = session.exec(select(ContractRule)).all()
         _all_overrides = session.exec(select(ContractOverride).where(ContractOverride.is_active == True)).all()
 
@@ -1197,7 +1194,6 @@ async def get_global_recap(
         for _r in _all_rules:
             _rules_cache.setdefault(_r.contract_id, {})[_r.key] = _r
 
-        # ── Batch 3 : tous les overrides (1 requête) ────────────────────
         _ov_cache = {}
         for _ov in _all_overrides:
             _tt = _ov.target_type.value if hasattr(_ov.target_type, 'value') else str(_ov.target_type)
@@ -1208,19 +1204,15 @@ async def get_global_recap(
             except Exception:
                 pass
 
-        _orig_rules    = _rfa_calc.load_contract_rules
-        _orig_overrides = _rfa_calc.load_entity_overrides
-        _rfa_calc.load_contract_rules    = lambda c: _rules_cache.get(c.id, {})
-        _rfa_calc.load_entity_overrides  = lambda tt, tv: _ov_cache.get(
-            (str(tt) if not hasattr(tt,'value') else tt.value, (tv or "").strip().upper()), {}
-        )
+        def _rules_loader(contract):
+            return _rules_cache.get(getattr(contract, "id", None), {})
 
-        try:
+        def _overrides_loader(target_type, target_value):
+            tt = target_type.value if hasattr(target_type, "value") else str(target_type)
+            return _ov_cache.get((tt, (target_value or "").strip().upper()), {})
+
+        with use_preloaded_rfa_lookups(_rules_loader, _overrides_loader):
             result = get_global_recap_rfa(import_data, dissolved_groups=dissolved_set)
-        finally:
-            _resolver_mod.resolve_contract   = _orig_resolve
-            _rfa_calc.load_contract_rules    = _orig_rules
-            _rfa_calc.load_entity_overrides  = _orig_overrides
 
         return result
     except Exception as e:
@@ -4072,9 +4064,9 @@ async def pure_data_cumulative_client_dashboard(
     )
 
     try:
-        from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
+        from app.services.pure_data_cumulative_supabase import read_cumulative_rows_scoped
         from app.services.pure_data_cumulative_service import build_cumulative_dashboard
-        from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+        from app.services.pure_data_monthly_supabase import read_monthly_rows_scoped
         from app.services.rfa_fusion import fusion_for_code
 
         fusion = fusion_for_code(session, code_union) if code_union else None
@@ -4091,18 +4083,24 @@ async def pure_data_cumulative_client_dashboard(
             fournisseur=fournisseur,
             code_unions=code_unions,
         )
+        # Années non poussées en SQL : le libellé et available dépendent aussi
+        # des lignes hors  N / N-1. Le filtre entité suffit à éviter la table entière.
+        scope = dict(
+            code_union=None if code_unions else code_union,
+            groupe_client=None if code_unions else groupe_client,
+            code_unions=code_unions,
+        )
 
-        if count_cumulative_rows() > 0:
-            rows, _, _ = read_cumulative_rows()
-            if rows:
-                payload = build_cumulative_dashboard(rows=rows, **dash_kwargs)
-                if payload.get("available"):
-                    data_source = "cumulative"
+        rows, _, _ = read_cumulative_rows_scoped(**scope)
+        if rows:
+            payload = build_cumulative_dashboard(rows=rows, **dash_kwargs)
+            if payload.get("available"):
+                data_source = "cumulative"
 
         # Fallback mensuel si l'entité est absente du cumulé (ex. nouveau groupe CODIFA)
         if not payload or not payload.get("available"):
-            if count_monthly_rows() > 0:
-                monthly_rows, _, _ = read_monthly_rows()
+            monthly_rows, _, _ = read_monthly_rows_scoped(**scope)
+            if monthly_rows:
                 payload = build_cumulative_dashboard(rows=monthly_rows, **dash_kwargs)
                 if payload.get("available"):
                     data_source = "monthly"
@@ -4577,14 +4575,11 @@ def _build_network_rfa_2026_payload(
 ) -> Dict[str, Any]:
     """Agrège RFA sortante réseau 2026 + comparaison Excel 2025."""
     import json as _json
-    from app.services.pure_data_cumulative_supabase import read_cumulative_rows, count_cumulative_rows
-    from app.services.pure_data_monthly_supabase import read_monthly_rows, count_monthly_rows
+    from app.services.pure_data_cumulative_supabase import read_cumulative_rows_scoped
+    from app.services.pure_data_monthly_supabase import read_monthly_rows_scoped
     from app.services.pure_data_network_rfa import compute_network_rfa_2026, attach_compare_2025
     from app.services.entity_directory import merge_network_payloads
-    from app.services.contract_resolver import BatchContractResolver
     from app.models import ContractRule, ContractOverride
-    import app.services.contract_resolver as _resolver_mod
-    import app.services.rfa_calculator as _rfa_calc
 
     dissolved_set = set()
     if dissolved_groups:
@@ -4595,19 +4590,12 @@ def _build_network_rfa_2026_payload(
         _get_setting_value(session, PURE_DATA_CUMULATIVE_MONTH_KEY)
     )
 
-    cumulative_rows_year: List[Dict[str, Any]] = []
-    if count_cumulative_rows() > 0:
-        all_rows, _, _ = read_cumulative_rows()
-        cumulative_rows_year = [r for r in all_rows if r.get("year") == year]
-
-    monthly_rows_year: List[Dict[str, Any]] = []
-    if count_monthly_rows() > 0:
-        all_monthly, _, _ = read_monthly_rows()
-        monthly_rows_year = [r for r in all_monthly if r.get("year") == year]
-        if not reporting_month and monthly_rows_year:
-            months = [int(r.get("month") or 0) for r in monthly_rows_year if r.get("month")]
-            if months:
-                reporting_month = max(months)
+    cumulative_rows_year, _, _ = read_cumulative_rows_scoped(years=[year])
+    monthly_rows_year, _, _ = read_monthly_rows_scoped(years=[year])
+    if not reporting_month and monthly_rows_year:
+        months = [int(r.get("month") or 0) for r in monthly_rows_year if r.get("month")]
+        if months:
+            reporting_month = max(months)
 
     if not cumulative_rows_year and not monthly_rows_year:
         return {
@@ -4615,12 +4603,6 @@ def _build_network_rfa_2026_payload(
             "message": f"Aucune donnée Pure Data (cumulé ou mensuel) pour {year}.",
             "year": year,
         }
-
-    _batch = BatchContractResolver()
-    _orig_resolve = _resolver_mod.resolve_contract
-    _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None, year=None: _batch.resolve(
-        code_union, groupe_client, year=year
-    )
 
     _all_rules = session.exec(select(ContractRule)).all()
     _all_overrides = session.exec(select(ContractOverride).where(ContractOverride.is_active == True)).all()
@@ -4639,16 +4621,19 @@ def _build_network_rfa_2026_payload(
         except Exception:
             pass
 
-    _orig_rules = _rfa_calc.load_contract_rules
-    _orig_overrides = _rfa_calc.load_entity_overrides
-    _rfa_calc.load_contract_rules = lambda c: _rules_cache.get(c.id, {})
-    _rfa_calc.load_entity_overrides = lambda tt, tv: _ov_cache.get(
-        (str(tt) if not hasattr(tt, "value") else tt.value, (tv or "").strip().upper()),
-        {},
-    )
+    from app.services.rfa_calculator import use_preloaded_rfa_lookups
+
+    def _rules_loader(contract):
+        return _rules_cache.get(getattr(contract, "id", None), {})
+
+    def _overrides_loader(target_type, target_value):
+        tt = target_type.value if hasattr(target_type, "value") else str(target_type)
+        return _ov_cache.get((tt, (target_value or "").strip().upper()), {})
 
     try:
         network: Optional[Dict[str, Any]] = None
+        _lookup_ctx = use_preloaded_rfa_lookups(_rules_loader, _overrides_loader)
+        _lookup_ctx.__enter__()
         if cumulative_rows_year:
             network = compute_network_rfa_2026(
                 cumulative_rows_year,
@@ -4704,9 +4689,7 @@ def _build_network_rfa_2026_payload(
                 )
                 network["data_source"] = "monthly"
     finally:
-        _resolver_mod.resolve_contract = _orig_resolve
-        _rfa_calc.load_contract_rules = _orig_rules
-        _rfa_calc.load_entity_overrides = _orig_overrides
+        _lookup_ctx.__exit__(None, None, None)
 
     if not network or not network.get("available"):
         return {

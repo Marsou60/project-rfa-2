@@ -173,9 +173,19 @@ def _rfa_for_ca_tri(ca: float, rule: Dict) -> float:
 
 
 def genie_full_analysis(import_data: ImportData) -> Dict:
+    """Analyse complète. Le cache de règles PDF reste local à cet appel."""
+    from app.services.pdf_export import _rules_map_cache_var
+
+    token = _rules_map_cache_var.set({})
+    try:
+        return _genie_full_analysis_impl(import_data)
+    finally:
+        _rules_map_cache_var.reset(token)
+
+
+def _genie_full_analysis_impl(import_data: ImportData) -> Dict:
     """
     Analyse complète : compare ENTRANT (Union reçoit des fournisseurs) vs SORTANT (Union paie aux adhérents).
-    Utilise BatchContractResolver pour charger tous les contrats en 3 requêtes (au lieu de N×3).
     Le résultat est mis en cache en mémoire (Railway/local) — premier appel lent, suivants instantanés.
     """
     # ── Vérification cache ────────────────────────────────────────────────────
@@ -192,34 +202,9 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
     if _os.environ.get("VERCEL") == "1":
         _max_clients = 30
 
-    # Pré-charge tous les contrats et assignments en 3 requêtes pour éviter le N+1
-    from app.services.contract_resolver import BatchContractResolver
-    _batch_resolver = BatchContractResolver()
-
-    # Monkey-patch temporaire de resolve_contract pour cette analyse
-    import app.services.rfa_calculator as _calc_mod
-    import app.services.contract_resolver as _resolver_mod
-    _orig_resolve = _resolver_mod.resolve_contract
-    _resolver_mod.resolve_contract = lambda code_union=None, groupe_client=None, year=None: _batch_resolver.resolve(code_union, groupe_client, year=year)
-    _calc_mod.resolve_contract = _resolver_mod.resolve_contract
-
-    # =====================================================================
-    # 1) Analyser chaque ADHÉRENT (contrats sortants : ce que Union paie)
-    # =====================================================================
-    # Cache des règles contrat par (contract_id, mode) pour éviter N requêtes identiques
-    _rules_cache: Dict[tuple, Dict] = {}
-    _orig_load_rules_map = None
-    try:
-        import app.services.pdf_export as _pe_mod
-        _orig_load_rules_map = _pe_mod._load_rules_map
-        def _cached_load_rules_map(contract_id, mode, entity_id):
-            k = (contract_id, mode)
-            if k not in _rules_cache:
-                _rules_cache[k] = _orig_load_rules_map(contract_id, mode, entity_id)
-            return _rules_cache[k]
-        _pe_mod._load_rules_map = _cached_load_rules_map
-    except Exception:
-        pass
+    # resolve_contract est importé par nom dans compute.py : le remplacer sur
+    # le module ne changeait pas ce calcul et fuyait vers les autres requêtes.
+    # Le cache de règles PDF est posé par genie_full_analysis (contextvar).
 
     all_near = []
     all_achieved = []
@@ -741,15 +726,6 @@ def genie_full_analysis(import_data: ImportData) -> Dict:
         smart_plans.extend(_build_plans_for_entity(groupe_name, elabel, "group", all_group_rows))
 
     smart_plans.sort(key=lambda x: (-x["tiers_with_bonus"], -x["tiers_unlocked"], x["total_with_bonus"]))
-
-    # Restaure les fonctions originales
-    _resolver_mod.resolve_contract = _orig_resolve
-    _calc_mod.resolve_contract = _orig_resolve
-    if _orig_load_rules_map:
-        try:
-            _pe_mod._load_rules_map = _orig_load_rules_map
-        except Exception:
-            pass
 
     return {
         "summary": {

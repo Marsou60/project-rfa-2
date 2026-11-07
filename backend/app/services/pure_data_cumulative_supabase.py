@@ -440,6 +440,14 @@ def write_cumulative_rows(rows: List[Dict], reporting_month: int) -> int:
     return total
 
 
+def _materialize_rows(rows_raw) -> List[Dict]:
+    rows = [dict(zip(COLUMNS, r)) for r in rows_raw]
+    for r in rows:
+        r["year"] = _norm_year(r.get("annee"))
+        r["month"] = _norm_month(r.get("mois"))
+    return rows
+
+
 def read_cumulative_rows() -> Tuple[List[Dict], List[str], Dict[str, str]]:
     if not _table_exists():
         return [], list(COLUMNS), {col: col for col in COLUMNS}
@@ -448,11 +456,70 @@ def read_cumulative_rows() -> Tuple[List[Dict], List[str], Dict[str, str]]:
     with engine.connect() as conn:
         result = conn.execute(text(f'SELECT {col_select} FROM "{PURE_DATA_CUMULATIVE_TABLE}"'))
         rows_raw = result.fetchall()
-    rows = [dict(zip(COLUMNS, r)) for r in rows_raw]
-    for r in rows:
-        r["year"] = _norm_year(r.get("annee"))
-        r["month"] = _norm_month(r.get("mois"))
+    return _materialize_rows(rows_raw), list(COLUMNS), {col: col for col in COLUMNS}
+
+
+def read_cumulative_rows_scoped(
+    *,
+    code_union: Optional[str] = None,
+    code_unions: Optional[List[str]] = None,
+    groupe_client: Optional[str] = None,
+    years: Optional[List[int]] = None,
+) -> Tuple[List[Dict], List[str], Dict[str, str]]:
+    """
+    Lignes d'une fiche (code, fusion ou groupe) et/ou d'années.
+    Même résultat que read_cumulative_rows() puis le filtre Python historique.
+    """
+    empty = ([], list(COLUMNS), {col: col for col in COLUMNS})
+    if not _table_exists():
+        return empty
+    from app.services.pure_data_scope import (
+        code_match_values,
+        exact_rows,
+        fetch_scoped_raw,
+        group_match_values,
+    )
+
+    match_column = None
+    raw_values = None
+    include_null = False
+    codes = list(code_unions) if code_unions else ([code_union] if code_union else [])
+    if codes:
+        raw_values, include_null = code_match_values(engine, PURE_DATA_CUMULATIVE_TABLE, codes)
+        match_column = "code_union"
+    elif groupe_client:
+        raw_values, include_null = group_match_values(
+            engine, PURE_DATA_CUMULATIVE_TABLE, groupe_client
+        )
+        match_column = "groupe_client"
+    raw = fetch_scoped_raw(
+        engine,
+        PURE_DATA_CUMULATIVE_TABLE,
+        COLUMNS,
+        raw_values=raw_values,
+        include_null=include_null,
+        match_column=match_column,
+        years=years,
+    )
+    rows = exact_rows(
+        _materialize_rows(raw),
+        code_union=code_union,
+        code_unions=code_unions,
+        groupe_client=groupe_client,
+        years=years,
+    )
     return rows, list(COLUMNS), {col: col for col in COLUMNS}
+
+
+def read_cumulative_directory_rows() -> List[Dict]:
+    """Colonnes d'identité, ordre physique. Sert à l'annuaire, pas aux montants."""
+    if not _table_exists():
+        return []
+    from app.services.pure_data_scope import fetch_scoped_raw
+
+    cols = ["code_union", "raison_sociale", "groupe_client"]
+    raw = fetch_scoped_raw(engine, PURE_DATA_CUMULATIVE_TABLE, cols)
+    return [dict(zip(cols, row)) for row in raw]
 
 
 def count_cumulative_rows() -> int:
