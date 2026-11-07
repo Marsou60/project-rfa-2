@@ -548,6 +548,288 @@ def test_import_during_compute_does_not_publish_the_old_total(tmp_path, monkeypa
     assert engine.pool.checkedout() == 0
 
 
+def _pct(values, p):
+    xs = sorted(values)
+    if not xs:
+        return 0.0
+    if len(xs) == 1:
+        return xs[0]
+    rank = (len(xs) - 1) * p
+    lo = int(rank)
+    hi = min(lo + 1, len(xs) - 1)
+    return xs[lo] + (xs[hi] - xs[lo]) * (rank - lo)
+
+
+def _fmt_ms(seconds):
+    return round(seconds * 1000, 2)
+
+
+async def _timed(app, path, headers, label, sink):
+    run, status, chunks = _asgi(app, "GET", path, headers=headers)
+    started = time.perf_counter()
+    await run()
+    sink.append((label, time.perf_counter() - started, status.get("code")))
+
+
+def _summarize(rows):
+    out = {}
+    for label, elapsed, code in rows:
+        bucket = out.setdefault(label, {"n": 0, "errors": 0, "times": []})
+        bucket["n"] += 1
+        bucket["times"].append(elapsed)
+        if code != 200:
+            bucket["errors"] += 1
+    lines = []
+    for label, bucket in out.items():
+        times = bucket["times"]
+        lines.append(
+            f"{label} n={bucket['n']} errors={bucket['errors']} "
+            f"total_ms={_fmt_ms(sum(times))} p50_ms={_fmt_ms(_pct(times, 0.50))} "
+            f"p95_ms={_fmt_ms(_pct(times, 0.95))} max_ms={_fmt_ms(max(times))}"
+        )
+    return lines
+
+
+def test_burst_timings_and_stale_single_recompute(tmp_path, monkeypatch):
+    """Quatre états de cache, pools 2+1 et 5+5. Quatre lignes, pas la prod."""
+    import app.services.network_cache as cache
+    import app.services.pure_data_network_dashboard as dashboard_mod
+    import app.services.pure_data_sales_source as sales
+    from app.main import app
+    from app.services.network_cache import heavy_calc_max, reset_heavy_calc_stats
+
+    report = [
+        "fixture_rows=4 cumulative, 0 monthly",
+        "amounts=46930.94 Ada + 62574.59 Rayane + 10.25 Agathe + 0.1 Ada 2025",
+        "not_production=1",
+    ]
+    grouped_calls = {"n": 0}
+    detail_calls = {"n": 0}
+    real_grouped = sales.load_evolution_grouped_rows
+    real_detail = dashboard_mod.load_evolution_sales_rows
+
+    def counting_grouped():
+        grouped_calls["n"] += 1
+        return real_grouped()
+
+    def counting_detail():
+        detail_calls["n"] += 1
+        return real_detail()
+
+    monkeypatch.setattr(sales, "load_evolution_grouped_rows", counting_grouped)
+    monkeypatch.setattr(dashboard_mod, "load_evolution_sales_rows", counting_detail)
+
+    async def login():
+        return await _auth(app, "staff-local")
+
+    async def burst():
+        token = await login()
+        headers = {"authorization": f"Bearer {token}"}
+        sink = []
+        jobs = []
+        for _ in range(10):
+            jobs.append(_timed(app, "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025", headers, "kpi", sink))
+            jobs.append(_timed(app, "/api/pure-data/cumulative/network-dashboard?year_current=2026&year_previous=2025&full=true", headers, "dashboard", sink))
+            jobs.append(_timed(app, "/api/impayes/flags", headers, "flags", sink))
+        wall0 = time.perf_counter()
+        await asyncio.gather(*jobs)
+        wall = time.perf_counter() - wall0
+        return wall, sink
+
+    try:
+        for pool_size, overflow, name in ((2, 1, "pool2+1"), (5, 5, "pool5+5")):
+            engine = _engine(f"sqlite:///{tmp_path / name}.db", pool_size, overflow)
+            watched = _watch(engine)
+            _bind(monkeypatch, engine)
+            _seed(engine)
+            phases = ("cold", "fresh", "stale", "invalidated")
+            for phase in phases:
+                grouped_calls["n"] = 0
+                detail_calls["n"] = 0
+                reset_heavy_calc_stats()
+                watched["max"] = 0
+                if phase == "cold":
+                    _reset_cache()
+                elif phase == "stale":
+                    with cache._lock:
+                        for key, (gen, stored_at, value) in list(cache._store.items()):
+                            cache._store[key] = (gen, stored_at - 120.0, value)
+                elif phase == "invalidated":
+                    cache.invalidate_network_cache()
+                wall, sink = asyncio.run(burst())
+                if phase == "stale":
+                    cache.wait_for_network_refresh()
+                errors = sum(1 for _label, _dt, code in sink if code != 200)
+                report.append(
+                    f"{name} {phase} wall_ms={_fmt_ms(wall)} heavy_max={heavy_calc_max()} "
+                    f"pool_max={watched['max']} checkedout_end={engine.pool.checkedout()} "
+                    f"errors={errors} kpi_sql={grouped_calls['n']} dashboard_sql={detail_calls['n']}"
+                )
+                report.extend("  " + line for line in _summarize(sink))
+                assert errors == 0
+                assert heavy_calc_max() <= 1
+                assert engine.pool.checkedout() == 0
+                if phase == "fresh":
+                    assert grouped_calls["n"] == 0
+                    assert detail_calls["n"] == 0
+                elif phase == "stale":
+                    assert grouped_calls["n"] == 1
+                    assert detail_calls["n"] == 1
+                elif phase in ("cold", "invalidated"):
+                    assert grouped_calls["n"] == 1
+                    assert detail_calls["n"] == 1
+            engine.dispose()
+    finally:
+        cache._TTL_S = 90.0
+
+    path = "/tmp/rfa-cache-burst-timings.txt"
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(report) + "\n")
+    print("\n".join(report))
+
+
+def test_auth_and_flags_are_not_behind_the_heavy_calc(tmp_path, monkeypatch):
+    engine = _engine(f"sqlite:///{tmp_path / 'side.db'}", 2, 1)
+    _bind(monkeypatch, engine)
+    _seed(engine)
+    _reset_cache()
+    import app.services.pure_data_sales_source as sales
+    from app.main import app
+
+    held = threading.Event()
+    release = threading.Event()
+    real = sales.load_evolution_grouped_rows
+
+    def blocked():
+        held.set()
+        assert release.wait(3)
+        return real()
+
+    monkeypatch.setattr(sales, "load_evolution_grouped_rows", blocked)
+
+    async def scenario():
+        token = await _auth(app, "staff-local")
+        headers = {"authorization": f"Bearer {token}"}
+        kpi_run, kpi_status, _kpi_chunks = _asgi(
+            app, "GET",
+            "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025",
+            headers=headers,
+        )
+        kpi_task = asyncio.create_task(kpi_run())
+        for _ in range(50):
+            if held.is_set():
+                break
+            await asyncio.sleep(0.02)
+        assert held.is_set()
+        login_run, login_status, _login_chunks = _login(app, "agathe")
+        flag_runs = [_asgi(app, "GET", "/api/impayes/flags", headers=headers) for _ in range(10)]
+        started = time.perf_counter()
+        await asyncio.wait_for(
+            asyncio.gather(login_run(), *(run() for run, _st, _ch in flag_runs)),
+            1,
+        )
+        elapsed = time.perf_counter() - started
+        release.set()
+        await kpi_task
+        flag_codes = [st["code"] for _run, st, _ch in flag_runs]
+        return elapsed, login_status["code"], kpi_status["code"], flag_codes
+
+    elapsed, login_code, kpi_code, flag_codes = asyncio.run(scenario())
+    assert elapsed < 1, elapsed
+    assert login_code == 200
+    assert kpi_code == 200
+    assert flag_codes == [200] * 10
+    assert engine.pool.checkedout() == 0
+
+
+def test_other_routes_still_use_their_session_after_network_release(tmp_path, monkeypatch):
+    engine = _engine(f"sqlite:///{tmp_path / 'routes.db'}", 2, 1)
+    _bind(monkeypatch, engine)
+    _seed(engine)
+    _reset_cache()
+    from app.main import app
+
+    async def scenario():
+        token = await _auth(app, "staff-local")
+        headers = {"authorization": f"Bearer {token}"}
+        paths = [
+            "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025",
+            "/api/pure-data/cumulative/client-dashboard?code_union=FX01&year_current=2026&year_previous=2025",
+            "/api/impayes/by-adherent/FX01",
+            "/api/impayes/flags",
+            "/api/pure-data/cumulative/network-dashboard?year_current=2026&year_previous=2025&full=true",
+        ]
+        runs = [_asgi(app, "GET", path, headers=headers) for path in paths]
+        await asyncio.gather(*(run() for run, _st, _ch in runs))
+        out = []
+        for _run, status, chunks in runs:
+            raw = b"".join(chunks)
+            out.append((status["code"], json.loads(raw) if raw else {}))
+        return out
+
+    kpi, dash, impayes, flags, full = asyncio.run(scenario())
+    assert kpi[0] == 200 and kpi[1]["kpis"]["ca_ytd"] == 109515.78
+    assert dash[0] == 200 and dash[1]["totals"]["current"] == 46930.94
+    assert impayes[0] == 200 and flags[0] == 200 and full[0] == 200
+    assert engine.pool.checkedout() == 0
+
+
+def test_cold_distinct_scopes_queue_one_heavy_calc(tmp_path, monkeypatch):
+    """Délai synthétique : trois périmètres froids ne calculent pas ensemble."""
+    engine = _engine(f"sqlite:///{tmp_path / 'queue.db'}", 2, 1)
+    _bind(monkeypatch, engine)
+    _seed(engine)
+    _reset_cache()
+    import app.services.pure_data_sales_source as sales
+    from app.main import app
+    from app.services.network_cache import heavy_calc_max
+
+    real = sales.load_evolution_grouped_rows
+    delays = []
+
+    def slow():
+        started = time.perf_counter()
+        time.sleep(0.15)
+        delays.append(time.perf_counter() - started)
+        return real()
+
+    monkeypatch.setattr(sales, "load_evolution_grouped_rows", slow)
+
+    async def scenario():
+        tokens = await asyncio.gather(
+            _auth(app, "staff-local"),
+            _auth(app, "rayane"),
+            _auth(app, "agathe"),
+        )
+        paths = [
+            "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025",
+            "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025&commercial=Ada",
+            "/api/pure-data/cumulative/network-kpis?year_current=2026&year_previous=2025",
+        ]
+        sink = []
+        jobs = [
+            _timed(app, path, {"authorization": f"Bearer {token}"}, name, sink)
+            for name, token, path in zip(("staff", "rayane", "agathe"), tokens, paths)
+        ]
+        wall0 = time.perf_counter()
+        await asyncio.gather(*jobs)
+        wall = time.perf_counter() - wall0
+        return wall, sink
+
+    wall, sink = asyncio.run(scenario())
+    assert heavy_calc_max() == 1
+    assert len(delays) == 3
+    assert wall >= 0.40
+    text_report = (
+        f"synthetic_sleep_s=0.15 scopes=3 wall_ms={_fmt_ms(wall)} heavy_max={heavy_calc_max()} "
+        + " ".join(f"{label}={_fmt_ms(elapsed)}" for label, elapsed, code in sink)
+    )
+    with open("/tmp/rfa-cache-burst-timings.txt", "a", encoding="utf-8") as handle:
+        handle.write(text_report + "\n")
+    print(text_report)
+    assert all(code == 200 for _label, _elapsed, code in sink)
+
+
 def test_postgres_ten_sessions_if_available(monkeypatch):
     url = os.environ.get("TEST_DATABASE_URL") or "postgresql+psycopg2://ubuntu@/rfa_lease_test?host=/var/run/postgresql"
     probe = _engine(url, 2, 1)
