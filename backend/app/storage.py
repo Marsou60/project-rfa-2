@@ -3,7 +3,12 @@ Stockage en mémoire des imports.
 """
 from typing import Dict, Optional, List
 from datetime import datetime
+import threading
 import uuid
+
+# Mutations de by_client / by_group. Les lecteurs qui itèrent un dict déjà
+# publié ne voient pas la copie en cours de construction.
+import_data_lock = threading.RLock()
 
 
 class ImportData:

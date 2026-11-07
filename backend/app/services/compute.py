@@ -4,7 +4,7 @@ Service de calcul et agrégation par Code Union et par Groupe.
 from typing import Dict, List, Optional
 from app.core.fields import get_global_fields, get_tri_fields, get_field_by_key
 from app.schemas import ClientSummary, ClientDetail, AmountItem, GroupDetail, EntityDetailWithRfa, RfaResult, GlobalRfaItem, TriRfaItem, MarketingItem, TierResult, RecapGlobalRfa, PlatformRfaDetail, RecapGlobalRfa
-from app.storage import ImportData
+from app.storage import ImportData, import_data_lock
 from app.services.aggregation import aggregate_by_client, aggregate_by_group
 from app.services.rfa_calculator import calculate_rfa
 from app.services.contract_resolver import resolve_contract, get_contract_by_id
@@ -13,9 +13,13 @@ from app.services.contract_resolver import resolve_contract, get_contract_by_id
 def compute_aggregations(import_data: ImportData):
     """
     Calcule et stocke les agrégations par client et par groupe.
+    Les deux dictionnaires sont publiés ensemble.
     """
-    import_data.by_client = aggregate_by_client(import_data.data)
-    import_data.by_group = aggregate_by_group(import_data.data)
+    clients = aggregate_by_client(import_data.data)
+    groups = aggregate_by_group(import_data.data)
+    with import_data_lock:
+        import_data.by_client = clients
+        import_data.by_group = groups
 
 
 def get_clients_summary(import_data: ImportData) -> List[ClientSummary]:

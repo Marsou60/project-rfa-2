@@ -1,8 +1,10 @@
 """
 Calculateur RFA (RFA + Bonus) pour clients et groupes.
 """
+import contextvars
 import json
-from typing import Dict, List, Optional, Any
+from contextlib import contextmanager
+from typing import Callable, Dict, List, Optional, Any
 from app.core.fields import get_field_by_key, get_global_fields, get_tri_fields
 from app.core.global_tiers import GLOBAL_PLATFORMS
 from app.services.tier_engine import compute_tier
@@ -267,10 +269,36 @@ def compute_total_global_ca(recap_ca: Dict[str, Dict[str, float]]) -> float:
     return total
 
 
+_rules_loader_override: contextvars.ContextVar[Optional[Callable]] = contextvars.ContextVar(
+    "rfa_rules_loader_override", default=None
+)
+_overrides_loader_override: contextvars.ContextVar[Optional[Callable]] = contextvars.ContextVar(
+    "rfa_overrides_loader_override", default=None
+)
+
+
+@contextmanager
+def use_preloaded_rfa_lookups(rules_loader: Callable, overrides_loader: Callable):
+    """
+    Cache de règles / overrides visible seulement par ce thread (ou cette tâche).
+    Remplace le remplacement des globales, qui fuyait vers les autres requêtes.
+    """
+    rules_token = _rules_loader_override.set(rules_loader)
+    overrides_token = _overrides_loader_override.set(overrides_loader)
+    try:
+        yield
+    finally:
+        _rules_loader_override.reset(rules_token)
+        _overrides_loader_override.reset(overrides_token)
+
+
 def load_contract_rules(contract: Contract) -> Dict[str, ContractRule]:
     """
     Charge toutes les règles d'un contrat indexées par key.
     """
+    override = _rules_loader_override.get()
+    if override is not None:
+        return override(contract)
     from sqlmodel import Session, select
     from app.database import engine
     
@@ -300,6 +328,10 @@ def load_entity_overrides(target_type: str, target_value: str) -> Dict[str, Dict
     from sqlmodel import Session, select
     from app.database import engine
     
+    override = _overrides_loader_override.get()
+    if override is not None:
+        return override(target_type, target_value)
+
     result = {}
     normalized = target_value.strip().upper() if target_value else ""
     
