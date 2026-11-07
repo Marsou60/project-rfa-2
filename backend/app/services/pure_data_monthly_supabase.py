@@ -3,7 +3,7 @@ Stockage Supabase dédié au mode Pure Data mensuel (isolé de l'existant).
 """
 import re
 from typing import List, Dict, Tuple, Optional
-from app.database import engine
+from app.database import engine, lease_connection
 
 PURE_DATA_MONTHLY_TABLE = "pure_data_monthly"
 
@@ -52,7 +52,7 @@ def _norm_month(value) -> Optional[int]:
 
 def _table_exists() -> bool:
     try:
-        with engine.connect() as conn:
+        with lease_connection(engine) as conn:
             from sqlalchemy import text
             conn.execute(text(f'SELECT 1 FROM "{PURE_DATA_MONTHLY_TABLE}" LIMIT 1'))
         return True
@@ -131,6 +131,8 @@ def append_monthly_rows(rows: List[Dict]) -> int:
     with engine.begin() as conn:
         for i in range(0, len(clean_rows), BATCH):
             conn.execute(text(insert_sql), clean_rows[i:i + BATCH])
+    from app.services.network_cache import invalidate_network_cache
+    invalidate_network_cache()
     return len(clean_rows)
 
 
@@ -168,7 +170,10 @@ def delete_monthly_rows(
     where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
     with engine.begin() as conn:
         res = conn.execute(text(f'DELETE FROM "{PURE_DATA_MONTHLY_TABLE}" {where_clause}'), params)
-        return int(res.rowcount or 0)
+        deleted = int(res.rowcount or 0)
+    from app.services.network_cache import invalidate_network_cache
+    invalidate_network_cache()
+    return deleted
 
 
 def get_monthly_scope(rows: List[Dict]) -> Dict[str, List]:
@@ -205,7 +210,7 @@ def list_monthly_periods() -> List[Dict]:
         ORDER BY "annee" DESC, "mois" DESC, UPPER(TRIM("fournisseur")) ASC
         '''
     )
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(sql).fetchall()
     out = []
     for r in rows:
@@ -305,7 +310,7 @@ def read_monthly_rows(
         params["month"] = month
     where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         result = conn.execute(
             text(f'SELECT {col_select} FROM "{PURE_DATA_MONTHLY_TABLE}" {where_clause}'),
             params,
@@ -323,6 +328,6 @@ def count_monthly_rows() -> int:
     if not _table_exists():
         return 0
     from sqlalchemy import text
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         result = conn.execute(text(f'SELECT COUNT(*) FROM "{PURE_DATA_MONTHLY_TABLE}"'))
         return result.scalar() or 0

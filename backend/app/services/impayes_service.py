@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 
-from app.database import engine
+from app.database import engine, lease_begin, lease_connection
 
 IMPAYES_TABLE = "impayes"
 EVENTS_TABLE = "impayes_events"
@@ -309,7 +309,7 @@ def ensure_tables() -> None:
         f"CREATE INDEX IF NOT EXISTS idx_impayes_events_created ON {EVENTS_TABLE}(created_at)",
     ]
 
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(text(ddl_impayes))
         conn.execute(text(ddl_events))
         for stmt in comments:
@@ -404,14 +404,14 @@ def list_impayes(
         params["q"] = f"%{q.strip().upper()}%"
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = f"SELECT * FROM {IMPAYES_TABLE}{where} ORDER BY updated_at DESC"
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(text(sql), params).mappings().all()
     return [_row_to_dict(r) for r in rows]
 
 
 def get_impaye(impaye_id: str) -> Optional[Dict[str, Any]]:
     ensure_tables()
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         row = conn.execute(
             text(f"SELECT * FROM {IMPAYES_TABLE} WHERE id = :id"),
             {"id": impaye_id},
@@ -421,7 +421,7 @@ def get_impaye(impaye_id: str) -> Optional[Dict[str, Any]]:
 
 def list_events(impaye_id: str) -> List[Dict[str, Any]]:
     ensure_tables()
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(
             text(
                 f"SELECT * FROM {EVENTS_TABLE} WHERE impaye_id = :id ORDER BY created_at DESC"
@@ -462,7 +462,7 @@ def summary(code_union: Optional[str] = None) -> Dict[str, Any]:
         {where}
         GROUP BY statut, plateforme, partenaire_type
     """
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(text(sql), params).mappings().all()
 
     by_statut: Dict[str, Dict[str, Any]] = {
@@ -536,7 +536,7 @@ def flags_by_codes(codes: Optional[List[str]] = None) -> Dict[str, Dict[str, Any
           AND code_union IS NOT NULL AND code_union <> ''
         GROUP BY code_union, statut
     """
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(text(sql), params).mappings().all()
 
     severity = {st: i for i, st in enumerate(
@@ -615,7 +615,7 @@ def create_impaye(payload: Dict[str, Any], actor: Optional[str] = None) -> Dict[
         record["source"] = "manuel"
     cols = ", ".join(COLUMNS)
     placeholders = ", ".join(f":{c}" for c in COLUMNS)
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(text(f"INSERT INTO {IMPAYES_TABLE} ({cols}) VALUES ({placeholders})"), record)
         _add_event(
             conn,
@@ -693,7 +693,7 @@ def update_impaye(
     sets.append("updated_by = :updated_by")
     params["updated_at"] = now
     sql = f"UPDATE {IMPAYES_TABLE} SET {', '.join(sets)} WHERE id = :id"
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(text(sql), params)
         _add_event(
             conn,
@@ -726,7 +726,7 @@ def change_statut(
     if old == new_statut and not commentaire:
         return current
     now = datetime.utcnow() if _is_pg() else _now_iso()
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(
             text(
                 f"""
@@ -781,7 +781,7 @@ def add_note(impaye_id: str, commentaire: str, actor: Optional[str] = None) -> D
     existing = current.get("suivi") or ""
     suivi = (existing + "\n" + line).strip() if existing else line
     now = datetime.utcnow() if _is_pg() else _now_iso()
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(
             text(
                 f"UPDATE {IMPAYES_TABLE} SET suivi = :suivi, updated_at = :updated_at, updated_by = :updated_by WHERE id = :id"

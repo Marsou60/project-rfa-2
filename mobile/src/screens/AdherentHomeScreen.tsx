@@ -57,16 +57,19 @@ export function AdherentHomeScreen() {
     }
     setLoading(true);
     setError(null);
+    const monthTask = getClientMonthlyEvolution({
+      codeUnion: code,
+      groupeClient: code ? null : groupe,
+    })
+      .then((monthRes) => setMonthly(monthRes))
+      .catch(() => setMonthly(null));
     try {
-      const [rfa, monthRes] = await Promise.all([
-        getClientRfa({ codeUnion: code, groupeClient: code ? null : groupe, year: 2026 }),
-        getClientMonthlyEvolution({
-          codeUnion: code,
-          groupeClient: code ? null : groupe,
-        }).catch(() => null),
-      ]);
+      const rfa = await getClientRfa({
+        codeUnion: code,
+        groupeClient: code ? null : groupe,
+        year: 2026,
+      });
       setData(rfa);
-      setMonthly(monthRes);
     } catch (e: unknown) {
       const msg =
         (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
@@ -77,6 +80,7 @@ export function AdherentHomeScreen() {
     } finally {
       setLoading(false);
     }
+    await monthTask;
   }, [code, groupe]);
 
   useFocusEffect(

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 
-from app.database import engine
+from app.database import engine, lease_connection
 
 MAX_NOTE = 8000
 
@@ -46,7 +46,7 @@ def list_notes(code_union: str, limit: int = 80) -> List[Dict[str, Any]]:
         ORDER BY created_at DESC, id DESC
         LIMIT :lim
     """
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(text(sql), {"code": code, "lim": max(1, min(limit, 200))}).mappings().all()
     return [_public(row) for row in rows]
 

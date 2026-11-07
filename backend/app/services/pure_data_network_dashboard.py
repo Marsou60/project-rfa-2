@@ -183,8 +183,13 @@ def build_network_dashboard(
     alert_pct: float = 15.0,
     alert_ca_min: float = 5000.0,
     full_lists: bool = False,
+    preloaded_rows: Optional[List[Dict]] = None,
+    preloaded_source: Optional[str] = None,
 ) -> Dict[str, Any]:
-    rows, data_source = load_evolution_sales_rows()
+    if preloaded_rows is None:
+        rows, data_source = load_evolution_sales_rows()
+    else:
+        rows, data_source = preloaded_rows, preloaded_source or ""
     options = _filter_options(rows)
     rows = _filter_rows(
         rows,

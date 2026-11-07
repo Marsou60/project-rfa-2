@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 
-from app.database import engine
+from app.database import engine, lease_begin, lease_connection
 
 TABLE = "nathalie_adherents"
 
@@ -225,7 +225,7 @@ def ensure_tables() -> None:
         "drive_checked_at",
         "date_creation_compte",
     ]
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(text(ddl))
         for stmt in comments:
             try:
@@ -359,7 +359,7 @@ def list_clients(with_ouverture_only: bool = False) -> List[Dict[str, Any]]:
         clauses.append("ouverture_chez IS NOT NULL AND TRIM(ouverture_chez) <> ''")
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = f"SELECT * FROM {TABLE}{where} ORDER BY nom_client ASC"
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(text(sql)).mappings().all()
     return [_row_to_client(r) for r in rows]
 
@@ -369,7 +369,7 @@ def get_by_code(code_union: str) -> Optional[Dict[str, Any]]:
     code = clean_code_union(code_union)
     if not code:
         return None
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         row = conn.execute(
             text(f"SELECT * FROM {TABLE} WHERE UPPER(code_union) = :code"),
             {"code": code},
@@ -381,7 +381,7 @@ def next_code_union(prefix: str = "M") -> str:
     """Prochain code Mxxxx d'après l'annuaire (liste clients), pas Drive."""
     ensure_tables()
     prefix = (prefix or "M").upper()
-    with engine.connect() as conn:
+    with lease_connection(engine) as conn:
         rows = conn.execute(
             text(f"SELECT code_union FROM {TABLE} WHERE UPPER(code_union) LIKE :p"),
             {"p": f"{prefix}%"},
@@ -482,7 +482,7 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
         sets = ", ".join(f"{c} = :{c}" for c in COLUMNS if c not in ("id", "code_union", "created_at", "date_creation_compte"))
         params = {k: record[k] for k in COLUMNS if k not in ("id", "code_union", "created_at", "date_creation_compte")}
         params["code"] = code
-        with engine.begin() as conn:
+        with lease_begin(engine) as conn:
             conn.execute(
                 text(f"UPDATE {TABLE} SET {sets} WHERE UPPER(code_union) = :code"),
                 params,
@@ -498,7 +498,7 @@ def upsert_client(payload: Dict[str, Any], *, keep_docs: bool = True) -> Dict[st
         record["date_creation_compte"] = now
     cols = ", ".join(COLUMNS)
     placeholders = ", ".join(f":{c}" for c in COLUMNS)
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(text(f"INSERT INTO {TABLE} ({cols}) VALUES ({placeholders})"), record)
     created = get_by_code(code)
     if not created:
@@ -677,7 +677,7 @@ def replace_directory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     deleted = 0
     if imported:
         ensure_tables()
-        with engine.begin() as conn:
+        with lease_begin(engine) as conn:
             existing = [
                 clean_code_union(r[0])
                 for r in conn.execute(text(f"SELECT code_union FROM {TABLE}")).fetchall()
@@ -726,7 +726,7 @@ def assign_groupe_agent(groupe: str, agent: str) -> Dict[str, Any]:
         previous = (client.get("agent_union") or "").strip()
         if previous == agent_label:
             continue
-        with engine.begin() as conn:
+        with lease_begin(engine) as conn:
             conn.execute(
                 text(
                     f"UPDATE {TABLE} SET agent_union = :agent, updated_at = :now "
@@ -790,7 +790,7 @@ def reassign_code_union_portfolio(
             "WHERE UPPER(TRIM(code_union)) = :code"
         )
         try:
-            with engine.begin() as conn:
+            with lease_begin(engine) as conn:
                 result = conn.execute(text(sql), params)
             counts[table] = int(result.rowcount or 0)
         except Exception:
@@ -848,7 +848,7 @@ def patch_drive_docs(code_union: str, fields: Dict[str, Any], *, clear: bool = F
     assignments.extend(f"{key} = NULL" for key in clears)
     sets = ", ".join(assignments)
     updates["code"] = clean_code_union(code_union)
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(
             text(f"UPDATE {TABLE} SET {sets} WHERE UPPER(code_union) = :code"),
             updates,
@@ -863,7 +863,7 @@ def delete_client(code_union: str) -> Optional[Dict[str, Any]]:
     if not existing:
         return None
     code = clean_code_union(code_union)
-    with engine.begin() as conn:
+    with lease_begin(engine) as conn:
         conn.execute(
             text(f"DELETE FROM {TABLE} WHERE UPPER(code_union) = :code"),
             {"code": code},
