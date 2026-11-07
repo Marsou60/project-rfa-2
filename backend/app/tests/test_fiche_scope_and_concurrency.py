@@ -301,7 +301,7 @@ def test_preloaded_lookups_stay_on_their_thread():
     assert found == {"aa": {"aa": "aa"}, "bb": {"bb": "bb"}}
 
 
-def test_pool_defaults_are_five_plus_five_for_one_process(monkeypatch):
+def test_pool_defaults_are_four_plus_three_for_one_process(monkeypatch):
     from app.database import (
         APP_DB_CONNECTION_BUDGET,
         DEFAULT_DB_MAX_OVERFLOW,
@@ -312,15 +312,15 @@ def test_pool_defaults_are_five_plus_five_for_one_process(monkeypatch):
 
     monkeypatch.delenv("DB_POOL_SIZE", raising=False)
     monkeypatch.delenv("DB_MAX_OVERFLOW", raising=False)
-    assert DEFAULT_DB_POOL_SIZE == 5
-    assert DEFAULT_DB_MAX_OVERFLOW == 5
+    assert DEFAULT_DB_POOL_SIZE == 4
+    assert DEFAULT_DB_MAX_OVERFLOW == 3
     assert RECOMMENDED_MAX_WORKERS == 1
     per_process = DEFAULT_DB_POOL_SIZE + DEFAULT_DB_MAX_OVERFLOW
     assert per_process == APP_DB_CONNECTION_BUDGET
     assert APP_DB_CONNECTION_BUDGET < 60
     settings = postgres_pool_settings()
-    assert settings["pool_size"] == 5
-    assert settings["max_overflow"] == 5
+    assert settings["pool_size"] == 4
+    assert settings["max_overflow"] == 3
     assert settings["pool_pre_ping"] is True
     monkeypatch.setenv("DB_POOL_SIZE", "2")
     monkeypatch.setenv("DB_MAX_OVERFLOW", "1")

@@ -44,13 +44,13 @@ LOGOS_DIR          = os.path.join(_UPLOAD_BASE, "logos")
 SUPPLIER_LOGOS_DIR = os.path.join(_UPLOAD_BASE, "supplier_logos")
 
 # Plafond volontaire, très en dessous du max_connections Supabase (60).
-# Candidat pour le process unique réellement lancé par Railway : 5 + 5 = 10.
-# Le Dockerfile ne lance pas le second worker. L'activer en plus ferait 20
-# connexions : ce n'est pas le réglage proposé ici.
+# 4 + 3 = 7 connexions pour le process unique lancé par Railway.
+# Le Dockerfile ne lance pas de second worker. L'en activer un ferait 14 :
+# ce n'est pas le réglage proposé ici.
 # DB_POOL_SIZE / DB_MAX_OVERFLOW restent prioritaires s'ils sont définis.
-DEFAULT_DB_POOL_SIZE = 5
-DEFAULT_DB_MAX_OVERFLOW = 5
-APP_DB_CONNECTION_BUDGET = 10
+DEFAULT_DB_POOL_SIZE = 4
+DEFAULT_DB_MAX_OVERFLOW = 3
+APP_DB_CONNECTION_BUDGET = 7
 RECOMMENDED_MAX_WORKERS = 1
 
 

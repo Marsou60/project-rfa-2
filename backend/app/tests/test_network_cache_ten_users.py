@@ -468,10 +468,10 @@ def test_ten_of_each_endpoint_on_pool_two_plus_one(tmp_path, monkeypatch):
     assert state["out"] == 0
 
 
-def test_ten_of_each_endpoint_on_pool_five_plus_five(tmp_path, monkeypatch):
+def test_ten_of_each_endpoint_on_pool_four_plus_three(tmp_path, monkeypatch):
     from app.services.network_cache import heavy_calc_max
 
-    engine = _engine(f"sqlite:///{tmp_path / 'burst5.db'}", 5, 5)
+    engine = _engine(f"sqlite:///{tmp_path / 'burst4.db'}", 4, 3)
     state = _watch(engine)
     _bind(monkeypatch, engine)
     _seed(engine)
@@ -637,7 +637,7 @@ def test_burst_timings_and_stale_single_recompute(tmp_path, monkeypatch):
         return wall, sink
 
     try:
-        for pool_size, overflow, name in ((2, 1, "pool2+1"), (5, 5, "pool5+5")):
+        for pool_size, overflow, name in ((2, 1, "pool2+1"), (4, 3, "pool4+3")):
             engine = _engine(f"sqlite:///{tmp_path / name}.db", pool_size, overflow)
             watched = _watch(engine)
             _bind(monkeypatch, engine)
