@@ -26,6 +26,27 @@ def test_parse_montant_excel_formats():
     assert parse_montant("-") == 0.0
 
 
+def test_lease_begin_survit_a_la_fermeture_de_la_session_requete():
+    """Une saisie faite pendant la requête doit rester après le rollback de fermeture."""
+    from sqlalchemy import create_engine, text
+    from sqlmodel import Session
+
+    from app.database import bind_lease, lease_begin, unbind_lease
+
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE probe (id INTEGER)"))
+    with Session(eng) as session:
+        previous = bind_lease(session)
+        try:
+            with lease_begin(eng) as conn:
+                conn.execute(text("INSERT INTO probe (id) VALUES (1)"))
+        finally:
+            unbind_lease(previous)
+    with eng.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM probe")).scalar() == 1
+
+
 def test_code_union_and_plateforme():
     assert normalize_code_union("m0160") == "M0160"
     assert normalize_code_union("?") is None

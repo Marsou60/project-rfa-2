@@ -476,13 +476,17 @@ def lease_connection(bind=None):
 @contextmanager
 def lease_begin(bind=None):
     """
-    Écriture courte. Pendant une requête, savepoint sur la session déjà prise.
+    Écriture courte. Pendant une requête, savepoint puis commit de la session :
+    get_session ne commit pas à la fermeture.
     Hors requête, transaction autonome (commit immédiat), comme engine.begin().
     """
     current = leased_session()
     if current is not None:
         with current.begin_nested():
             yield _SessionExecutor(current)
+        # get_session ferme la session sans commit : le savepoint seul
+        # était annulé, et les impayés / notes / fiches Nathalie disparaissaient.
+        current.commit()
         return
     eng = bind if bind is not None else engine
     with eng.begin() as conn:
