@@ -230,8 +230,23 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
   const suggestions = useMemo(() => {
     if (!query) return []
     const q = query.toLowerCase()
-    return entities.filter((item) => item.label.toLowerCase().includes(q)).slice(0, 8)
+    return entities.filter((item) => item.label.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)).slice(0, 8)
   }, [entities, query])
+
+  const resolveEntityQuery = (raw) => {
+    const text = (raw || '').trim()
+    if (!text) return ''
+    const head = text.split(' - ')[0].trim()
+    const q = text.toLowerCase()
+    const exact = entities.find((item) =>
+      item.id.toLowerCase() === head.toLowerCase() || item.label.toLowerCase() === q
+    )
+    if (exact) return exact.id
+    const hits = entities.filter((item) =>
+      item.label.toLowerCase().includes(q) || item.id.toLowerCase() === q
+    )
+    return hits.length === 1 ? hits[0].id : head
+  }
 
   const formatAmount = (amount) => {
     return new Intl.NumberFormat('fr-FR', {
@@ -687,7 +702,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
           </div>
           <div className="mt-3 flex items-center gap-3">
             <button
-              onClick={() => loadEntity(query.split(' - ')[0].trim())}
+              onClick={() => loadEntity(resolveEntityQuery(query))}
               className="btn-primary"
               disabled={!query}
             >
@@ -1500,8 +1515,9 @@ function CmsGroupedBars({ months, yearN, yearN1, height = 150 }) {
 }
 
 function ClientMonthlySection({ codeUnion, groupeClient, isAdherent, onShowProdexNotice }) {
-  const { supplierFilter } = useSupplierFilter()
+  const { supplierFilter, setSupplierFilter } = useSupplierFilter()
   const [data, setData] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [expandedPlatform, setExpandedPlatform] = useState(null)
   const [expandedStore, setExpandedStore] = useState(null)
@@ -1516,9 +1532,10 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent, onShowProde
   }, [])
 
   useEffect(() => {
-    if (!codeUnion && !groupeClient) { setData(null); return }
+    if (!codeUnion && !groupeClient) { setData(null); setLoadError(null); return }
     setLoading(true)
     setData(null)
+    setLoadError(null)
     setExpandedPlatform(null)
     setExpandedStore(null)
     getClientMonthlyEvolution({
@@ -1527,7 +1544,10 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent, onShowProde
       fournisseur: supplierFilter || undefined,
     })
       .then(setData)
-      .catch(() => setData(null))
+      .catch((err) => {
+        setData(null)
+        setLoadError(err?.response?.data?.detail || err?.message || 'Le chargement a échoué.')
+      })
       .finally(() => setLoading(false))
   }, [codeUnion, groupeClient, supplierFilter])
 
@@ -1540,7 +1560,29 @@ function ClientMonthlySection({ codeUnion, groupeClient, isAdherent, onShowProde
     </div>
   )
 
-  if (!data?.available) return null
+  if (!data?.available) {
+    return (
+      <div className="rounded-2xl border border-blue-100 bg-white p-6 shadow-sm">
+        <h3 className="text-slate-900 font-bold">Chiffres mensuels</h3>
+        <p className="text-sm text-slate-600 mt-2">
+          {loadError
+            ? loadError
+            : supplierFilter
+              ? `Aucun chiffre ${supplierFilter} pour ce magasin. Le filtre plateforme masque le reste du CA.`
+              : 'Aucun chiffre mensuel pour ce magasin.'}
+        </p>
+        {supplierFilter && (
+          <button
+            type="button"
+            onClick={() => setSupplierFilter(null)}
+            className="mt-4 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold"
+          >
+            Voir toutes les plateformes
+          </button>
+        )}
+      </div>
+    )
+  }
 
   const yearN = data.year_current
   const yearN1 = data.year_previous
