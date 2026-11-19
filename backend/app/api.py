@@ -6574,6 +6574,21 @@ def list_client_notes(code_union: str, _user: User = Depends(require_staff)):
         raise HTTPException(status_code=500, detail=f"Lecture des notes impossible : {e}")
 
 
+@router.get("/map/adherents")
+def map_adherents(user: User = Depends(require_staff)):
+    """Points de la carte. Coordonnées déjà stockées, sans adresse postale.
+
+    Réservé à l'équipe (ADMIN / COMMERCIAL). Un commercial ne voit que son
+    portefeuille, comme sur la liste des adhérents.
+    """
+    from app.services.adherent_map import list_map_adherents
+    from app.services.commercial_scope import resolve_commercial_scope
+    try:
+        return list_map_adherents(resolve_commercial_scope(user))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Carte indisponible.")
+
+
 @router.post("/notes/client/{code_union}")
 def create_client_note(
     code_union: str,
