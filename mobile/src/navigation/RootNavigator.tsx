@@ -23,6 +23,8 @@ import { AlertsScreen } from '../screens/AlertsScreen';
 import { AdherentHomeScreen } from '../screens/AdherentHomeScreen';
 import { AdherentRfaScreen } from '../screens/AdherentRfaScreen';
 import { SliceDetailScreen } from '../screens/SliceDetailScreen';
+import { MapScreen } from '../screens/MapScreen';
+import { mapDemoEnabled } from '../map/demoMode';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -151,6 +153,15 @@ function UnionTabs() {
         }}
       />
       <Tab.Screen
+        name="Carte"
+        component={MapScreen}
+        options={{
+          headerShown: false,
+          tabBarLabel: 'Carte',
+          tabBarIcon: tabIcon('map', 'map-outline'),
+        }}
+      />
+      <Tab.Screen
         name="Analyses"
         component={AnalysesScreen}
         options={{
@@ -218,6 +229,14 @@ function AdherentTabs() {
   );
 }
 
+function DemoStack() {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="CarteDemo" component={MapScreen} options={{ headerShown: false }} />
+    </Stack.Navigator>
+  );
+}
+
 function UnionStack() {
   return (
     <Stack.Navigator>
@@ -282,6 +301,13 @@ export function RootNavigator() {
     );
   }
   if (!user) {
+    if (mapDemoEnabled) {
+      return (
+        <NavigationContainer theme={navTheme}>
+          <DemoStack />
+        </NavigationContainer>
+      );
+    }
     return (
       <NavigationContainer theme={navTheme}>
         <PublicStack />

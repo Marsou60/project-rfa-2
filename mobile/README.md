@@ -134,6 +134,20 @@ Le profil `preview` produit un **APK**. Lien de téléchargement sur expo.dev �
 
 API Railway déjà dans `eas.json`. Icône = logo Groupement Union.
 
+## Écran Carte
+
+Onglet **Carte** (équipe Union) : une carte de France, un point par adhérent, bulles au zoom, filtre fournisseur ou palier proche. Le détail (CA, RFA, paliers, notes) s’ouvre au toucher et passe par l’API déjà authentifiée. Aucune adresse n’est mise dans un fichier public.
+
+Pour voir l’écran en local, sans base et avec des garages fictifs :
+
+```powershell
+cd mobile
+$env:EXPO_PUBLIC_MAP_DEMO="1"
+npm run web
+```
+
+Les vraies positions arrivent après la migration et le géocodage décrits dans `backend/migrations/20261119_adherent_positions.sql` et `backend/scripts/geocode_adherents.py`. Ne pas lancer ces commandes depuis la PWA, et ne pas redéployer Vercel tant que la pull request n’est pas validée.
+
 ## Ce qu’on ne fait PAS dans `mobile/`
 
 - Pas d’import Excel / pas d’export
