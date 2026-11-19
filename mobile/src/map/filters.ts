@@ -25,6 +25,8 @@ export function filterPoints(
   });
 }
 
+export { activeMapFilterCount } from './filterCount';
+
 export function supplierChoices(points: MapPoint[]): string[] {
   const known = ['ACR', 'DCA', 'EXADIS', 'ALLIANCE'];
   const extra = new Set<string>();

@@ -1,6 +1,7 @@
 import { ClientNote } from '../api/fiches';
 import { ClientRfaResponse } from '../api/consultation';
 import { nearContractTier } from './filters';
+import { contractTierLabel } from './markerStyle';
 import { AdherentMapResponse, MapPoint, MapUnlocated } from './types';
 
 type Seed = {
@@ -113,7 +114,16 @@ function buildRfa(seed: Seed): ClientRfaResponse {
 
 const DETAILS = new Map(SEEDS.map((seed) => [seed.code, { rfa: buildRfa(seed), notes: seed.notes || [] }]));
 
+/** Commerciaux fictifs, pour la légende. Pas les vrais portefeuilles. */
+function demoCommercial(code: string): string {
+  if (/PARIS|LILLE|STRASBOURG|DIJON/.test(code)) return 'Noah Bernard';
+  if (/LYON|MARS|TOULOUSE|NICE|CLERMONT|AJACCIO/.test(code)) return 'Inès Morel';
+  return 'Camille Martin';
+}
+
 function toPoint(seed: Seed): MapPoint {
+  const commercial = demoCommercial(seed.code);
+  const fournisseur = seed.plateformes[0] || null;
   return {
     code_union: seed.code,
     nom: seed.nom,
@@ -123,6 +133,9 @@ function toPoint(seed: Seed): MapPoint {
     ca: seed.ca,
     plateformes: seed.plateformes,
     near_tier: nearContractTier(seed.ca),
+    commercial,
+    palier: contractTierLabel(seed.ca),
+    fournisseur_principal: fournisseur,
   };
 }
 
@@ -133,6 +146,11 @@ export const DEMO_MAP: AdherentMapResponse = {
     nom: seed.nom,
     ville: seed.ville,
     reason: seed.reason || 'no_address',
+    ca: seed.ca,
+    plateformes: seed.plateformes,
+    commercial: demoCommercial(seed.code),
+    palier: contractTierLabel(seed.ca),
+    fournisseur_principal: seed.plateformes[0] || null,
   })),
   migration_required: false,
   geocode_pending: false,

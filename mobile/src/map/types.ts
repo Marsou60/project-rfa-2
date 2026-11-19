@@ -7,6 +7,12 @@ export type MapPoint = {
   ca: number | null;
   plateformes: string[];
   near_tier: boolean;
+  /** Commercial du portefeuille. Sert à colorer la carte. */
+  commercial?: string | null;
+  /** Classique, Silver ou Gold. */
+  palier?: string | null;
+  /** Plateforme au plus gros CA, ou la première si les montants manquent. */
+  fournisseur_principal?: string | null;
 };
 
 export type UnlocatedReason = 'no_address' | 'failed' | 'ambiguous' | 'pending';
@@ -16,6 +22,11 @@ export type MapUnlocated = {
   nom: string;
   ville: string | null;
   reason: UnlocatedReason;
+  ca?: number | null;
+  plateformes?: string[];
+  commercial?: string | null;
+  palier?: string | null;
+  fournisseur_principal?: string | null;
 };
 
 export type AdherentMapResponse = {

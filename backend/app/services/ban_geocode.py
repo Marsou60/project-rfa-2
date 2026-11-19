@@ -43,6 +43,9 @@ FRANCE_BOXES = (
 )
 
 STATUSES = ("ok", "no_address", "failed", "ambiguous", "pending")
+# Verrous : jamais écrasés par l'API Adresse, même avec --force.
+# Actifs seulement si la colonne position_source existe (migration proposée).
+LOCKED_SOURCES = frozenset({"ok_manual", "insee"})
 
 
 @dataclass
@@ -73,6 +76,8 @@ class GeoSummary:
     ambiguous: int = 0
     failed: int = 0
     written: int = 0
+    closed_skipped: int = 0
+    locked: int = 0
     apply: bool = False
     lines: List[str] = field(default_factory=list)
 
@@ -81,6 +86,8 @@ class GeoSummary:
         return "\n".join([
             f"Adhérents lus : {self.read}",
             f"Déjà à jour : {self.unchanged}",
+            f"Fermés ignorés : {self.closed_skipped}",
+            f"Positions verrouillées (manuel / INSEE) : {self.locked}",
             f"Sans adresse exploitable : {self.no_address}",
             f"Positions retenues : {self.placed}",
             f"Résultats trop incertains (non placés) : {self.ambiguous}",
@@ -263,7 +270,12 @@ def _table_exists(engine: Engine) -> bool:
         return False
 
 
-def _load_directory(engine: Engine, limit: int) -> List[AddressInput]:
+def _load_directory(engine: Engine, limit: int) -> tuple:
+    """Adhérents ouverts à géocoder, et le nombre de codes fermés laissés de côté.
+
+    Un doublon ouvert l'emporte sur une ligne fermée du même code. Un code
+    dont toutes les lignes sont fermées n'est pas envoyé à l'API Adresse.
+    """
     sql = """
         SELECT code_union, adresse, code_postal, ville, is_closed
         FROM nathalie_adherents
@@ -277,11 +289,10 @@ def _load_directory(engine: Engine, limit: int) -> List[AddressInput]:
         if not code:
             continue
         is_closed = _flag(row.get("is_closed"))
-        previous = chosen.get(code)
         # On garde le magasin ouvert s'il existe en double.
-        if previous is not None and closed.get(code) is False:
+        if code in chosen and closed.get(code) is False:
             continue
-        if previous is not None and is_closed and closed.get(code) is False:
+        if code in chosen and is_closed:
             continue
         chosen[code] = AddressInput(
             code_union=code,
@@ -290,10 +301,16 @@ def _load_directory(engine: Engine, limit: int) -> List[AddressInput]:
             ville=row.get("ville") or "",
         )
         closed[code] = is_closed
-    items = [chosen[code] for code in sorted(chosen)]
+    skipped = 0
+    items: List[AddressInput] = []
+    for code in sorted(chosen):
+        if closed.get(code):
+            skipped += 1
+            continue
+        items.append(chosen[code])
     if limit and limit > 0:
-        return items[:limit]
-    return items
+        return items[:limit], skipped
+    return items, skipped
 
 
 def _flag(value) -> bool:
@@ -306,24 +323,50 @@ def _flag(value) -> bool:
     return str(value).strip().lower() in {"1", "true", "t", "yes"}
 
 
-def _existing(engine: Engine) -> Dict[str, dict]:
+def _has_position_source(engine: Engine) -> bool:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT position_source FROM adherent_positions LIMIT 0"))
+        return True
+    except (OperationalError, ProgrammingError):
+        return False
+
+
+def _locked_source(value: Optional[str]) -> bool:
+    return (value or "").strip().casefold() in LOCKED_SOURCES
+
+
+def _existing(engine: Engine, with_source: bool) -> Dict[str, dict]:
+    columns = "code_union, geocode_status, address_fingerprint"
+    if with_source:
+        columns += ", position_source"
     with engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT code_union, geocode_status, address_fingerprint FROM adherent_positions"
-        )).mappings().all()
-    return {
-        (row["code_union"] or "").strip().upper(): {
+        rows = conn.execute(text(f"SELECT {columns} FROM adherent_positions")).mappings().all()
+    found: Dict[str, dict] = {}
+    for row in rows:
+        code = (row["code_union"] or "").strip().upper()
+        if not code:
+            continue
+        found[code] = {
             "status": row.get("geocode_status"),
             "fingerprint": row.get("address_fingerprint"),
+            "source": row.get("position_source") if with_source else None,
         }
-        for row in rows
-    }
+    return found
 
 
-def _write(engine: Engine, fixes: List[GeoFix]) -> int:
+def _write(engine: Engine, fixes: List[GeoFix], *, lock_column: bool) -> int:
     if not fixes:
         return 0
-    sql = """
+    # Le WHERE est une seconde barrière : une position ok_manual / insee
+    # n'est pas écrasée même si elle a été lue avant d'être verrouillée.
+    guard = ""
+    if lock_column:
+        guard = """
+            WHERE adherent_positions.position_source IS NULL
+               OR lower(adherent_positions.position_source) NOT IN ('ok_manual', 'insee')
+        """
+    sql = f"""
         INSERT INTO adherent_positions (
             code_union, lat, lng, geocode_status, geocode_score,
             result_type, address_fingerprint, geocoded_at
@@ -338,6 +381,7 @@ def _write(engine: Engine, fixes: List[GeoFix]) -> int:
             result_type = excluded.result_type,
             address_fingerprint = excluded.address_fingerprint,
             geocoded_at = CURRENT_TIMESTAMP
+        {guard}
     """
     payload = [
         {
@@ -372,15 +416,25 @@ def run(
         )
         return summary
 
-    directory = _load_directory(engine, limit)
+    directory, summary.closed_skipped = _load_directory(engine, limit)
     summary.read = len(directory)
-    existing = _existing(engine)
+    has_source = _has_position_source(engine)
+    if not has_source:
+        summary.lines.append(
+            "Pas de colonne position_source : les verrous manuel/INSEE ne sont pas actifs. "
+            "Voir backend/migrations/proposed/20261119_adherent_positions_source.sql "
+            "(proposée, non appliquée)."
+        )
+    existing = _existing(engine, has_source)
     pending: List[AddressInput] = []
     fixes: List[GeoFix] = []
 
     for row in directory:
-        fp = fingerprint(row.adresse, row.code_postal, row.ville)
         previous = existing.get(row.code_union)
+        if previous and _locked_source(previous.get("source")):
+            summary.locked += 1
+            continue
+        fp = fingerprint(row.adresse, row.code_postal, row.ville)
         # Un échec réseau (failed) est retenté. Le reste est stable tant que l'adresse ne change pas.
         if (
             not force
@@ -411,7 +465,7 @@ def run(
             summary.failed += 1
 
     if apply:
-        summary.written = _write(engine, fixes)
+        summary.written = _write(engine, fixes, lock_column=has_source)
     else:
         summary.lines.append("Relancez avec --apply pour enregistrer ces positions.")
     return summary

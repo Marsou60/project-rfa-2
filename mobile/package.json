@@ -40,6 +40,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:web": "expo export -p web",
+    "test:map": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/map/markerStyle.test.ts src/map/filters.test.ts",
     "build:apk": "eas build -p android --profile preview"
   },
   "private": true
