@@ -76,14 +76,16 @@ export function MapLegend({ points, mode, open, onToggle }: Props) {
 
 const styles = StyleSheet.create({
   box: {
-    borderRadius: 12,
+    alignSelf: 'flex-start',
+    maxWidth: 280,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    backgroundColor: colors.card,
+    backgroundColor: 'rgba(15, 22, 36, 0.94)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
-  head: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  head: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   title: { color: colors.white, fontWeight: '800', fontSize: 13 },
   body: { gap: 6, paddingBottom: 4 },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

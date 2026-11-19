@@ -21,7 +21,7 @@ import { MapLegend } from '../components/MapLegend';
 import { BasemapId, FitTarget } from '../map/chrome';
 import { DEMO_MAP } from '../map/demoData';
 import { mapDemoEnabled } from '../map/demoMode';
-import { filterPoints, supplierChoices } from '../map/filters';
+import { activeMapFilterCount, filterPoints, supplierChoices } from '../map/filters';
 import {
   ClusterPreview,
   ColorMode,
@@ -44,7 +44,8 @@ export function MapScreen() {
   const [sheetCode, setSheetCode] = useState<string | null>(null);
   const [showMissing, setShowMissing] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>('plateforme');
-  const [legendOpen, setLegendOpen] = useState(true);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>('light');
   const [showDepartments, setShowDepartments] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -113,7 +114,8 @@ export function MapScreen() {
   const sheetPoint = points.find((point) => point.code_union === sheetCode) || null;
   const sheetMissing = unlocated.find((row) => row.code_union === sheetCode) || null;
   const cardOpen = Boolean((selected && (selectedPoint || selectedMissing) && !sheetCode) || cluster);
-  const dockBottom = cardOpen ? 220 + (fullscreen ? insets.bottom : 0) : 12 + (fullscreen ? Math.max(insets.bottom, 0) : 0);
+  const dockBottom = cardOpen ? 200 + (fullscreen ? insets.bottom : 0) : 8 + (fullscreen ? Math.max(insets.bottom, 0) : 0);
+  const activeFilters = activeMapFilterCount({ supplier, nearOnly, colorMode });
 
   useEffect(() => {
     setCluster(null);
@@ -135,16 +137,16 @@ export function MapScreen() {
   return (
     <View style={styles.root}>
       {!fullscreen ? (
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 6) }]}>
           <View style={styles.titleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Carte</Text>
-              <Text style={styles.subtitle}>
-                {loading ? 'Chargement…' : `${visible.length} sur la carte`}
-                {supplier ? ` · ${supplier}` : ''}
-                {nearOnly ? ' · palier proche' : ''}
-              </Text>
-            </View>
+            <Text style={styles.title}>Carte</Text>
+            <Text
+              style={styles.count}
+              accessibilityLabel={loading ? 'Chargement de la carte' : `${visible.length} sur la carte`}
+            >
+              {loading ? '…' : String(visible.length)}
+            </Text>
+            <View style={{ flex: 1 }} />
             <Pressable
               style={styles.missingBtn}
               onPress={() => setShowMissing(true)}
@@ -157,41 +159,32 @@ export function MapScreen() {
               <Icon name="refresh" size={20} color={colors.orange} />
             </Pressable>
           </View>
-
-          <View style={styles.chips}>
-            <Chip label="Tous" active={!supplier && !nearOnly} onPress={() => { setSupplier(null); setNearOnly(false); }} />
-            {suppliers.map((item) => (
-              <Chip
-                key={item}
-                label={item}
-                active={supplier === item}
-                onPress={() => { setSupplier(supplier === item ? null : item); }}
-              />
-            ))}
-            <Chip label="Palier proche" active={nearOnly} onPress={() => setNearOnly((value) => !value)} />
+          <View style={styles.searchRow}>
+            <TextInput
+              style={styles.search}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Nom, ville ou code"
+              placeholderTextColor={colors.muted2}
+              autoCorrect={false}
+              accessibilityLabel="Filtrer les adhérents sur la carte"
+            />
+            <Pressable
+              style={[styles.filterBtn, (filtersOpen || activeFilters > 0) && styles.filterBtnOn]}
+              onPress={() => setFiltersOpen((value) => !value)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: filtersOpen }}
+              accessibilityLabel={activeFilters ? `Filtres, ${activeFilters} actifs` : 'Filtres'}
+            >
+              <Icon name="options" size={16} color={filtersOpen || activeFilters > 0 ? colors.bg : colors.white} />
+              <Text style={filtersOpen || activeFilters > 0 ? styles.filterTextOn : styles.filterText}>Filtres</Text>
+              {activeFilters > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{activeFilters}</Text>
+                </View>
+              ) : null}
+            </Pressable>
           </View>
-
-          <TextInput
-            style={styles.search}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Nom, ville ou code"
-            placeholderTextColor={colors.muted2}
-            autoCorrect={false}
-            accessibilityLabel="Filtrer les adhérents sur la carte"
-          />
-
-          <View style={styles.colorRow}>
-            <Text style={styles.colorLabel}>Colorer par</Text>
-            <Chip label="Plateforme" active={colorMode === 'plateforme'} onPress={() => setColorMode('plateforme')} />
-            <Chip label="Commercial" active={colorMode === 'commercial'} onPress={() => setColorMode('commercial')} />
-          </View>
-          <MapLegend
-            points={visible}
-            mode={colorMode}
-            open={legendOpen}
-            onToggle={() => setLegendOpen((value) => !value)}
-          />
         </View>
       ) : null}
 
@@ -216,11 +209,13 @@ export function MapScreen() {
               setSelected(code);
               setSheetCode(null);
               setCluster(null);
+              setFiltersOpen(false);
             }}
             onBackgroundPress={() => {
               setSelected(null);
               setSheetCode(null);
               setCluster(null);
+              setFiltersOpen(false);
             }}
             onCluster={(preview) => {
               setCluster(preview);
@@ -241,8 +236,43 @@ export function MapScreen() {
           />
         )}
 
-        <View style={[styles.tools, { top: fullscreen ? Math.max(insets.top, 8) : 8 }]} pointerEvents="box-none">
-          <Tool
+        <View style={[styles.legendFloat, { top: 8 }]} pointerEvents="box-none">
+          <MapLegend
+            points={visible}
+            mode={colorMode}
+            open={legendOpen}
+            onToggle={() => setLegendOpen((value) => !value)}
+          />
+        </View>
+
+        {filtersOpen && !fullscreen ? (
+          <View style={styles.filterPanel}>
+            <Text style={styles.panelLabel}>Plateformes</Text>
+            <View style={styles.chips}>
+              <Chip label="Tous" active={!supplier && !nearOnly} onPress={() => { setSupplier(null); setNearOnly(false); }} />
+              {suppliers.map((item) => (
+                <Chip
+                  key={item}
+                  label={item}
+                  active={supplier === item}
+                  onPress={() => { setSupplier(supplier === item ? null : item); }}
+                />
+              ))}
+              <Chip label="Palier proche" active={nearOnly} onPress={() => setNearOnly((value) => !value)} />
+            </View>
+            <Text style={styles.panelLabel}>Colorer par</Text>
+            <View style={styles.chips}>
+              <Chip label="Plateforme" active={colorMode === 'plateforme'} onPress={() => setColorMode('plateforme')} />
+              <Chip label="Commercial" active={colorMode === 'commercial'} onPress={() => setColorMode('commercial')} />
+            </View>
+          </View>
+        ) : null}
+
+        <View
+          style={[styles.rail, { bottom: dockBottom + 108, top: fullscreen ? Math.max(insets.top, 8) : 8 }]}
+          pointerEvents="box-none"
+        >
+          <RoundTool
             icon="locate"
             label="Où je suis"
             onPress={() => {
@@ -250,25 +280,28 @@ export function MapScreen() {
               setLocateRequest((value) => value + 1);
             }}
           />
-          <Tool icon="people" label="Portefeuille" onPress={() => askFit('points')} />
-          <Tool icon="map" label="France" onPress={() => askFit('france')} />
-          <Tool
+          <RoundTool icon="people" label="Portefeuille" onPress={() => askFit('points')} />
+          <RoundTool icon="map" label="France" onPress={() => askFit('france')} />
+          <RoundTool
             icon={basemap === 'dark' ? 'sunny' : 'moon'}
             label={basemap === 'dark' ? 'Fond clair' : 'Fond sombre'}
             active={basemap === 'dark'}
             onPress={() => setBasemap((value) => (value === 'dark' ? 'light' : 'dark'))}
           />
-          <Tool
+          <RoundTool
             icon="layers"
             label="Départements"
             active={showDepartments}
             onPress={() => setShowDepartments((value) => !value)}
           />
-          <Tool
+          <RoundTool
             icon={fullscreen ? 'contract' : 'expand'}
-            label={fullscreen ? 'Quitter' : 'Plein écran'}
+            label={fullscreen ? 'Quitter le plein écran' : 'Plein écran'}
             active={fullscreen}
-            onPress={() => setFullscreen((value) => !value)}
+            onPress={() => {
+              setFullscreen((value) => !value);
+              setFiltersOpen(false);
+            }}
           />
         </View>
 
@@ -341,7 +374,7 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
   );
 }
 
-function Tool({
+function RoundTool({
   icon,
   label,
   onPress,
@@ -354,14 +387,13 @@ function Tool({
 }) {
   return (
     <Pressable
-      style={[styles.tool, active && styles.toolOn]}
+      style={[styles.round, active && styles.roundOn]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: active }}
     >
-      <Icon name={icon} size={16} color={active ? colors.bg : colors.white} />
-      <Text style={active ? styles.toolTextOn : styles.toolText}>{label}</Text>
+      <Icon name={icon} size={20} color={active ? colors.bg : colors.white} />
     </Pressable>
   );
 }
@@ -411,10 +443,36 @@ function MissingModal({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg, overflow: 'hidden' },
-  header: { paddingHorizontal: spacing.md, gap: 8, paddingBottom: 8 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { color: colors.white, fontSize: 28, fontWeight: '800' },
+  header: { paddingHorizontal: 12, gap: 6, paddingBottom: 6 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },
+  title: { color: colors.white, fontSize: 22, fontWeight: '800' },
+  count: { color: colors.muted, fontSize: 15, fontWeight: '800' },
   subtitle: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  filterBtn: {
+    minHeight: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filterBtnOn: { backgroundColor: colors.orange, borderColor: colors.orange },
+  filterText: { color: colors.white, fontWeight: '800', fontSize: 13 },
+  filterTextOn: { color: colors.bg, fontWeight: '800', fontSize: 13 },
+  badge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
+  badgeText: { color: colors.white, fontSize: 11, fontWeight: '800' },
   missingBtn: {
     borderWidth: 1,
     borderColor: colors.orange,
@@ -438,6 +496,7 @@ const styles = StyleSheet.create({
   chipText: { color: colors.text, fontWeight: '800', fontSize: 13 },
   chipTextOn: { color: colors.bg, fontWeight: '800', fontSize: 13 },
   search: {
+    flex: 1,
     backgroundColor: colors.card,
     borderRadius: 12,
     borderWidth: 1,
@@ -446,37 +505,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     minHeight: 40,
   },
-  colorRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  colorLabel: { color: colors.muted, fontWeight: '800', fontSize: 13 },
   error: { color: colors.red, paddingHorizontal: spacing.md, marginBottom: 6 },
   banner: { color: '#FBBF24', paddingHorizontal: spacing.md, marginBottom: 6, fontSize: 13 },
   mapWrap: { flex: 1, minHeight: 280, position: 'relative' },
-  tools: {
+  legendFloat: { position: 'absolute', left: 8, zIndex: 5, maxWidth: '68%' },
+  filterPanel: {
     position: 'absolute',
+    top: 8,
     left: 8,
-    right: 8,
-    zIndex: 5,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+    right: 56,
+    zIndex: 12,
+    backgroundColor: 'rgba(15, 22, 36, 0.96)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: 12,
+    gap: 8,
   },
-  tool: {
-    minHeight: 40,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
+  panelLabel: { color: colors.muted, fontWeight: '800', fontSize: 12 },
+  rail: {
+    position: 'absolute',
+    right: 8,
+    zIndex: 6,
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(15, 22, 36, 0.92)',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  round: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 22, 36, 0.94)',
     borderWidth: 1,
     borderColor: colors.cardBorder,
   },
-  toolOn: { backgroundColor: colors.orange, borderColor: colors.orange },
-  toolText: { color: colors.white, fontWeight: '800', fontSize: 12 },
-  toolTextOn: { color: colors.bg, fontWeight: '800', fontSize: 12 },
+  roundOn: { backgroundColor: colors.orange, borderColor: colors.orange },
   empty: {
     position: 'absolute',
-    top: 108,
+    top: 52,
     alignSelf: 'center',
     backgroundColor: colors.bgElevated,
     borderRadius: 12,

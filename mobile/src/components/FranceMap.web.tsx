@@ -197,8 +197,8 @@ export function FranceMap({
         if (fitted) return;
         fitted = true;
         map.fitBounds(FRANCE_BOUNDS, {
-          paddingTopLeft: [16, 88],
-          paddingBottomRight: [16, Math.max(28, dockRef.current)],
+          paddingTopLeft: [12, 44],
+          paddingBottomRight: [56, Math.max(28, dockRef.current)],
           animate: false,
         });
       };
@@ -439,16 +439,16 @@ export function FranceMap({
           east = Math.max(east, point.lng);
         });
         map.fitBounds([[south, west], [north, east]], {
-          paddingTopLeft: [28, 88],
-          paddingBottomRight: [28, Math.max(36, dockRef.current)],
+          paddingTopLeft: [20, 44],
+          paddingBottomRight: [56, Math.max(36, dockRef.current)],
           maxZoom: 12,
           animate: true,
         });
         return;
       }
       map.fitBounds(FRANCE_BOUNDS, {
-        paddingTopLeft: [16, 88],
-        paddingBottomRight: [16, Math.max(28, dockRef.current)],
+        paddingTopLeft: [12, 44],
+        paddingBottomRight: [56, Math.max(28, dockRef.current)],
         animate: true,
       });
     };
