@@ -20,8 +20,15 @@ from app.services.commercial_scope import canonical_commercial_label
 CONTRACT_THRESHOLDS = (100_001, 300_001)
 NEAR_RATIO = 0.8
 
-POINT_KEYS = ("code_union", "nom", "ville", "lat", "lng", "ca", "plateformes", "near_tier")
-UNLOCATED_KEYS = ("code_union", "nom", "ville", "reason")
+POINT_KEYS = (
+    "code_union", "nom", "ville", "lat", "lng", "ca", "plateformes", "near_tier",
+    "commercial", "palier", "fournisseur_principal",
+)
+UNLOCATED_KEYS = (
+    "code_union", "nom", "ville", "reason", "ca", "plateformes", "near_tier",
+    "commercial", "palier", "fournisseur_principal",
+)
+_CA_KEYS = ("ca", "montant", "amount", "ca_total")
 
 
 def near_contract_tier(ca: Optional[float]) -> bool:
@@ -33,25 +40,75 @@ def near_contract_tier(ca: Optional[float]) -> bool:
     return False
 
 
-def parse_platforms(raw: Any) -> List[str]:
+def contract_tier_label(ca: Optional[float]) -> Optional[str]:
+    """Classique, puis Silver à 100 001 €, Gold à 300 001 €. Même barème que la fiche."""
+    if ca is None:
+        return None
+    if ca >= CONTRACT_THRESHOLDS[1]:
+        return "Gold"
+    if ca >= CONTRACT_THRESHOLDS[0]:
+        return "Silver"
+    return "Classique"
+
+
+def _platform_amount(item: dict) -> Optional[float]:
+    for key in _CA_KEYS:
+        if key in item:
+            return _money(item.get(key))
+    return None
+
+
+def platform_details(raw: Any) -> tuple:
+    """Libellés dans l'ordre, et le fournisseur principal.
+
+    S'il y a des montants, le principal est le plus gros CA. Sinon c'est le
+    premier libellé. Les doublons gardent le montant le plus élevé.
+    """
     data = raw
     if isinstance(raw, (bytes, str)):
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            return []
-    if not isinstance(data, list):
-        return []
-    seen = set()
+            return [], None
+    pairs: List[tuple] = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            label = str(key or "").strip().upper()
+            if not label:
+                continue
+            amount = _money(value.get("ca") if isinstance(value, dict) else value)
+            pairs.append((label, amount))
+    elif isinstance(data, list):
+        for item in data:
+            amount = None
+            if isinstance(item, dict):
+                amount = _platform_amount(item)
+                item = item.get("platform") or item.get("label") or item.get("nom") or ""
+            label = str(item or "").strip().upper()
+            if label:
+                pairs.append((label, amount))
+    else:
+        return [], None
+
     labels: List[str] = []
-    for item in data:
-        if isinstance(item, dict):
-            item = item.get("platform") or item.get("label") or ""
-        label = str(item or "").strip().upper()
-        if not label or label in seen:
+    amounts: Dict[str, Optional[float]] = {}
+    for label, amount in pairs:
+        if label not in amounts:
+            labels.append(label)
+            amounts[label] = amount
             continue
-        seen.add(label)
-        labels.append(label)
+        current = amounts[label]
+        if amount is not None and (current is None or amount > current):
+            amounts[label] = amount
+    scored = [(label, amounts[label]) for label in labels if amounts[label] is not None]
+    if scored:
+        scored.sort(key=lambda item: (-item[1], item[0]))
+        return labels, scored[0][0]
+    return labels, (labels[0] if labels else None)
+
+
+def parse_platforms(raw: Any) -> List[str]:
+    labels, _principal = platform_details(raw)
     return labels
 
 
@@ -84,6 +141,13 @@ def _coord(value: Any) -> Optional[float]:
     if number != number:
         return None
     return round(number, 6)
+
+
+def _commercial_label(profile: dict, card: dict) -> Optional[str]:
+    raw = (profile or {}).get("commercial") or (card or {}).get("agent")
+    if not raw:
+        return None
+    return canonical_commercial_label(str(raw)) or str(raw).strip() or None
 
 
 def _same_agent(scope: str, *values: Optional[str]) -> bool:
@@ -145,11 +209,13 @@ def _profiles(rows: Optional[List[dict]]) -> Dict[str, dict]:
         previous = found.get(code)
         if previous is not None and previous["year"] > year_n:
             continue
+        labels, principal = platform_details(row.get("plateformes"))
         found[code] = {
             "year": year_n,
             "nom": (row.get("raison_sociale") or "").strip(),
             "ca": _money(row.get("ca")),
-            "plateformes": parse_platforms(row.get("plateformes")),
+            "plateformes": labels,
+            "principal": principal,
             "commercial": (row.get("commercial") or "").strip() or None,
         }
     return found
@@ -217,32 +283,29 @@ def list_map_adherents(scope: Optional[str]) -> Dict[str, Any]:
         ville = card.get("ville")
         ca = profile.get("ca")
         plateformes = profile.get("plateformes") or []
+        shared = {
+            "code_union": code,
+            "nom": nom,
+            "ville": ville,
+            "ca": ca,
+            "plateformes": plateformes,
+            "near_tier": near_contract_tier(ca),
+            "commercial": _commercial_label(profile, card),
+            "palier": contract_tier_label(ca),
+            "fournisseur_principal": profile.get("principal"),
+        }
         position = positions.get(code)
         lat = position.get("lat") if position else None
         lng = position.get("lng") if position else None
         status = position.get("status") if position else ("pending" if geocode_pending or migration_required else "no_address")
         if status == "ok" and lat is not None and lng is not None and not migration_required:
-            points.append({
-                "code_union": code,
-                "nom": nom,
-                "ville": ville,
-                "lat": lat,
-                "lng": lng,
-                "ca": ca,
-                "plateformes": plateformes,
-                "near_tier": near_contract_tier(ca),
-            })
+            points.append({**shared, "lat": lat, "lng": lng})
             continue
         if status not in {"no_address", "failed", "ambiguous", "pending"}:
             status = "pending" if migration_required or geocode_pending else "no_address"
         if migration_required or geocode_pending:
             status = "pending"
-        unlocated.append({
-            "code_union": code,
-            "nom": nom,
-            "ville": ville,
-            "reason": status,
-        })
+        unlocated.append({**shared, "reason": status})
 
     return {
         "points": points,

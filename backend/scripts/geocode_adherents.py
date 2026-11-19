@@ -14,6 +14,13 @@ de passe et resterait dans l'historique du terminal.
 
 Sans --apply, rien n'est écrit. Le script affiche seulement des comptes.
 --force recalcule même les lignes dont l'adresse n'a pas changé.
+
+Les adhérents is_closed ne sont pas envoyés à l'API Adresse.
+Une position marquée position_source = ok_manual ou insee n'est jamais
+écrasée, même avec --force. Sans cette colonne, aucun verrou n'est actif :
+la migration est proposée dans
+backend/migrations/proposed/20261119_adherent_positions_source.sql
+et elle n'est pas appliquée par ce script.
 """
 from __future__ import annotations
 

@@ -5,7 +5,12 @@ import json
 
 from sqlalchemy import create_engine, text
 
-from app.services.adherent_map import list_map_adherents, near_contract_tier
+from app.services.adherent_map import (
+    contract_tier_label,
+    list_map_adherents,
+    near_contract_tier,
+    platform_details,
+)
 
 SECRET_STREET = "12 rue des Lilas fictive"
 
@@ -69,16 +74,19 @@ def _engine(with_positions: bool = True):
             VALUES
                 ('DEMO1', 2026, 'Garage des Tilleuls', 86000, '["ACR","DCA"]', 'RAYANE'),
                 ('DEMO3', 2025, 'Ancien', 1000, '["ACR"]', 'EL MEHDI'),
-                ('DEMO3', 2026, 'Pièces du Canal', 250000, '["ACR","EXADIS"]', 'EL MEHDI'),
+                ('DEMO3', 2026, 'Pièces du Canal', 250000, :platforms, 'EL MEHDI'),
                 ('DEMO6', 2026, 'Profil seul', 40000, '["ALLIANCE"]', 'Emeric')
             """
-        ))
+        ), {
+            "platforms": '[{"platform":"ACR","ca":40000},{"platform":"EXADIS","ca":210000}]',
+        })
         if with_positions:
             conn.execute(text(
                 """
                 INSERT INTO adherent_positions (code_union, lat, lng, geocode_status) VALUES
                     ('DEMO1', 48.39, -4.486, 'ok'),
                     ('DEMO3', 45.75, 4.85, 'ok'),
+                    ('DEMO4', 50.63, 3.06, 'ok'),
                     ('DEMO5', 43.0, 2.0, 'ambiguous'),
                     ('DEMO6', 47.2, -1.55, 'ok')
                 """
@@ -94,6 +102,28 @@ def _payload(engine, scope):
         return list_map_adherents(scope)
     finally:
         pass
+
+
+def test_contract_tier_and_principal_supplier():
+    assert contract_tier_label(None) is None
+    assert contract_tier_label(0) == "Classique"
+    assert contract_tier_label(86_000) == "Classique"
+    assert contract_tier_label(100_001) == "Silver"
+    assert contract_tier_label(250_000) == "Silver"
+    assert contract_tier_label(300_001) == "Gold"
+    labels, principal = platform_details(["DCA", "ACR"])
+    assert labels == ["DCA", "ACR"]
+    assert principal == "DCA"
+    labels, principal = platform_details([
+        {"platform": "ACR", "ca": 12000},
+        {"label": "EXADIS", "montant": 90000},
+        {"platform": "ACR", "ca": 15000},
+    ])
+    assert labels == ["ACR", "EXADIS"]
+    assert principal == "EXADIS"
+    labels, principal = platform_details({"ALLIANCE": 10, "ACR": 50})
+    assert principal == "ACR"
+    assert set(labels) == {"ALLIANCE", "ACR"}
 
 
 def test_near_contract_tier_matches_rfa_screen():
@@ -143,9 +173,25 @@ def test_payload_has_no_postal_address_and_respects_scope(monkeypatch):
     assert brest["ville"] == "Brest"
     assert brest["plateformes"] == ["ACR", "DCA"]
     assert brest["near_tier"] is True
+    assert brest["commercial"] == "Rayane"
+    assert brest["palier"] == "Classique"
+    assert brest["fournisseur_principal"] == "ACR"
     lyon = next(point for point in full["points"] if point["code_union"] == "DEMO3")
     assert lyon["ca"] == 250000
     assert lyon["near_tier"] is True
+    assert lyon["plateformes"] == ["ACR", "EXADIS"]
+    assert lyon["fournisseur_principal"] == "EXADIS"
+    assert lyon["palier"] == "Silver"
+    assert lyon["commercial"] == "El Mehdi"
+    solo = next(point for point in full["points"] if point["code_union"] == "DEMO6")
+    assert solo["fournisseur_principal"] == "ALLIANCE"
+    assert solo["palier"] == "Classique"
+    assert solo["commercial"] == "Emeric"
+    missing = next(row for row in full["unlocated"] if row["code_union"] == "DEMO2")
+    assert missing["commercial"] == "Rayane"
+    assert missing["ca"] is None
+    assert missing["palier"] is None
+    assert missing["fournisseur_principal"] is None
 
     rayane = list_map_adherents("Rayane")
     rayane_codes = {point["code_union"] for point in rayane["points"]}

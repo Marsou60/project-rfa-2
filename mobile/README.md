@@ -136,9 +136,9 @@ API Railway déjà dans `eas.json`. Icône = logo Groupement Union.
 
 ## Écran Carte
 
-Onglet **Carte** (équipe Union) : une carte de France, un point par adhérent, bulles au zoom, filtre fournisseur ou palier proche. Le détail (CA, RFA, paliers, notes) s’ouvre au toucher et passe par l’API déjà authentifiée. Aucune adresse n’est mise dans un fichier public.
+Onglet **Carte** (équipe Union) : fond gris sobre Esri (clair ou sombre). Carto Positron demande maintenant une clé, donc il n’est pas utilisé. Un point par adhérent. La couleur suit la plateforme principale ou le commercial, la taille suit la racine du CA. La légende se replie. Un toucher ouvre une fiche courte (nom, ville, CA, palier, fournisseur) ; « Voir la fiche » ouvre le détail déjà en place (CA, RFA, paliers, notes). Les bulles restent numériques : le clic montre le nombre par plateforme et le CA total, puis « Zoomer ». Filtres inchangés : fournisseur, « Palier proche », recherche. « Où je suis » utilise la géolocalisation du navigateur et affiche un message si elle est refusée. « Portefeuille » recadre les points visibles, « France » revient sur l’hexagone. « Plein écran » masque l’en-tête. Les contours de départements (fichier léger, métropole et Corse) se chargent seulement si on les demande.
 
-Pour voir l’écran en local, sans base et avec des garages fictifs :
+Aucune adresse n’est mise dans un fichier public. Ne pas définir `EXPO_PUBLIC_MAP_DEMO` sur Vercel : la démo ne sert qu’en local, avec des garages fictifs.
 
 ```powershell
 cd mobile
@@ -146,7 +146,7 @@ $env:EXPO_PUBLIC_MAP_DEMO="1"
 npm run web
 ```
 
-Les vraies positions arrivent après la migration et le géocodage décrits dans `backend/migrations/20261119_adherent_positions.sql` et `backend/scripts/geocode_adherents.py`. Ne pas lancer ces commandes depuis la PWA, et ne pas redéployer Vercel tant que la pull request n’est pas validée.
+Les vraies positions arrivent après la migration et le géocodage décrits dans `backend/migrations/20261119_adherent_positions.sql` et `backend/scripts/geocode_adherents.py`. Le script ignore les adhérents fermés. Le verrou manuel / INSEE (`position_source`) est proposé dans `backend/migrations/proposed/20261119_adherent_positions_source.sql` : ne pas l’appliquer depuis l’app. Ne pas lancer ces commandes depuis la PWA.
 
 ## Ce qu’on ne fait PAS dans `mobile/`
 
