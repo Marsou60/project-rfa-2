@@ -143,6 +143,15 @@ def _forbid_db():
     raise AssertionError("la base ne doit pas être touchée")
 
 
+def _use_existing_account(monkeypatch, raw=SA_JSON):
+    """Compte déjà utilisé par le backend. Pas d'override, pas de fichier, pas d'OAuth Drive."""
+    monkeypatch.delenv(copy.SA_ENV, raising=False)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    monkeypatch.setenv("GOOGLE_CREDENTIALS_JSON", raw)
+    monkeypatch.setenv("DRIVE_REFRESH_TOKEN", "personal-refresh-token")
+    monkeypatch.setenv("DRIVE_CLIENT_SECRET", "drive-client-secret")
+
+
 def test_select_is_read_only_and_limited_to_notes_clients():
     sql = copy.build_notes_select(["id", "note_simple", "sheets_synced"])
     upper = sql.upper()
@@ -195,25 +204,34 @@ def test_cell_values_are_stable_text():
 
 def test_missing_credentials_skips_without_touching_google_or_db(monkeypatch, capsys):
     monkeypatch.delenv(copy.SA_ENV, raising=False)
+    monkeypatch.delenv("GOOGLE_CREDENTIALS_JSON", raising=False)
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
     monkeypatch.setattr(copy, "_db_engine", _forbid_db)
     monkeypatch.setattr(copy, "build_sheets_client", lambda info=None: (_ for _ in ()).throw(AssertionError("sheets")))
     result = copy.run_notes_sheet_copy()
     assert result == {"status": "skipped", "reason": "missing_credentials"}
-    assert "absent" in capsys.readouterr().out
+    assert "GOOGLE_CREDENTIALS_JSON absent" in capsys.readouterr().out
 
 
 def test_invalid_json_does_not_leak_the_secret(monkeypatch, capsys):
     monkeypatch.setenv(copy.SA_ENV, '{"private_key": "super-secret", "truncated": true')
+    monkeypatch.setenv("GOOGLE_CREDENTIALS_JSON", json.dumps({
+        "type": "service_account",
+        "client_email": "fallback-should-not-run@example.iam.gserviceaccount.com",
+        "private_key": "fallback-key",
+    }))
     monkeypatch.setattr(copy, "_db_engine", _forbid_db)
     result = copy.run_notes_sheet_copy()
     assert result["status"] == "error"
     blob = result["error"] + capsys.readouterr().out
+    assert "SHEETS_COPY_SA_JSON" in result["error"]
     assert "super-secret" not in blob
+    assert "fallback-key" not in blob
     assert "BEGIN PRIVATE KEY" not in blob
 
 
 def test_refuses_to_target_frozen_tabs(monkeypatch):
-    monkeypatch.setenv(copy.SA_ENV, SA_JSON)
+    _use_existing_account(monkeypatch)
     monkeypatch.setenv("SHEETS_COPY_TAB", "NOTES CLIENT")
     monkeypatch.setattr(copy, "_db_engine", _forbid_db)
     monkeypatch.setattr(copy, "build_sheets_client", lambda info=None: (_ for _ in ()).throw(AssertionError("sheets")))
@@ -287,7 +305,7 @@ def test_quoted_tab_name_is_escaped():
 
 
 def test_lock_busy_skips_the_copy(monkeypatch, capsys):
-    monkeypatch.setenv(copy.SA_ENV, SA_JSON)
+    _use_existing_account(monkeypatch)
     conn = LockConn(acquired=False)
     monkeypatch.setattr(copy, "_db_engine", lambda: _engine(conn))
     monkeypatch.setattr(copy, "fetch_notes_clients", lambda conn=None: (_ for _ in ()).throw(AssertionError("fetch")))
@@ -305,7 +323,7 @@ def test_lock_busy_skips_the_copy(monkeypatch, capsys):
 
 
 def test_sheet_error_is_contained_and_releases_the_lock(monkeypatch, capsys):
-    monkeypatch.setenv(copy.SA_ENV, SA_JSON)
+    _use_existing_account(monkeypatch)
     conn = LockConn(acquired=True)
     monkeypatch.setattr(copy, "_db_engine", lambda: _engine(conn))
     monkeypatch.setattr(
@@ -348,7 +366,7 @@ def test_sqlite_does_not_take_a_postgres_lock(monkeypatch):
 
 
 def test_run_logs_row_counts(monkeypatch, capsys):
-    monkeypatch.setenv(copy.SA_ENV, SA_JSON)
+    _use_existing_account(monkeypatch)
     monkeypatch.delenv("SHEETS_COPY_TAB", raising=False)
     conn = LockConn()
     monkeypatch.setattr(copy, "_db_engine", lambda: _engine(conn))
@@ -384,14 +402,7 @@ def test_run_logs_row_counts(monkeypatch, capsys):
     assert [2, "b modifié"] in values
 
 
-def test_dedicated_service_account_is_not_the_drive_token(monkeypatch):
-    monkeypatch.setenv("GOOGLE_CREDENTIALS_JSON", json.dumps({
-        "type": "service_account",
-        "client_email": "other-sa@example.iam.gserviceaccount.com",
-        "private_key": "other",
-    }))
-    monkeypatch.setenv("DRIVE_REFRESH_TOKEN", "personal-refresh-token")
-    monkeypatch.setenv(copy.SA_ENV, SA_JSON)
+def _capture_sheets_client(monkeypatch):
     captured = {}
 
     def fake_from_info(info, scopes=None):
@@ -409,12 +420,57 @@ def test_dedicated_service_account_is_not_the_drive_token(monkeypatch):
 
     monkeypatch.setattr(service_account.Credentials, "from_service_account_info", staticmethod(fake_from_info))
     monkeypatch.setattr(discovery, "build", fake_build)
+    return captured
+
+
+def test_reuses_google_credentials_json_and_ignores_drive_oauth(monkeypatch):
+    _use_existing_account(monkeypatch, json.dumps({
+        "type": "service_account",
+        "client_email": "existing-sa@example.iam.gserviceaccount.com",
+        "private_key": "existing-key-material",
+    }))
+    captured = _capture_sheets_client(monkeypatch)
     assert copy.build_sheets_client() == "sheets-client"
-    assert captured["email"] == "rfa-notes-copy@example.iam.gserviceaccount.com"
+    assert captured["email"] == "existing-sa@example.iam.gserviceaccount.com"
     assert captured["scopes"] == [copy.SHEETS_SCOPE]
     assert captured["api"] == ("sheets", "v4")
     assert "personal-refresh-token" not in captured["blob"]
-    assert "other-sa@" not in captured["blob"]
+    assert "drive-client-secret" not in captured["blob"]
+    assert "existing-key-material" not in captured["blob"]
+
+
+def test_application_credentials_file_is_the_same_fallback_as_nathalie(monkeypatch, tmp_path):
+    monkeypatch.delenv(copy.SA_ENV, raising=False)
+    monkeypatch.delenv("GOOGLE_CREDENTIALS_JSON", raising=False)
+    path = tmp_path / "sa.json"
+    path.write_text(json.dumps({
+        "type": "service_account",
+        "client_email": "file-sa@example.iam.gserviceaccount.com",
+        "private_key": "file-key-material",
+    }), encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(path))
+    monkeypatch.setenv("DRIVE_REFRESH_TOKEN", "personal-refresh-token")
+    captured = _capture_sheets_client(monkeypatch)
+    assert copy.build_sheets_client() == "sheets-client"
+    assert captured["email"] == "file-sa@example.iam.gserviceaccount.com"
+    assert "file-key-material" not in captured["blob"]
+    assert "personal-refresh-token" not in captured["blob"]
+
+
+def test_sheets_copy_sa_json_can_override_the_existing_account(monkeypatch):
+    monkeypatch.setenv("GOOGLE_CREDENTIALS_JSON", json.dumps({
+        "type": "service_account",
+        "client_email": "existing-sa@example.iam.gserviceaccount.com",
+        "private_key": "existing-key-material",
+    }))
+    monkeypatch.setenv("DRIVE_REFRESH_TOKEN", "personal-refresh-token")
+    monkeypatch.setenv(copy.SA_ENV, SA_JSON)
+    captured = _capture_sheets_client(monkeypatch)
+    assert copy.build_sheets_client() == "sheets-client"
+    assert captured["email"] == "rfa-notes-copy@example.iam.gserviceaccount.com"
+    assert "existing-sa@" not in captured["blob"]
+    assert "personal-refresh-token" not in captured["blob"]
+    assert "not-a-real-key" not in captured["blob"]
 
 
 def test_schedule_is_two_am_paris_and_configurable(monkeypatch):

@@ -3,6 +3,10 @@
 La table Supabase reste la source. L'onglet est une copie intégrale : on le vide,
 puis on réécrit l'en-tête et toutes les lignes. Les autres onglets (NOTES CLIENT,
 LISTE CLIENT 2, Frais) ne sont ni lus ni modifiés. Aucune écriture en base.
+
+Le compte Google est celui déjà utilisé par le backend (`GOOGLE_CREDENTIALS_JSON`,
+le même que LISTE CLIENT 2). `SHEETS_COPY_SA_JSON` ne sert que de remplacement
+optionnel. Les variables OAuth `DRIVE_*` ne sont pas lues.
 """
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ DEFAULT_TAB = "SUPABASE notes_clients"
 DEFAULT_AT = "02:00"
 DEFAULT_TZ = "Europe/Paris"
 SA_ENV = "SHEETS_COPY_SA_JSON"
+EXISTING_SA_ENV = "GOOGLE_CREDENTIALS_JSON"
 # Verrou de session, propre à cette copie. Ne pas le réutiliser ailleurs.
 LOCK_KEY = 7482910031202602
 CHUNK_ROWS = 200
@@ -67,18 +72,55 @@ def public_error(exc: BaseException) -> str:
     return f"{name}: {detail}" if detail else name
 
 
-def parse_service_account_json(raw: str) -> dict:
+def parse_service_account_json(raw: str, source: str = EXISTING_SA_ENV) -> dict:
     try:
         info = json.loads(raw)
         if isinstance(info, str):
             info = json.loads(info)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{SA_ENV} n'est pas du JSON valide") from exc
+        raise ValueError(f"{source} n'est pas du JSON valide") from exc
+    return _require_service_account(info, source)
+
+
+def _require_service_account(info: Any, source: str) -> dict:
     if not isinstance(info, dict):
-        raise ValueError(f"{SA_ENV} doit être un objet JSON")
+        raise ValueError(f"{source} doit être un objet JSON")
     if info.get("type") != "service_account" or not info.get("client_email") or not info.get("private_key"):
-        raise ValueError(f"{SA_ENV} n'est pas une clé de compte de service")
+        raise ValueError(f"{source} n'est pas une clé de compte de service")
     return info
+
+
+def credentials_available() -> bool:
+    """Vrai si l'override ou le compte de service déjà utilisé par le backend est présent."""
+    if os.environ.get(SA_ENV, "").strip():
+        return True
+    if os.environ.get(EXISTING_SA_ENV, "").strip():
+        return True
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    return bool(path and os.path.isfile(path))
+
+
+def load_service_account_info() -> dict:
+    """Compte de service : override optionnel, sinon le même JSON que le reste du backend.
+
+    Ordre : SHEETS_COPY_SA_JSON, puis GOOGLE_CREDENTIALS_JSON, puis le fichier
+    GOOGLE_APPLICATION_CREDENTIALS (comme nathalie_service). Jamais DRIVE_*.
+    """
+    override = os.environ.get(SA_ENV, "").strip()
+    if override:
+        return parse_service_account_json(override, SA_ENV)
+    raw = os.environ.get(EXISTING_SA_ENV, "").strip()
+    if raw:
+        return parse_service_account_json(raw, EXISTING_SA_ENV)
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if path and os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                loaded = json.load(handle)
+        except json.JSONDecodeError as exc:
+            raise ValueError("GOOGLE_APPLICATION_CREDENTIALS n'est pas du JSON valide") from exc
+        return _require_service_account(loaded, "GOOGLE_APPLICATION_CREDENTIALS")
+    raise ValueError(f"{EXISTING_SA_ENV} absent")
 
 
 def configured_spreadsheet_id() -> str:
@@ -266,13 +308,11 @@ def seconds_until_next_run(now: Optional[datetime] = None) -> float:
 
 
 def build_sheets_client(info: Optional[dict] = None):
-    """Client Sheets authentifié uniquement par SHEETS_COPY_SA_JSON."""
+    """Client Sheets du compte de service déjà utilisé par le backend."""
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
 
-    payload = info if info is not None else parse_service_account_json(
-        os.environ.get(SA_ENV, "").strip()
-    )
+    payload = info if info is not None else load_service_account_info()
     credentials = service_account.Credentials.from_service_account_info(
         payload,
         scopes=[SHEETS_SCOPE],
@@ -411,12 +451,11 @@ def run_notes_sheet_copy() -> dict:
 
 
 def _run_notes_sheet_copy() -> dict:
-    raw = os.environ.get(SA_ENV, "").strip()
-    if not raw:
-        print(f"[NOTES SHEET COPY] {SA_ENV} absent : copie ignorée")
+    if not credentials_available():
+        print(f"[NOTES SHEET COPY] {EXISTING_SA_ENV} absent : copie ignorée")
         return {"status": "skipped", "reason": "missing_credentials"}
 
-    info = parse_service_account_json(raw)
+    info = load_service_account_info()
     tab = configured_tab()
     spreadsheet_id = configured_spreadsheet_id()
 

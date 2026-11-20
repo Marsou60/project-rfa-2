@@ -38,9 +38,9 @@ Une fois le serveur lancé, la documentation interactive est disponible sur :
 
 Chaque nuit, vers 02:00 (Europe/Paris), le backend recopie `public.notes_clients` dans l'onglet dédié `SUPABASE notes_clients` du tableur APPLICATION APPSHEET UNION. L'onglet est vidé puis réécrit. `NOTES CLIENT`, `LISTE CLIENT 2` et les notes de frais ne sont pas touchés. Aucune écriture en base.
 
-La copie ne démarre que si `SHEETS_COPY_SA_JSON` contient la clé JSON d'un compte de service dédié. Sans cette variable, le passage de la nuit journalise et ne fait rien.
+Elle utilise le compte de service déjà présent dans `GOOGLE_CREDENTIALS_JSON` (le même que l’onglet LISTE CLIENT 2). Aucune nouvelle clé n’est nécessaire. `SHEETS_COPY_ENABLED=0` arrête la copie.
 
-Détail des variables, de la création du compte de service et du retour arrière : [docs/NOTES_CLIENTS_SHEET_COPY.md](docs/NOTES_CLIENTS_SHEET_COPY.md).
+Détail des variables et du retour arrière : [docs/NOTES_CLIENTS_SHEET_COPY.md](docs/NOTES_CLIENTS_SHEET_COPY.md).
 
 Déclenchement manuel (administrateur) : `POST /api/admin/notes-clients/sheet-copy`.
 
