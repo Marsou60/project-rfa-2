@@ -73,17 +73,29 @@ async def on_startup():
     enabled_default = "1" if os.environ.get("RAILWAY_ENVIRONMENT") else "0"
     if os.environ.get("ENTERPRISE_WATCH_ENABLED", enabled_default).lower() in ("1", "true", "yes", "on"):
         app.state.enterprise_watch_task = asyncio.create_task(_enterprise_watch_loop())
+    try:
+        from app.services.notes_clients_sheet_copy import notes_sheet_copy_loop, schedule_enabled
+        if schedule_enabled():
+            app.state.notes_sheet_copy_task = asyncio.create_task(notes_sheet_copy_loop())
+    except Exception as exc:
+        print(f"[STARTUP] notes sheet copy warning: {exc}")
+
+
+async def _cancel_background_task(name: str) -> None:
+    task = getattr(app.state, name, None)
+    if not task:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    task = getattr(app.state, "enterprise_watch_task", None)
-    if task:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    await _cancel_background_task("enterprise_watch_task")
+    await _cancel_background_task("notes_sheet_copy_task")
 
 # CORS pour le frontend
 _extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]

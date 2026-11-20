@@ -6332,6 +6332,24 @@ async def genie_export_excel(import_id: str, session: Session = Depends(get_sess
     )
 
 
+@router.post("/admin/notes-clients/sheet-copy")
+async def copy_notes_clients_to_sheet(admin: User = Depends(require_admin)):
+    """Recopie public.notes_clients dans l'onglet dédié du Google Sheet.
+
+    Réservé aux administrateurs. Même travail que le passage de 02:00.
+    Une erreur de copie répond en 502 sans arrêter l'API.
+    """
+    from app.services.notes_clients_sheet_copy import public_error, run_notes_sheet_copy
+
+    try:
+        result = run_notes_sheet_copy()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=public_error(exc))
+    if result.get("status") == "error":
+        raise HTTPException(status_code=502, detail=result.get("error") or "Copie impossible")
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  NATHALIE — Ouverture de comptes
 # ═══════════════════════════════════════════════════════════════════
