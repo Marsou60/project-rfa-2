@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -63,12 +64,22 @@ class _Call:
 
 
 class FakeSheets:
-    """Client Sheets minimal. spreadsheets() et values() renvoient le même objet."""
+    """Grille Sheets. Par défaut 1000×26 : au-delà, les cellules sont ignorées tant que la grille n'est pas agrandie."""
 
-    def __init__(self, titles, fail_add=False):
-        self.titles = list(titles)
+    def __init__(self, titles, fail_add=False, grid_rows=1000, grid_cols=26, ignore_expand=False):
         self.log = []
         self.fail_add = fail_add
+        self.ignore_expand = ignore_expand
+        self.default_rows = grid_rows
+        self.default_cols = grid_cols
+        self.ids: dict[int, str] = {}
+        self.grids: dict[str, dict] = {}
+        for index, title in enumerate(titles):
+            self._add_title(title, index + 1, grid_rows, grid_cols)
+
+    def _add_title(self, title, sheet_id, rows, cols):
+        self.ids[sheet_id] = title
+        self.grids[title] = {"rows": rows, "cols": cols, "values": {}}
 
     def spreadsheets(self):
         return self
@@ -77,29 +88,111 @@ class FakeSheets:
         return self
 
     def get(self, **kwargs):
-        sheets = [
-            {"properties": {"sheetId": index + 1, "title": title}}
-            for index, title in enumerate(self.titles)
-        ]
+        if "range" in kwargs:
+            title, _kind, _bounds = _parse_a1(kwargs["range"])
+            return _Call(self.log, "values_get", kwargs, {"values": self._column_a(title)})
+        sheets = []
+        for sheet_id, title in self.ids.items():
+            grid = self.grids[title]
+            sheets.append({
+                "properties": {
+                    "sheetId": sheet_id,
+                    "title": title,
+                    "gridProperties": {
+                        "rowCount": grid["rows"],
+                        "columnCount": grid["cols"],
+                    },
+                }
+            })
         return _Call(self.log, "get", kwargs, {"sheets": sheets})
 
     def batchUpdate(self, **kwargs):
-        title = kwargs["body"]["requests"][0]["addSheet"]["properties"]["title"]
-        result = {"replies": [{"addSheet": {"properties": {"sheetId": 50, "title": title}}}]}
+        request = kwargs["body"]["requests"][0]
         error = None
-        if self.fail_add:
-            self.titles.append(title)
-            error = RuntimeError("already exists")
-            self.fail_add = False
+        if "addSheet" in request:
+            title = request["addSheet"]["properties"]["title"]
+            new_id = 50 if 50 not in self.ids else max(self.ids) + 1
+            self._add_title(title, new_id, self.default_rows, self.default_cols)
+            result = {"replies": [{"addSheet": {"properties": {"sheetId": new_id, "title": title}}}]}
+            if self.fail_add:
+                error = RuntimeError("already exists")
+                self.fail_add = False
+        elif "updateSheetProperties" in request:
+            props = request["updateSheetProperties"]["properties"]
+            title = self.ids[props["sheetId"]]
+            if not self.ignore_expand:
+                grid = self.grids[title]
+                grid["rows"] = props["gridProperties"]["rowCount"]
+                grid["cols"] = props["gridProperties"]["columnCount"]
+            result = {"replies": [{}]}
         else:
-            self.titles.append(title)
+            raise AssertionError(f"requête Sheets inattendue: {sorted(request)}")
         return _Call(self.log, "batch", kwargs, result, error)
 
     def clear(self, **kwargs):
+        title, _kind, _bounds = _parse_a1(kwargs["range"])
+        self.grids[title]["values"].clear()
         return _Call(self.log, "clear", kwargs, {})
 
     def update(self, **kwargs):
-        return _Call(self.log, "update", kwargs, {})
+        title, _kind, bounds = _parse_a1(kwargs["range"])
+        updated = self._write(title, bounds, kwargs["body"]["values"])
+        return _Call(
+            self.log,
+            "update",
+            kwargs,
+            {"updatedRows": updated, "updatedRange": kwargs["range"]},
+        )
+
+    def _write(self, title, bounds, values) -> int:
+        grid = self.grids[title]
+        start_row, start_col = bounds
+        stored = 0
+        for offset, row in enumerate(values):
+            row_number = start_row + offset
+            if row_number > grid["rows"]:
+                break
+            for column_offset, cell in enumerate(row):
+                column_number = start_col + column_offset
+                if column_number > grid["cols"]:
+                    break
+                grid["values"][(row_number, column_number)] = cell
+            stored += 1
+        return stored
+
+    def _column_a(self, title):
+        grid = self.grids[title]
+        if not grid["values"]:
+            return []
+        last = min(grid["rows"], max(row for row, _col in grid["values"]))
+        rows = []
+        for row_number in range(1, last + 1):
+            cell = grid["values"].get((row_number, 1))
+            rows.append([] if cell is None else [cell])
+        while rows and not rows[-1]:
+            rows.pop()
+        return rows
+
+
+def _column_index(letters: str) -> int:
+    index = 0
+    for char in letters:
+        index = index * 26 + ord(char) - 64
+    return index
+
+
+def _parse_a1(a1: str):
+    if a1.startswith("'"):
+        title, cells = a1[1:].split("'!", 1)
+        title = title.replace("''", "'")
+    else:
+        title, cells = a1.split("!", 1)
+    match = re.fullmatch(r"([A-Z]+)(\d+)?(?::([A-Z]+)(\d+)?)?", cells)
+    if not match:
+        raise AssertionError(f"plage inattendue: {a1}")
+    start_col = _column_index(match.group(1))
+    start_row = int(match.group(2) or 1)
+    return title, cells, (start_row, start_col)
 
 
 class LockConn:
@@ -258,7 +351,10 @@ def test_full_replace_is_idempotent_and_leaves_other_tabs_alone():
     copy.replace_tab(sheets, SPREADSHEET, copy.DEFAULT_TAB, edited, chunk_rows=2)
 
     kinds = [kind for kind, _kwargs in sheets.log]
-    assert kinds == ["get", "clear", "update", "update", "get", "clear", "update", "update"]
+    assert kinds == [
+        "get", "clear", "update", "update", "values_get",
+        "get", "clear", "update", "update", "values_get",
+    ]
     clears = [kwargs for kind, kwargs in sheets.log if kind == "clear"]
     updates = [kwargs for kind, kwargs in sheets.log if kind == "update"]
     assert len(clears) == 2
@@ -292,7 +388,7 @@ def test_missing_tab_is_created_and_a_race_does_not_touch_other_tabs():
     race = FakeSheets(["NOTES CLIENT"], fail_add=True)
     copy.replace_tab(race, SPREADSHEET, copy.DEFAULT_TAB, [["id"], [3]])
     kinds = [kind for kind, _kwargs in race.log]
-    assert kinds == ["get", "batch", "get", "clear", "update"]
+    assert kinds == ["get", "batch", "get", "clear", "update", "values_get"]
     assert "NOTES CLIENT" not in json.dumps([item for item in race.log if item[0] != "get"])
 
 
@@ -302,6 +398,61 @@ def test_quoted_tab_name_is_escaped():
     copy.replace_tab(sheets, SPREADSHEET, title, [["id"]])
     cleared = [kwargs["range"] for kind, kwargs in sheets.log if kind == "clear"]
     assert cleared == ["'Notes d''adhérents'!A:ZZ"]
+
+
+def test_write_expands_past_the_default_1000_row_grid():
+    """Sans agrandissement, la grille neuve de 1000 lignes abandonne tout ce qui suit l'en-tête et 999 notes."""
+    data_rows = 1001
+    sheets = FakeSheets([copy.DEFAULT_TAB], grid_rows=1000, grid_cols=26)
+    matrix = [["id", "note_simple"]] + [[note_id, f"note {note_id}"] for note_id in range(1, data_rows + 1)]
+    written = copy.replace_tab(sheets, SPREADSHEET, copy.DEFAULT_TAB, matrix, chunk_rows=400)
+    assert written == data_rows
+    grid_requests = [
+        kwargs["body"]["requests"][0]["updateSheetProperties"]
+        for kind, kwargs in sheets.log
+        if kind == "batch" and "updateSheetProperties" in kwargs["body"]["requests"][0]
+    ]
+    assert len(grid_requests) == 1
+    props = grid_requests[0]["properties"]["gridProperties"]
+    assert props["rowCount"] >= data_rows + 1
+    assert props["columnCount"] >= 2
+    kinds = [kind for kind, _kwargs in sheets.log]
+    assert kinds.index("batch") < kinds.index("clear")
+    values = sheets.grids[copy.DEFAULT_TAB]["values"]
+    # Ligne 1 = en-tête. L'id 1000 est donc en ligne 1001, la première qu'une grille de 1000 abandonne.
+    assert values[(1001, 1)] == 1000
+    assert values[(data_rows + 1, 1)] == data_rows
+    assert sheets.grids[copy.DEFAULT_TAB]["rows"] >= data_rows + 1
+
+
+def test_write_expands_columns_past_the_default_grid():
+    sheets = FakeSheets([copy.DEFAULT_TAB], grid_rows=1000, grid_cols=26)
+    width = 30
+    header = [f"c{index}" for index in range(width)]
+    row = list(range(width))
+    assert copy.replace_tab(sheets, SPREADSHEET, copy.DEFAULT_TAB, [header, row]) == 1
+    grid = sheets.grids[copy.DEFAULT_TAB]
+    assert grid["cols"] >= width
+    assert grid["values"][(2, width)] == width - 1
+
+
+def test_truncated_write_fails_and_logs_both_counts(monkeypatch, capsys):
+    _use_existing_account(monkeypatch)
+    monkeypatch.setattr(copy, "_db_engine", lambda: _engine(LockConn()))
+    records = [{"id": note_id, "note_simple": "n"} for note_id in range(1, 1002)]
+    monkeypatch.setattr(
+        copy, "fetch_notes_clients", lambda conn=None: (["id", "note_simple"], records),
+    )
+    sheets = FakeSheets([copy.DEFAULT_TAB], grid_rows=1000, grid_cols=26, ignore_expand=True)
+    monkeypatch.setattr(copy, "build_sheets_client", lambda info=None: sheets)
+    result = copy.run_notes_sheet_copy()
+    assert result["status"] == "error"
+    assert result["rows_read"] == 1001
+    assert result["rows_written"] == 999
+    output = capsys.readouterr().out
+    assert "[NOTES SHEET COPY] status=error rows_read=1001 rows_written=999" in output
+    assert "not-a-real-key" not in output
+    assert "personal-refresh-token" not in output
 
 
 def test_lock_busy_skips_the_copy(monkeypatch, capsys):

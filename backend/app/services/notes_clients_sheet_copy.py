@@ -31,6 +31,9 @@ EXISTING_SA_ENV = "GOOGLE_CREDENTIALS_JSON"
 LOCK_KEY = 7482910031202602
 CHUNK_ROWS = 200
 MAX_CELL = 49000
+# Taille d'un onglet Google Sheets neuf. On ne s'y fie pas : la grille est élargie avant l'écriture.
+DEFAULT_GRID_ROWS = 1000
+DEFAULT_GRID_COLS = 26
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 # Onglets déjà utilisés. Un mauvais SHEETS_COPY_TAB ne doit pas les vider.
 FROZEN_TABS = frozenset({"notes client", "liste client 2", "frais"})
@@ -323,7 +326,7 @@ def build_sheets_client(info: Optional[dict] = None):
 def _sheet_properties(service, spreadsheet_id: str) -> list[dict]:
     meta = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
-        fields="sheets.properties(sheetId,title)",
+        fields="sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))",
     ).execute()
     properties = []
     for sheet in meta.get("sheets") or []:
@@ -332,12 +335,29 @@ def _sheet_properties(service, spreadsheet_id: str) -> list[dict]:
     return properties
 
 
-def ensure_tab(service, spreadsheet_id: str, title: str) -> int:
-    """Crée l'onglet dédié s'il manque. N'envoie jamais d'autre modification."""
+def _grid_size(props: dict) -> tuple[int, int]:
+    grid = props.get("gridProperties") or {}
+    try:
+        rows = int(grid.get("rowCount") or 0)
+    except (TypeError, ValueError):
+        rows = 0
+    try:
+        cols = int(grid.get("columnCount") or 0)
+    except (TypeError, ValueError):
+        cols = 0
+    return rows, cols
+
+
+def ensure_tab(service, spreadsheet_id: str, title: str) -> tuple[int, int, int]:
+    """Crée l'onglet dédié s'il manque. N'envoie jamais d'autre modification.
+
+    Retourne l'identifiant de l'onglet et la taille actuelle de sa grille.
+    """
     title = assert_dedicated_tab(title)
     for props in _sheet_properties(service, spreadsheet_id):
         if props.get("title") == title:
-            return int(props["sheetId"])
+            rows, cols = _grid_size(props)
+            return int(props["sheetId"]), rows, cols
     try:
         created = service.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id,
@@ -346,17 +366,81 @@ def ensure_tab(service, spreadsheet_id: str, title: str) -> int:
     except Exception:
         for props in _sheet_properties(service, spreadsheet_id):
             if props.get("title") == title:
-                return int(props["sheetId"])
+                rows, cols = _grid_size(props)
+                return int(props["sheetId"]), rows, cols
         raise
     replies = created.get("replies") or [{}]
     props = (replies[0].get("addSheet") or {}).get("properties") or {}
-    return int(props.get("sheetId"))
+    rows, cols = _grid_size(props)
+    return int(props.get("sheetId")), rows or DEFAULT_GRID_ROWS, cols or DEFAULT_GRID_COLS
+
+
+def expand_tab_grid(
+    service,
+    spreadsheet_id: str,
+    sheet_id: int,
+    current_rows: int,
+    current_cols: int,
+    needed_rows: int,
+    needed_cols: int,
+) -> None:
+    """Agrandit la grille. Un onglet neuf n'a que 1000 lignes : au-delà, l'API les abandonne."""
+    known_rows = current_rows or DEFAULT_GRID_ROWS
+    known_cols = current_cols or DEFAULT_GRID_COLS
+    target_rows = max(known_rows, needed_rows)
+    target_cols = max(known_cols, needed_cols)
+    if target_rows == known_rows and target_cols == known_cols:
+        return
+    service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": [{
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": sheet_id,
+                    "gridProperties": {
+                        "rowCount": target_rows,
+                        "columnCount": target_cols,
+                    },
+                },
+                "fields": "gridProperties.rowCount,gridProperties.columnCount",
+            }
+        }]},
+    ).execute()
 
 
 def _iter_chunks(rows: Sequence[list], size: int) -> Iterator[tuple[int, Sequence[list]]]:
     step = max(1, size)
     for offset in range(0, len(rows), step):
         yield offset, rows[offset:offset + step]
+
+
+class SheetWriteMismatch(RuntimeError):
+    """L'onglet ne contient pas toutes les lignes lues en base."""
+
+    def __init__(self, expected: int, written: int):
+        self.expected = expected
+        self.written = written
+        super().__init__(
+            f"Écriture incomplète : rows_read={expected} rows_written={written}"
+        )
+
+
+def _data_rows_in_column(values: Sequence[Sequence[Any]]) -> int:
+    rows = list(values or [])
+    while rows and not (rows[-1] and str(rows[-1][0]).strip() != ""):
+        rows.pop()
+    if not rows:
+        return 0
+    return len(rows) - 1
+
+
+def _count_written_data_rows(service, spreadsheet_id: str, title: str) -> int:
+    quoted = quote_tab(title)
+    result = service.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range=f"{quoted}!A:A",
+    ).execute()
+    return _data_rows_in_column(result.get("values") or [])
 
 
 def replace_tab(
@@ -366,33 +450,47 @@ def replace_tab(
     matrix: Sequence[Sequence[Any]],
     chunk_rows: int = CHUNK_ROWS,
 ) -> int:
-    """Vide l'onglet dédié puis réécrit la matrice (en-tête compris)."""
+    """Agrandit l'onglet, le vide, réécrit la matrice, puis compte les lignes réellement présentes."""
     title = assert_dedicated_tab(title)
-    ensure_tab(service, spreadsheet_id, title)
+    rows = [list(row) for row in matrix]
+    width = max((len(row) for row in rows), default=1)
+    sheet_id, current_rows, current_cols = ensure_tab(service, spreadsheet_id, title)
+    expand_tab_grid(
+        service,
+        spreadsheet_id,
+        sheet_id,
+        current_rows,
+        current_cols,
+        max(len(rows), 1),
+        width,
+    )
     quoted = quote_tab(title)
     service.spreadsheets().values().clear(
         spreadsheetId=spreadsheet_id,
         range=f"{quoted}!A:ZZ",
         body={},
     ).execute()
-    rows = [list(row) for row in matrix]
     if not rows:
         return 0
-    width = max(len(row) for row in rows)
     end_col = column_letter(width)
-    written = 0
+    short_write = False
     for offset, chunk in _iter_chunks(rows, chunk_rows):
         start = offset + 1
         end = start + len(chunk) - 1
-        service.spreadsheets().values().update(
+        response = service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{quoted}!A{start}:{end_col}{end}",
             valueInputOption="RAW",
             body={"values": chunk},
-        ).execute()
-        written += len(chunk)
-    # La première ligne est l'en-tête.
-    return max(0, written - 1)
+        ).execute() or {}
+        updated = response.get("updatedRows")
+        if updated is not None and int(updated) != len(chunk):
+            short_write = True
+    expected = max(0, len(rows) - 1)
+    observed = _count_written_data_rows(service, spreadsheet_id, title)
+    if short_write or observed != expected:
+        raise SheetWriteMismatch(expected, observed)
+    return observed
 
 
 @contextmanager
@@ -440,53 +538,85 @@ def _close_connection(conn) -> None:
         _discard_connection(conn)
 
 
+def _log(message: str) -> None:
+    """Ligne visible tout de suite dans les logs Railway (stdout n'est pas un terminal)."""
+    print(message, flush=True)
+
+
+def _counts(rows_read: Optional[int], rows_written: Optional[int]) -> str:
+    read = "" if rows_read is None else str(rows_read)
+    written = "" if rows_written is None else str(rows_written)
+    return f"rows_read={read} rows_written={written}"
+
+
 def run_notes_sheet_copy() -> dict:
     """Copie complète. Ne lève pas : une erreur revient dans le dictionnaire."""
     try:
         return _run_notes_sheet_copy()
     except Exception as exc:
         message = public_error(exc)
-        print(f"[NOTES SHEET COPY] error: {message}")
-        return {"status": "error", "error": message}
+        _log(f"[NOTES SHEET COPY] status=error {_counts(None, None)} error={message}")
+        return {
+            "status": "error",
+            "error": message,
+            "rows_read": None,
+            "rows_written": None,
+        }
 
 
 def _run_notes_sheet_copy() -> dict:
-    if not credentials_available():
-        print(f"[NOTES SHEET COPY] {EXISTING_SA_ENV} absent : copie ignorée")
-        return {"status": "skipped", "reason": "missing_credentials"}
+    rows_read: Optional[int] = None
+    rows_written: Optional[int] = None
+    try:
+        if not credentials_available():
+            _log(f"[NOTES SHEET COPY] {EXISTING_SA_ENV} absent : copie ignorée")
+            return {"status": "skipped", "reason": "missing_credentials"}
 
-    info = load_service_account_info()
-    tab = configured_tab()
-    spreadsheet_id = configured_spreadsheet_id()
+        info = load_service_account_info()
+        tab = configured_tab()
+        spreadsheet_id = configured_spreadsheet_id()
 
-    with hold_copy_lock() as acquired:
-        if not acquired:
-            print("[NOTES SHEET COPY] copie déjà en cours sur une autre instance")
-            return {"status": "skipped", "reason": "locked", "tab": tab}
+        with hold_copy_lock() as acquired:
+            if not acquired:
+                _log("[NOTES SHEET COPY] copie déjà en cours sur une autre instance")
+                return {"status": "skipped", "reason": "locked", "tab": tab}
 
-        columns, records = fetch_notes_clients()
-        matrix, truncated = to_matrix(columns, records)
-        service = build_sheets_client(info)
-        written = replace_tab(service, spreadsheet_id, tab, matrix)
-        if written != len(records):
-            raise RuntimeError(
-                f"Écriture incomplète : {written} lignes écrites pour {len(records)} lues"
+            columns, records = fetch_notes_clients()
+            rows_read = len(records)
+            matrix, truncated = to_matrix(columns, records)
+            service = build_sheets_client(info)
+            try:
+                rows_written = replace_tab(service, spreadsheet_id, tab, matrix)
+            except SheetWriteMismatch as exc:
+                rows_read = exc.expected
+                rows_written = exc.written
+                raise
+            if rows_written != rows_read:
+                raise SheetWriteMismatch(rows_read, rows_written)
+            _log(
+                "[NOTES SHEET COPY] "
+                f"status=ok {_counts(rows_read, rows_written)} "
+                f"columns={len(columns)} truncated_cells={truncated} "
+                f"tab={tab} spreadsheet={spreadsheet_id} "
+                f"account={info.get('client_email')}"
             )
-        print(
-            "[NOTES SHEET COPY] "
-            f"status=ok rows_read={len(records)} rows_written={written} "
-            f"columns={len(columns)} truncated_cells={truncated} "
-            f"tab={tab} spreadsheet={spreadsheet_id} "
-            f"account={info.get('client_email')}"
-        )
+            return {
+                "status": "ok",
+                "rows_read": rows_read,
+                "rows_written": rows_written,
+                "columns": columns,
+                "truncated_cells": truncated,
+                "tab": tab,
+                "spreadsheet_id": spreadsheet_id,
+            }
+    except Exception as exc:
+        message = public_error(exc)
+        _log(f"[NOTES SHEET COPY] status=error {_counts(rows_read, rows_written)} error={message}")
         return {
-            "status": "ok",
-            "rows_read": len(records),
-            "rows_written": written,
-            "columns": columns,
-            "truncated_cells": truncated,
-            "tab": tab,
-            "spreadsheet_id": spreadsheet_id,
+            "status": "error",
+            "error": message,
+            "rows_read": rows_read,
+            "rows_written": rows_written,
         }
 
 
@@ -502,17 +632,19 @@ async def notes_sheet_copy_loop() -> None:
     while True:
         try:
             delay = seconds_until_next_run()
-            print(f"[NOTES SHEET COPY] prochain passage dans {int(delay)}s")
+            _log(f"[NOTES SHEET COPY] prochain passage dans {int(delay)}s")
             await _sleep(delay)
             result = await asyncio.to_thread(run_notes_sheet_copy)
-            print(
+            _log(
                 "[NOTES SHEET COPY] "
                 f"status={result.get('status')} "
-                f"rows_read={result.get('rows_read')} "
-                f"rows_written={result.get('rows_written')}"
+                f"{_counts(result.get('rows_read'), result.get('rows_written'))}"
             )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print(f"[NOTES SHEET COPY] loop error: {public_error(exc)}")
+            _log(
+                "[NOTES SHEET COPY] "
+                f"status=error {_counts(None, None)} error={public_error(exc)}"
+            )
             await _sleep(3600)
