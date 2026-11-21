@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# Sans ça, stdout est tamponné hors terminal : la ligne du job de 02:00
+# restait invisible dans les logs Railway jusqu'au redémarrage.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Dépendances système
