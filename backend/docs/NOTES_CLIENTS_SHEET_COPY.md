@@ -11,6 +11,8 @@ Le backend RFA reprend uniquement le sens **Supabase → feuille**, comme copie 
 - `expense_reports` n'est pas copié ;
 - aucune écriture en base, aucun changement de schéma, `sheets_synced` n'est pas modifié.
 
+Avant d'écrire, le job agrandit la grille de l'onglet (un onglet neuf n'a que 1000 lignes ; le surplus était sinon abandonné). Il relit ensuite la colonne A et échoue si le nombre de lignes présentes n'est pas celui lu en base. Chaque passage, réussi ou non, écrit une ligne `[NOTES SHEET COPY]` avec `rows_read` et `rows_written`.
+
 Le passage est prévu vers **02:00 Europe/Paris**. Une seconde instance Railway ne refait pas le travail : le job prend un verrou consultatif Postgres (`pg_try_advisory_xact_lock`) pour toute la copie et le relâche au commit, ou au rollback si ça échoue. Sans compte de service déjà configuré, le job journalise et ne fait rien. Une erreur de copie est journalisée et ne coupe pas l'API.
 
 Les journaux Railway contiennent les comptes de lignes, par exemple :
