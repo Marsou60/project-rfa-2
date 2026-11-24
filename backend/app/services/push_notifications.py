@@ -76,20 +76,34 @@ def notification_scope(user: Any) -> Optional[str]:
     return scope or None
 
 
-def atteints_message(count: int, month: Optional[int]) -> Dict[str, str]:
+def atteints_message(paliers: int, adherents: int, month: Optional[int]) -> Dict[str, str]:
     label = MONTHS[month] if month and 1 <= int(month) <= 12 else "ce mois"
-    noun = "adhérent a" if count == 1 else "adhérents ont"
+    palier_noun = "palier franchi" if int(paliers) == 1 else "paliers franchis"
+    adherent_noun = "adhérent" if int(adherents) == 1 else "adhérents"
     return {
         "title": "RFA Union (test)",
-        "body": f"{count} {noun} franchi un palier en {label} — données réelles, notifications en phase de test",
+        "body": (
+            f"{int(paliers)} {palier_noun} par {int(adherents)} {adherent_noun} en {label}"
+            " — données réelles, notifications en phase de test"
+        ),
         "url": "/alertes?alerte=atteints",
         "type": "palier-mois",
     }
 
 
+def _totals(raw: Any) -> Dict[str, int]:
+    if isinstance(raw, dict):
+        return {
+            "paliers": int(raw.get("paliers") or 0),
+            "adherents": int(raw.get("adherents") or 0),
+        }
+    value = int(raw or 0)
+    return {"paliers": value, "adherents": value}
+
+
 def plan_recipients(
     users: Iterable[Any],
-    counts: Dict[str, int],
+    counts: Dict[str, Any],
     month: Optional[int],
     subscribed_user_ids: Optional[Iterable[int]] = None,
 ) -> List[Dict[str, Any]]:
@@ -99,17 +113,21 @@ def plan_recipients(
         scope = notification_scope(user)
         if not scope:
             continue
-        count = int(counts.get(scope, 0) or 0)
-        message = atteints_message(count, month)
+        totals = _totals(counts.get(scope, 0))
+        paliers = totals["paliers"]
+        adherents = totals["adherents"]
+        message = atteints_message(paliers, adherents, month)
         user_id = getattr(user, "id", None)
         has_device = user_id is not None and int(user_id) in subscribed
-        ignored = count <= 0
+        ignored = paliers <= 0
         plans.append({
             "user_id": user_id,
             "username": getattr(user, "username", None),
             "display_name": getattr(user, "display_name", None),
             "scope": scope,
-            "count": count,
+            "count": paliers,
+            "paliers": paliers,
+            "adherents": adherents,
             "title": message["title"],
             "body": message["body"],
             "url": message["url"],
@@ -215,8 +233,10 @@ def note_after_import(month: Optional[int] = None) -> Dict[str, Any]:
     return {"skipped": True, "reason": "envoi après import non branché sur un envoi automatique", "month": month}
 
 
-def _unique_codes(rows: Iterable[Dict[str, Any]]) -> int:
-    return len({str(row.get("code_union") or "").strip().upper() for row in rows if row.get("code_union")})
+def _alert_totals(rows: Iterable[Dict[str, Any]]) -> Dict[str, int]:
+    listed = list(rows)
+    codes = {str(row.get("code_union") or "").strip().upper() for row in listed if row.get("code_union")}
+    return {"paliers": len(listed), "adherents": len(codes)}
 
 
 def fetch_atteints(commercial: Optional[str]):
@@ -262,11 +282,11 @@ def compose_palier_preview(session) -> Dict[str, Any]:
         scope = notification_scope(user)
         if scope and scope not in scopes:
             scopes.append(scope)
-    counts: Dict[str, int] = {}
+    counts: Dict[str, Dict[str, int]] = {}
     month = None
     for scope in scopes:
         atteints, found = fetch_atteints(None if scope == "all" else scope)
-        counts[scope] = _unique_codes(atteints)
+        counts[scope] = _alert_totals(atteints)
         month = found or month
     ready = False
     subscribed: List[int] = []
