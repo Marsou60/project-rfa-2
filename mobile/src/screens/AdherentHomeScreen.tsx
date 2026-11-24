@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,7 +8,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { dismissCouche, pushCouche, readCouches } from '../navigation/couches';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ClientMonthlyEvolution,
@@ -40,6 +41,7 @@ function asNum(v: unknown): number {
 export function AdherentHomeScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const code = user?.linked_code_union || null;
   const groupe = user?.linked_groupe || null;
   const [data, setData] = useState<ClientRfaResponse | null>(null);
@@ -48,7 +50,12 @@ export function AdherentHomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const { logos } = useSupplierLogos();
   const insets = useSafeAreaInsets();
-  const [prodexNotice, setProdexNotice] = useState(true);
+  const prodexNotice = readCouches(route.params).includes('prodex');
+
+  useLayoutEffect(() => {
+    pushCouche(navigation, route.params, 'prodex');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = useCallback(async () => {
     if (!code && !groupe) {
@@ -132,7 +139,10 @@ export function AdherentHomeScreen() {
       </BrandHero>
 
       <View style={styles.body}>
-      <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
+      <ProdexNoticeModal
+        visible={prodexNotice}
+        onClose={() => dismissCouche(navigation, route.params, 'prodex')}
+      />
       {code ? <ImpayesBanner codeUnion={code} /> : null}
 
       {!code && !groupe ? (
@@ -184,7 +194,7 @@ export function AdherentHomeScreen() {
             items={platforms}
             title="Vos plateformes"
             logos={logos}
-            onOpenProdexNotice={() => setProdexNotice(true)}
+            onOpenProdexNotice={() => pushCouche(navigation, route.params, 'prodex')}
             onPress={(item) =>
               navigation.navigate('SliceDetail', {
                 fournisseur: canonPlatform(item.key),

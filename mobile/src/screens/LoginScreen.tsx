@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { requestInAppBack } from '../navigation/webHistory';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandHero } from '../components/BrandHero';
 import { Icon } from '../components/Icon';
@@ -79,7 +80,10 @@ export function LoginScreen() {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}>
         <BrandHero source={require('../../assets/vitrine/equipe.jpeg')} style={styles.hero}>
           <Pressable
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              if (requestInAppBack()) return;
+              navigation.goBack();
+            }}
             accessibilityRole="button"
             accessibilityLabel="Retour"
             style={[styles.back, { marginTop: Math.max(insets.top, 12) }]}

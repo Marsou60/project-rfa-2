@@ -9,7 +9,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { dismissCouche, pushCouche, readCouches } from '../navigation/couches';
 import {
   ClientMonthlyEvolution,
   ClientRfaResponse,
@@ -106,7 +107,9 @@ export function RfaPanel({
   const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(seedMonthly ?? null);
   const [loading, setLoading] = useState(!onRefresh && !seed);
   const [error, setError] = useState<string | null>(null);
-  const [prodexNotice, setProdexNotice] = useState(false);
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const prodexNotice = readCouches(route.params).includes('prodex-rfa');
   const [lineQuery, setLineQuery] = useState('');
   const { logos } = useSupplierLogos();
 
@@ -297,7 +300,10 @@ export function RfaPanel({
         <RefreshControl refreshing={onRefresh ? busy : loading} onRefresh={refresh} tintColor={colors.orange} />
       }
     >
-      <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
+      <ProdexNoticeModal
+        visible={prodexNotice}
+        onClose={() => dismissCouche(navigation, route.params, 'prodex-rfa')}
+      />
       <HeroCaCard
         title={until ? `Achats 2026 à date (${until})` : 'Achats 2026 à date'}
         ca={d.caGlobal}
@@ -427,7 +433,11 @@ export function RfaPanel({
                     ? `Dont ${fmtEuro(it.ca_exclu)} Prodex non rémunéré. Palier sur ${fmtEuro(it.ca || 0)}, RFA sur ${fmtEuro(it.ca_remunere || 0)}.`
                     : null
               }
-              onOpenNotice={key === 'GLOBAL_EXADIS' ? () => setProdexNotice(true) : null}
+              onOpenNotice={
+                key === 'GLOBAL_EXADIS'
+                  ? () => pushCouche(navigation, route.params, 'prodex-rfa')
+                  : null
+              }
               forceOpen={lineQuery.trim().length >= 2 && lineHit(it.label || '', lineQuery)}
             />
           );

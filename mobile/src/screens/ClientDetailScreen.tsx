@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -9,7 +9,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
+import { dismissCouche, pushCouche, readCouches } from '../navigation/couches';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -96,7 +97,10 @@ export function ClientDetailScreen({
   showBack = false,
   staffFiche = false,
 }: Props) {
-  const [tab, setTab] = useState<TabId>(initialTab);
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const requestedTab = (route.params?.initialTab || initialTab) as TabId;
+  const [tab, setTab] = useState<TabId>(requestedTab);
   const [dash, setDash] = useState<ClientDashboardResponse | null>(null);
   const [rfa, setRfa] = useState<ClientRfaResponse | null>(null);
   const [monthly, setMonthly] = useState<ClientMonthlyEvolution | null>(null);
@@ -105,7 +109,9 @@ export function ClientDetailScreen({
   const [rfaLoading, setRfaLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [prodexNotice, setProdexNotice] = useState(true);
+  const prodexNotice = readCouches(route.params).includes('prodex');
+  const docsOpen = readCouches(route.params).includes('docs');
+  const docsOffered = useRef(false);
   const [missingDocs, setMissingDocs] = useState<string[] | null>(null);
   const insets = useSafeAreaInsets();
   const tabs = staffFiche ? BASE_TABS : BASE_TABS.filter((item) => item.id !== 'fiche');
@@ -125,8 +131,19 @@ export function ClientDetailScreen({
   }
 
   useEffect(() => {
-    setTab(initialTab);
-  }, [initialTab]);
+    setTab(requestedTab);
+  }, [requestedTab]);
+
+  const selectTab = (id: TabId) => {
+    setTab(id);
+    navigation.setParams({ initialTab: id });
+  };
+
+  useLayoutEffect(() => {
+    pushCouche(navigation, route.params, 'prodex');
+    // Une fois à l'ouverture : le retour ferme le communiqué avant de quitter la fiche.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!staffFiche || !codeUnion) {
@@ -146,6 +163,12 @@ export function ClientDetailScreen({
       cancel = true;
     };
   }, [staffFiche, codeUnion]);
+
+  useEffect(() => {
+    if (docsOffered.current || !missingDocs?.length) return;
+    docsOffered.current = true;
+    pushCouche(navigation, route.params, 'docs');
+  }, [missingDocs, navigation, route.params]);
 
   const load = useCallback(async () => {
     if (!codeUnion && !groupeClient) {
@@ -259,7 +282,7 @@ export function ClientDetailScreen({
           <Pressable
             key={t.id}
             style={[styles.tab, tab === t.id && styles.tabActive]}
-            onPress={() => setTab(t.id)}
+            onPress={() => selectTab(t.id)}
             accessibilityRole="button"
             accessibilityState={{ selected: tab === t.id }}
             accessibilityLabel={t.label}
@@ -271,8 +294,16 @@ export function ClientDetailScreen({
       </ScrollView>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <ProdexNoticeModal visible={prodexNotice} onClose={() => setProdexNotice(false)} />
-      <Modal visible={Boolean(missingDocs?.length)} transparent animationType="fade" onRequestClose={() => setMissingDocs(null)}>
+      <ProdexNoticeModal
+        visible={prodexNotice}
+        onClose={() => dismissCouche(navigation, route.params, 'prodex')}
+      />
+      <Modal
+        visible={docsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => dismissCouche(navigation, route.params, 'docs')}
+      >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.alertKicker}>Document manquant</Text>
@@ -281,7 +312,8 @@ export function ClientDetailScreen({
             <Pressable
               style={styles.alertBtn}
               onPress={() => {
-                setMissingDocs(null);
+                const next = readCouches(route.params).filter((item) => item !== 'docs');
+                navigation.setParams({ initialTab: 'fiche', couches: next.join('|') });
                 setTab('fiche');
               }}
               accessibilityRole="button"
