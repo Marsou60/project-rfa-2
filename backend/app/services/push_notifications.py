@@ -79,8 +79,8 @@ def atteints_message(count: int, month: Optional[int]) -> Dict[str, str]:
     label = MONTHS[month] if month and 1 <= int(month) <= 12 else "ce mois"
     noun = "adhérent a" if count == 1 else "adhérents ont"
     return {
-        "title": "Paliers franchis",
-        "body": f"{count} {noun} franchi un palier en {label}",
+        "title": "RFA Union (test)",
+        "body": f"{count} {noun} franchi un palier en {label} — données réelles, notifications en phase de test",
         "url": "/alertes?alerte=atteints",
         "type": "palier-mois",
     }
@@ -102,6 +102,7 @@ def plan_recipients(
         message = atteints_message(count, month)
         user_id = getattr(user, "id", None)
         has_device = user_id is not None and int(user_id) in subscribed
+        ignored = count <= 0
         plans.append({
             "user_id": user_id,
             "username": getattr(user, "username", None),
@@ -111,8 +112,9 @@ def plan_recipients(
             "title": message["title"],
             "body": message["body"],
             "url": message["url"],
-            "would_push": has_device and count >= 0,
-            "reason": None if has_device else "pas d'abonnement sur ce téléphone",
+            "status": "ignoré" if ignored else "prévu",
+            "would_push": False if ignored else has_device,
+            "reason": "ignoré" if ignored else (None if has_device else "pas d'abonnement sur ce téléphone"),
         })
     return plans
 
@@ -198,6 +200,8 @@ def compose_palier_preview(session) -> Dict[str, Any]:
     recipients = plan_recipients(users, counts, month, subscribed)
     if not ready:
         for row in recipients:
+            if row.get("status") == "ignoré":
+                continue
             row["would_push"] = False
             row["reason"] = "table pwa_push_subscriptions pas encore créée"
     return {
