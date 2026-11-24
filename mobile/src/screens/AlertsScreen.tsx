@@ -132,7 +132,7 @@ export function AlertsScreen() {
         rows: (a?.marques_risque || []) as AlertRow[],
         intro: `Marques dont le CA réseau recule de ${thr} % ou plus vs N-1.`,
         detail: (m) =>
-          `CA réseau ${fmtEuro(m.current)} contre ${fmtEuro(m.previous)}, soit ${fmtDeltaPct(m.delta_pct)}. Tapez pour voir quels clients achètent encore cette marque.`,
+          `CA réseau ${fmtEuro(m.current)} contre ${fmtEuro(m.previous)}, soit ${fmtDeltaPct(m.delta_pct)}. Tapez pour voir les plateformes et les adhérents.`,
       },
       {
         id: 'marques_perdues',
@@ -186,7 +186,7 @@ export function AlertsScreen() {
     }
     const value = (row.key || '').trim();
     if (cat.target === 'marque' && value) {
-      navigation.navigate('FilteredClients', { kind: 'marque', value, title: value });
+      navigation.navigate('BrandDetail', { marque: value, onglet: 'plateformes' });
     }
   };
 

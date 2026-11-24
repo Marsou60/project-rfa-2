@@ -10,6 +10,8 @@ export type NetworkClientRow = {
   delta_pct?: number | null;
   n_platforms?: number;
   platforms?: string[];
+  /** CA année courante par plateforme (ACR, DCA, EXADIS, ALLIANCE). */
+  per_platform?: Record<string, number>;
   recent_current?: number;
   recent_previous?: number;
   recent_delta?: number;
@@ -53,6 +55,7 @@ export type NetworkAlertes = {
 };
 
 export type NetworkDashboard = {
+  reporting_month?: number | null;
   kpis?: {
     ca_ytd?: number;
     ca_n1_same_period?: number | null;
