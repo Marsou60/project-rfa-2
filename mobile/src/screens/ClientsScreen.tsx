@@ -9,7 +9,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { requestInAppBack } from '../navigation/webHistory';
 import { getImpayesFlags, ImpayeFlag, NetworkClientRow } from '../api/consultation';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
@@ -32,8 +33,9 @@ type GroupRow = {
 
 export function ClientsScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { commercialScope, isNetworkFullAccess } = useAuth();
-  const [mode, setMode] = useState<Mode>('clients');
+  const mode: Mode = route.params?.vue === 'groupes' ? 'groupes' : 'clients';
   const [sort, setSort] = useState<Sort>('ca');
   const [query, setQuery] = useState('');
   const { dash, loading, error, refresh } = useNetworkDashboard();
@@ -117,7 +119,10 @@ export function ClientsScreen() {
       <View style={styles.modeToggle}>
         <Pressable
           style={[styles.modePill, mode === 'clients' && styles.modePillActive]}
-          onPress={() => setMode('clients')}
+          onPress={() => {
+            if (mode === 'groupes' && requestInAppBack()) return;
+            navigation.setParams({ vue: '' });
+          }}
           accessibilityRole="button"
           accessibilityState={{ selected: mode === 'clients' }}
           accessibilityLabel={`Adhérents, ${rows.length}`}
@@ -128,7 +133,7 @@ export function ClientsScreen() {
         </Pressable>
         <Pressable
           style={[styles.modePill, mode === 'groupes' && styles.modePillActive]}
-          onPress={() => setMode('groupes')}
+          onPress={() => navigation.setParams({ vue: 'groupes' })}
           accessibilityRole="button"
           accessibilityState={{ selected: mode === 'groupes' }}
           accessibilityLabel={`Groupes, ${groupes.length}`}

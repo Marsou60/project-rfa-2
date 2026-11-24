@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -6,10 +6,11 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { NetworkClientRow } from '../api/consultation';
+import { getPalierAlerts, NetworkClientRow, PalierAlerts, PalierAlertRow } from '../api/consultation';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
 import { Icon, IconName } from '../components/Icon';
@@ -21,7 +22,7 @@ const MONTHS = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juil
 
 type Tone = 'red' | 'amber' | 'green';
 
-type AlertRow = NetworkClientRow & {
+type AlertRow = NetworkClientRow & PalierAlertRow & {
   buyers_current?: number;
   buyers_previous?: number;
   buyers_delta?: number;
@@ -38,7 +39,22 @@ type Category = {
   target: 'client' | 'marque';
   intro: string;
   detail: (row: AlertRow) => string;
+  pinned?: boolean;
 };
+
+const GAP_PRESETS = [1500, 2000, 3000, 5000];
+
+function parseGap(text: string): number {
+  const n = Number(String(text).replace(/\s/g, '').replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) return 2000;
+  return Math.round(n);
+}
+
+function objectiveLine(row: AlertRow): string {
+  const kind =
+    row.kind === 'tripartite' ? 'Tripartite' : row.kind === 'niveau' ? 'Contrat' : 'Plateforme';
+  return `${kind} · ${row.objective || 'Objectif'}`;
+}
 
 const TONE_COLOR: Record<Tone, string> = {
   red: colors.red,
@@ -51,6 +67,32 @@ export function AlertsScreen() {
   const { commercialScope, isNetworkFullAccess } = useAuth();
   const { dash, loading, error, refresh } = useNetworkDashboard();
   const [active, setActive] = useState<string | null>(null);
+  const [gapText, setGapText] = useState('2000');
+  const [palier, setPalier] = useState<PalierAlerts | null>(null);
+  const [palierLoading, setPalierLoading] = useState(false);
+  const [palierError, setPalierError] = useState<string | null>(null);
+  const gap = parseGap(gapText);
+  const yearFromData = palier?.year || dash?.year_current || 2026;
+
+  const loadPalier = useCallback(() => {
+    setPalierLoading(true);
+    setPalierError(null);
+    getPalierAlerts({ yearCurrent: dash?.year_current || 2026 })
+      .then((data) => setPalier(data))
+      .catch((e: unknown) => {
+        const msg =
+          (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
+            ?.detail ||
+          (e as { message?: string })?.message ||
+          'Paliers indisponibles';
+        setPalierError(String(msg));
+      })
+      .finally(() => setPalierLoading(false));
+  }, [dash?.year_current]);
+
+  useEffect(() => {
+    loadPalier();
+  }, [loadPalier]);
 
   const alertes = dash?.alertes;
   const thr = alertes?.cfg?.pct ?? 15;
@@ -58,9 +100,71 @@ export function AlertsScreen() {
   const year = new Date().getFullYear();
   const recentLabel = (alertes?.recent_months || []).map((m) => MONTHS[m] || `mois ${m}`).join(' et ');
 
+  const monthName = palier?.month ? MONTHS[palier.month] || `mois ${palier.month}` : null;
+  const proches = useMemo(
+    () =>
+      (palier?.proches || []).filter(
+        (row) => (row.missing || 0) > 0 && (row.missing || 0) <= gap,
+      ) as AlertRow[],
+    [palier, gap],
+  );
+  const projectionRows = useMemo(
+    () =>
+      (palier?.projection || []).filter(
+        (row) => (row.missing || 0) > 0 && (row.missing || 0) <= gap,
+      ) as AlertRow[],
+    [palier, gap],
+  );
+  const atteints = (palier?.atteints || []) as AlertRow[];
+
   const categories: Category[] = useMemo(() => {
     const a = alertes;
     return [
+      {
+        id: 'proches',
+        label: 'Paliers proches',
+        chip: 'Proches',
+        icon: 'flag-outline',
+        tone: 'amber',
+        target: 'client',
+        pinned: true,
+        rows: proches,
+        intro: palierError
+          ? palierError
+          : `Adhérents à moins de ${fmtEuro(gap)} de leur prochain palier. L'écart est le CA à date ${yearFromData} (cumul déjà importé), le même que la jauge de la fiche — pas la projection de fin d'année. Plateformes, niveau de contrat, et tripartites quand le contrat les ouvre.`,
+        detail: (row) =>
+          `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)}.`,
+      },
+      {
+        id: 'projection',
+        label: 'Projection 31/12',
+        chip: '31/12',
+        icon: 'calendar-outline',
+        tone: 'amber',
+        target: 'client',
+        pinned: true,
+        rows: projectionRows,
+        intro: palierError
+          ? palierError
+          : `Même liste, mais l'écart est sur le CA projeté au 31 décembre : le CA à date de chaque plateforme est multiplié par 12 divisé par le mois de cette plateforme, comme l'estimation de RFA de décembre sur la fiche. On ne garde que ceux qui restent sous le palier suivant, à moins de ${fmtEuro(gap)}.`,
+        detail: (row) =>
+          `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · projection 31/12 ${fmtEuro(row.projected)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)} en projection.`,
+      },
+      {
+        id: 'atteints',
+        label: 'Paliers atteints du mois',
+        chip: 'Atteints',
+        icon: 'checkmark-circle-outline',
+        tone: 'green',
+        target: 'client',
+        pinned: true,
+        rows: atteints,
+        intro: monthName
+          ? `Paliers franchis en ${monthName} ${yearFromData}, le dernier mois présent dans les imports. Le mois suivant remplace celui-ci dès qu'il est chargé. Calcul sur le CA à date, pas sur une projection.`
+          : `Aucun mois daté dans les imports de ${yearFromData} : on ne peut pas dire quel palier a été franchi ce mois-ci.`,
+        detail: (row) =>
+          `${objectiveLine(row)}. Palier ${fmtEuro(row.palier)} atteint${monthName ? ` en ${monthName}` : ''}. CA à date ${fmtEuro(row.current)}.`,
+      },
       {
         id: 'recent',
         label: 'Décrochage récent',
@@ -132,18 +236,7 @@ export function AlertsScreen() {
         rows: (a?.marques_risque || []) as AlertRow[],
         intro: `Marques dont le CA réseau recule de ${thr} % ou plus vs N-1.`,
         detail: (m) =>
-          `CA réseau ${fmtEuro(m.current)} contre ${fmtEuro(m.previous)}, soit ${fmtDeltaPct(m.delta_pct)}. Tapez pour voir quels clients achètent encore cette marque.`,
-      },
-      {
-        id: 'marques_perdues',
-        label: 'Marques perdues',
-        chip: 'Marques perdues',
-        icon: 'remove-circle-outline',
-        tone: 'red',
-        target: 'marque',
-        rows: (a?.marques_perdues || []) as AlertRow[],
-        intro: `Marques sans aucun CA en ${year} alors qu'elles tournaient en ${year - 1}.`,
-        detail: (m) => `Plus aucun CA en ${year} alors que ${year - 1} faisait ${fmtEuro(m.previous)}.`,
+          `CA réseau ${fmtEuro(m.current)} contre ${fmtEuro(m.previous)}, soit ${fmtDeltaPct(m.delta_pct)}. Tapez pour voir les plateformes et les adhérents.`,
       },
       {
         id: 'marques_boom',
@@ -157,23 +250,10 @@ export function AlertsScreen() {
         detail: (m) =>
           `CA réseau ${fmtEuro(m.current)}, ${fmtDeltaPct(m.delta_pct)} vs N-1. À pousser chez les clients qui ne l'achètent pas encore.`,
       },
-      {
-        id: 'marques_acheteurs',
-        label: 'Perte d’acheteurs',
-        chip: 'Acheteurs ↓',
-        icon: 'people-outline',
-        tone: 'amber',
-        target: 'marque',
-        rows: (a?.marques_acheteurs || []) as AlertRow[],
-        intro:
-          'Marques qui perdent au moins 20 % de leurs adhérents acheteurs vs N-1, même si le CA tient encore grâce à quelques gros clients.',
-        detail: (m) =>
-          `${m.buyers_current ?? 0} adhérents acheteurs contre ${m.buyers_previous ?? 0} l'an dernier (${m.buyers_delta ?? 0}). CA ${fmtEuro(m.current)} · ${fmtDeltaPct(m.delta_pct)}.`,
-      },
     ];
-  }, [alertes, thr, caMin, recentLabel, year]);
+  }, [alertes, thr, caMin, recentLabel, year, proches, projectionRows, atteints, gap, palierError, monthName, yearFromData]);
 
-  const available = categories.filter((c) => c.rows.length > 0);
+  const available = categories.filter((cat) => cat.pinned || cat.rows.length > 0);
   const current = available.find((c) => c.id === active) || available[0] || null;
 
   const openRow = (cat: Category, row: AlertRow) => {
@@ -186,7 +266,7 @@ export function AlertsScreen() {
     }
     const value = (row.key || '').trim();
     if (cat.target === 'marque' && value) {
-      navigation.navigate('FilteredClients', { kind: 'marque', value, title: value });
+      navigation.navigate('BrandDetail', { marque: value, onglet: 'plateformes' });
     }
   };
 
@@ -255,18 +335,69 @@ export function AlertsScreen() {
           {current ? (
             <FlatList
               data={current.rows}
-              keyExtractor={(item, idx) => `${current.id}-${item.code_union || item.key || idx}`}
+              keyExtractor={(item, idx) =>
+                `${current.id}-${item.code_union || item.key || idx}-${item.objective || ''}-${item.palier || item.next_palier || ''}`
+              }
               refreshControl={
-                <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.orange} />
+                <RefreshControl
+                  refreshing={loading || palierLoading}
+                  onRefresh={() => {
+                    refresh();
+                    loadPalier();
+                  }}
+                  tintColor={colors.orange}
+                />
               }
               contentContainerStyle={{ paddingBottom: 40 }}
               ListHeaderComponent={
                 <View style={styles.introBox}>
                   <Text style={styles.introTitle}>
-                    {current.label} · {current.rows.length}
+                    {current.label} · {palierLoading && current.pinned ? '…' : current.rows.length}
                   </Text>
                   <Text style={styles.introText}>{current.intro}</Text>
+                  {current.id === 'proches' || current.id === 'projection' ? (
+                    <View style={styles.gapBox}>
+                      <Text style={styles.gapLabel}>Seuil de proximité</Text>
+                      <View style={styles.gapRow}>
+                        {GAP_PRESETS.map((preset) => {
+                          const on = gap === preset;
+                          return (
+                            <Pressable
+                              key={preset}
+                              onPress={() => setGapText(String(preset))}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: on }}
+                              accessibilityLabel={`Moins de ${fmtEuro(preset)}`}
+                              style={[styles.gapChip, on && styles.gapChipOn]}
+                            >
+                              <Text style={[styles.gapChipText, on && styles.gapChipTextOn]}>
+                                {fmtEuro(preset)}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                      <TextInput
+                        style={styles.gapInput}
+                        value={gapText}
+                        onChangeText={setGapText}
+                        keyboardType="numeric"
+                        accessibilityLabel="Montant maximum manquant, en euros"
+                        placeholder="2000"
+                        placeholderTextColor={colors.muted2}
+                      />
+                    </View>
+                  ) : null}
                 </View>
+              }
+              ListEmptyComponent={
+                <Text style={styles.empty}>
+                  {current.id === 'proches'
+                    ? `Aucun adhérent à moins de ${fmtEuro(gap)} d'un palier sur le CA à date.`
+                    : current.id === 'projection'
+                      ? `Aucun adhérent dont la projection au 31/12 reste à moins de ${fmtEuro(gap)} du palier suivant.`
+                      : 'Aucune ligne pour cette alerte.'}
+                </Text>
               }
               renderItem={({ item }) => (
                 <Pressable style={styles.row} onPress={() => openRow(current, item)}>
@@ -285,7 +416,7 @@ export function AlertsScreen() {
                     {item.code_union ? <Text style={styles.rowCode}>{item.code_union}</Text> : null}
                     <Text style={styles.rowDetail}>{current.detail(item)}</Text>
                     <Text style={styles.rowLink}>
-                      {current.target === 'client' ? 'Ouvrir la fiche RFA ›' : 'Voir les clients ›'}
+                      {current.target === 'client' ? 'Ouvrir la fiche RFA ›' : 'Voir la marque ›'}
                     </Text>
                   </View>
                 </Pressable>
@@ -303,7 +434,31 @@ export function AlertsScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
   error: { color: colors.red, marginBottom: 8 },
-  empty: { color: colors.muted, textAlign: 'center', marginTop: 28 },
+  empty: { color: colors.muted, textAlign: 'center', marginTop: 28, lineHeight: 20 },
+  gapBox: { marginTop: 10, gap: 8 },
+  gapLabel: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  gapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  gapChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.card,
+  },
+  gapChipOn: { backgroundColor: colors.orange, borderColor: colors.orange },
+  gapChipText: { color: colors.white, fontWeight: '800', fontSize: 12 },
+  gapChipTextOn: { color: colors.white },
+  gapInput: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    color: colors.white,
+    fontWeight: '700',
+  },
   kpiRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   kpi: {
     flex: 1,

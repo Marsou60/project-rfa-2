@@ -87,6 +87,31 @@ def test_multi_region_filter(monkeypatch):
     assert "Sud" in both["filter_options"]["regions"]
 
 
+def test_marque_filter_splits_platforms_and_members(monkeypatch):
+    """Le détail mobile d'une marque réutilise le dashboard filtré, sans nouvel agrégat."""
+    monkeypatch.setattr(dash, "load_evolution_sales_rows", lambda: (_sample_rows(), "cumulative"))
+    payload = build_network_dashboard(
+        year_current=2026,
+        year_previous=2025,
+        marque="SBS",
+        full_lists=True,
+    )
+    assert payload["available"] is True
+    assert payload["kpis"]["ca_ytd"] == 10000.0
+    by_platform = {p["platform"]: p["current"] for p in payload["platforms"]}
+    assert by_platform["DCA"] == 7000.0
+    assert by_platform["ACR"] == 1000.0
+    assert by_platform["EXADIS"] == 1000.0
+    assert by_platform["ALLIANCE"] == 1000.0
+    by_code = {c["code_union"]: c for c in payload["clients"]}
+    assert set(by_code) == {"A1", "D1"}
+    assert by_code["A1"]["per_platform"]["DCA"] == 6000.0
+    assert by_code["D1"]["current"] == 4000.0
+    assert by_code["D1"]["per_platform"]["ACR"] == 1000.0
+    assert by_code["D1"]["per_platform"]["EXADIS"] == 1000.0
+    assert by_code["D1"]["per_platform"]["ALLIANCE"] == 1000.0
+
+
 def test_build_network_dashboard_empty(monkeypatch):
     monkeypatch.setattr(dash, "load_evolution_sales_rows", lambda: ([], ""))
     payload = build_network_dashboard()

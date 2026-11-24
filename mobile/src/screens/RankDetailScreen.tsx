@@ -1,9 +1,14 @@
-import React, { useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { getNetworkDashboard } from '../api/consultation';
+import { useNetworkDashboard } from '../api/networkStore';
 import { getMarqueLogoSource } from '../assets/marqueLogos';
+import { useAuth } from '../auth/AuthContext';
+import { BackHeader } from '../components/BackHeader';
 import { colors, spacing } from '../theme';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
+import { rankTitle, rowsForRank } from '../utils/rankRows';
 import { FilterKind } from './FilteredClientsScreen';
 
 export type RankKind =
@@ -27,14 +32,16 @@ export type RankRow = {
 };
 
 type Params = {
-  title: string;
+  title?: string;
   kind: RankKind;
-  rows: RankRow[];
+  rows?: RankRow[];
   subtitle?: string;
+  fournisseur?: string;
+  liste?: string;
 };
 
 const KIND_HELP: Record<RankKind, string> = {
-  marques: 'Tapez une marque pour voir les clients qui ont du CA dessus, puis ouvrez une fiche.',
+  marques: 'Tapez une marque pour voir ses plateformes et les adhérents qui l’achètent.',
   familles: 'Répartition du CA réseau par famille de produits (lecture).',
   sous_familles: 'Répartition du CA réseau par sous-famille de produits (lecture).',
   commerciaux: 'Tapez un commercial pour voir son portefeuille clients, puis ouvrez une fiche.',
@@ -55,12 +62,48 @@ function toFilterKind(kind: RankKind): FilterKind | null {
 export function RankDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<{ RankDetail: Params }, 'RankDetail'>>();
-  const { title, kind, rows = [], subtitle } = route.params || {
-    title: 'Classement',
-    kind: 'marques' as RankKind,
-    rows: [],
-  };
+  const { commercialScope } = useAuth();
+  const { dash } = useNetworkDashboard();
+  const params = route.params || { kind: 'marques' as RankKind };
+  const { kind, subtitle, fournisseur, liste } = params;
+  const title = params.title || rankTitle(kind, liste);
+  const passedRows = Array.isArray(params.rows) ? params.rows : null;
+  const [remoteRows, setRemoteRows] = useState<RankRow[] | null>(null);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (passedRows) return undefined;
+    if (!fournisseur && dash) {
+      setRemoteRows(rowsForRank(dash, kind, liste) as RankRow[]);
+      setRemoteError(null);
+      return undefined;
+    }
+    let cancel = false;
+    getNetworkDashboard({
+      fournisseur: fournisseur || null,
+      full: true,
+      commercial: commercialScope,
+    })
+      .then((data) => {
+        if (!cancel) setRemoteRows(rowsForRank(data, kind, liste) as RankRow[]);
+      })
+      .catch((e: unknown) => {
+        if (cancel) return;
+        const msg =
+          (e as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
+            ?.detail ||
+          (e as { message?: string })?.message ||
+          'Erreur de chargement';
+        setRemoteError(String(msg));
+        setRemoteRows([]);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [passedRows, fournisseur, dash, kind, liste, commercialScope]);
+
+  const rows = passedRows || remoteRows || [];
 
   const help = subtitle || KIND_HELP[kind];
   const sorted = useMemo(
@@ -90,8 +133,12 @@ export function RankDetailScreen() {
       navigation.navigate('ClientRfa', { groupeClient: r.key, label: r.key });
       return;
     }
-    const filterKind = toFilterKind(kind);
     const value = (r.key || r.raison_sociale || '').trim();
+    if (kind === 'marques' && value) {
+      navigation.navigate('BrandDetail', { marque: value, onglet: 'plateformes' });
+      return;
+    }
+    const filterKind = toFilterKind(kind);
     if (filterKind && value) {
       navigation.navigate('FilteredClients', {
         kind: filterKind,
@@ -101,8 +148,12 @@ export function RankDetailScreen() {
     }
   };
 
+  const loadingRows = !passedRows && !remoteRows && !remoteError;
+
   return (
-    <View style={styles.root}>
+    <View style={styles.screen}>
+      <BackHeader title={title} subtitle="Classement" />
+      <View style={styles.root}>
       <Text style={styles.count}>
         {sorted.length} ligne{sorted.length > 1 ? 's' : ''} · CA total {fmtEuro(total)}
       </Text>
@@ -122,7 +173,13 @@ export function RankDetailScreen() {
         data={filtered}
         keyExtractor={(item, idx) => `${item.code_union || item.key || idx}`}
         contentContainerStyle={{ paddingBottom: 40 }}
-        ListEmptyComponent={<Text style={styles.empty}>Aucune ligne à afficher.</Text>}
+        ListEmptyComponent={
+          loadingRows ? (
+            <ActivityIndicator color={colors.orange} style={{ marginTop: 24 }} />
+          ) : (
+            <Text style={styles.empty}>{remoteError || 'Aucune ligne à afficher.'}</Text>
+          )
+        }
         renderItem={({ item, index }) => {
           const label = item.raison_sociale || item.key || item.code_union || '—';
           const marqueSrc = kind === 'marques' ? getMarqueLogoSource(label) : null;
@@ -144,9 +201,11 @@ export function RankDetailScreen() {
                 </Text>
                 {item.code_union ? <Text style={styles.sub}>{item.code_union}</Text> : null}
                 <Text style={clickable ? styles.hint : styles.sub}>
-                  {clickable && toFilterKind(kind)
-                    ? 'Voir les clients ›'
-                    : `CA N-1 : ${fmtEuro(item.previous)}`}
+                  {kind === 'marques'
+                    ? 'Plateformes et adhérents ›'
+                    : clickable && toFilterKind(kind)
+                      ? 'Voir les clients ›'
+                      : `CA N-1 : ${fmtEuro(item.previous)}`}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
@@ -164,11 +223,13 @@ export function RankDetailScreen() {
           );
         }}
       />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
   root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   count: { color: colors.white, fontSize: 13, fontWeight: '800' },
   help: { color: colors.muted, fontSize: 13, lineHeight: 19, marginTop: 4, marginBottom: 12 },

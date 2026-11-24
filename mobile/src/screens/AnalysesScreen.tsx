@@ -47,8 +47,13 @@ export function AnalysesScreen() {
     [dash],
   );
 
-  const openRank = (title: string, kind: RankKind, rows: unknown[], subtitle?: string) =>
-    navigation.navigate('RankDetail', { title, kind, rows, subtitle });
+  const openRank = (
+    title: string,
+    kind: RankKind,
+    rows: unknown[],
+    subtitle?: string,
+    liste?: string,
+  ) => navigation.navigate('RankDetail', { title, kind, rows, subtitle, liste });
 
   const explorer: MenuItem[] = [
     {
@@ -74,7 +79,7 @@ export function AnalysesScreen() {
           'Toutes les marques',
           'marques',
           marques,
-          'Toutes les marques du réseau. Tapez une marque pour voir les clients qui en achètent.',
+          'Toutes les marques du réseau. Tapez une marque pour voir ses plateformes et ses adhérents.',
         ),
     },
     {
@@ -161,6 +166,7 @@ export function AnalysesScreen() {
           'clients',
           dash?.top_clients_up || [],
           'Clients dont le CA cumulé progresse le plus vs N-1 (même période).',
+          'hausses',
         ),
     },
     {
@@ -175,6 +181,7 @@ export function AnalysesScreen() {
           'clients',
           dash?.top_clients_down || [],
           'Clients dont le CA cumulé recule le plus vs N-1 — à prioriser en relance.',
+          'baisses',
         ),
     },
     {
@@ -188,6 +195,7 @@ export function AnalysesScreen() {
           'clients',
           cross?.mono_targets || [],
           'Clients qui n’achètent que sur une seule plateforme — potentiel de développement multi-plateformes.',
+          'mono',
         ),
     },
     {
@@ -202,6 +210,7 @@ export function AnalysesScreen() {
           'clients',
           cross?.loyal_clients || [],
           'Clients présents sur toutes les plateformes du réseau — les plus fidèles.',
+          'fideles',
         ),
     },
   ];

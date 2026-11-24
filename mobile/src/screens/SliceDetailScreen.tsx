@@ -143,12 +143,7 @@ export function SliceDetailScreen() {
     });
 
   const openMarqueClients = (key: string) =>
-    navigation.navigate('FilteredClients', {
-      kind: 'marque',
-      value: key,
-      title: `${key} · ${platformLabel(fournisseur)}`,
-      fournisseur,
-    });
+    navigation.navigate('BrandDetail', { marque: key, onglet: 'plateformes' });
 
   return (
     <View style={styles.root}>
@@ -224,7 +219,7 @@ export function SliceDetailScreen() {
                     title: `Marques · ${platformLabel(fournisseur)}`,
                     kind: 'marques',
                     rows: marques,
-                    subtitle: `Marques achetées sur ${platformLabel(fournisseur)}. Tapez une marque pour voir ses clients.`,
+                    subtitle: `Marques achetées sur ${platformLabel(fournisseur)}. Tapez une marque pour voir ses plateformes et ses adhérents.`,
                     fournisseur,
                   })
                 }
@@ -259,7 +254,7 @@ export function SliceDetailScreen() {
                     <Text style={styles.rowTitle} numberOfLines={1}>
                       {label}
                     </Text>
-                    <Text style={styles.rowHint}>Voir les clients ›</Text>
+                    <Text style={styles.rowHint}>Plateformes et adhérents ›</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     <Text style={styles.rowCa}>{fmtEuro(m.current)}</Text>

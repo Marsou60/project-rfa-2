@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -17,6 +17,7 @@ import { UnionHomeScreen } from '../screens/UnionHomeScreen';
 import { ClientsScreen } from '../screens/ClientsScreen';
 import { ClientRfaScreen } from '../screens/ClientRfaScreen';
 import { RankDetailScreen } from '../screens/RankDetailScreen';
+import { BrandDetailScreen } from '../screens/BrandDetailScreen';
 import { FilteredClientsScreen } from '../screens/FilteredClientsScreen';
 import { AnalysesScreen } from '../screens/AnalysesScreen';
 import { AlertsScreen } from '../screens/AlertsScreen';
@@ -25,6 +26,9 @@ import { AdherentRfaScreen } from '../screens/AdherentRfaScreen';
 import { SliceDetailScreen } from '../screens/SliceDetailScreen';
 import { MapScreen } from '../screens/MapScreen';
 import { mapDemoEnabled } from '../map/demoMode';
+import { AppArea, locationFromNav } from './appLocation';
+import { applyNavLocation } from './applyNavLocation';
+import { installWebHistory, notifyWebHistory } from './webHistory';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -255,6 +259,14 @@ function UnionStack() {
         })}
       />
       <Stack.Screen
+        name="BrandDetail"
+        component={BrandDetailScreen}
+        options={({ route }: any) => ({
+          title: route?.params?.marque || 'Marque',
+          ...detailScreenOptions,
+        })}
+      />
+      <Stack.Screen
         name="FilteredClients"
         component={FilteredClientsScreen}
         options={({ route }: any) => ({
@@ -292,6 +304,28 @@ function AdherentStack() {
 
 export function RootNavigator() {
   const { user, loading, isUnion, isAdherent } = useAuth();
+  const navRef = useRef<any>(null);
+  const [navReady, setNavReady] = useState(false);
+  const area: AppArea = !user
+    ? mapDemoEnabled
+      ? 'demo'
+      : 'public'
+    : isUnion || (!isAdherent && String(user.role || '').toUpperCase() === 'ADMIN')
+      ? 'union'
+      : 'adherent';
+  const areaRef = useRef(area);
+  areaRef.current = area;
+
+  useLayoutEffect(() => {
+    if (loading || !navReady) return undefined;
+    const nav = navRef.current;
+    if (!nav?.getRootState) return undefined;
+    return installWebHistory({
+      getArea: () => areaRef.current,
+      getLocation: () => locationFromNav(nav.getRootState(), areaRef.current),
+      applyLocation: (loc) => applyNavLocation(nav, loc),
+    });
+  }, [area, loading, navReady]);
 
   if (loading) {
     return (
@@ -300,28 +334,19 @@ export function RootNavigator() {
       </View>
     );
   }
-  if (!user) {
-    if (mapDemoEnabled) {
-      return (
-        <NavigationContainer theme={navTheme}>
-          <DemoStack />
-        </NavigationContainer>
-      );
-    }
-    return (
-      <NavigationContainer theme={navTheme}>
-        <PublicStack />
-      </NavigationContainer>
-    );
-  }
+
+  let stack = <PublicStack />;
+  if (!user && mapDemoEnabled) stack = <DemoStack />;
+  else if (user) stack = area === 'union' ? <UnionStack /> : <AdherentStack />;
 
   return (
-    <NavigationContainer theme={navTheme}>
-      {isUnion || (!isAdherent && String(user.role || '').toUpperCase() === 'ADMIN') ? (
-        <UnionStack />
-      ) : (
-        <AdherentStack />
-      )}
+    <NavigationContainer
+      ref={navRef}
+      theme={navTheme}
+      onReady={() => setNavReady(true)}
+      onStateChange={() => notifyWebHistory()}
+    >
+      {stack}
     </NavigationContainer>
   );
 }

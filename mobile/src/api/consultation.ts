@@ -10,6 +10,8 @@ export type NetworkClientRow = {
   delta_pct?: number | null;
   n_platforms?: number;
   platforms?: string[];
+  /** CA année courante par plateforme (ACR, DCA, EXADIS, ALLIANCE). */
+  per_platform?: Record<string, number>;
   recent_current?: number;
   recent_previous?: number;
   recent_delta?: number;
@@ -53,6 +55,7 @@ export type NetworkAlertes = {
 };
 
 export type NetworkDashboard = {
+  reporting_month?: number | null;
   kpis?: {
     ca_ytd?: number;
     ca_n1_same_period?: number | null;
@@ -223,6 +226,41 @@ export async function getNetworkKpis(params?: {
       year_previous: params?.yearPrevious ?? 2025,
       commercial: params?.commercial || undefined,
     },
+  });
+  return data;
+}
+
+export type PalierAlertRow = {
+  code_union: string;
+  raison_sociale?: string;
+  kind?: 'plateforme' | 'tripartite' | 'niveau';
+  objective?: string;
+  current?: number;
+  next_palier?: number;
+  missing?: number;
+  palier?: number;
+  /** CA projeté au 31/12, même rythme que la fiche. */
+  projected?: number;
+};
+
+export type PalierAlerts = {
+  available?: boolean;
+  /** ca_a_date : écart sur le cumul déjà importé, pas la projection de décembre. */
+  basis?: string;
+  year?: number;
+  month?: number | null;
+  projection_method?: string;
+  projection_month?: number | null;
+  proches?: PalierAlertRow[];
+  projection?: PalierAlertRow[];
+  atteints?: PalierAlertRow[];
+};
+
+export async function getPalierAlerts(params?: {
+  yearCurrent?: number;
+}): Promise<PalierAlerts> {
+  const { data } = await api.get('/pure-data/cumulative/palier-alerts', {
+    params: { year_current: params?.yearCurrent ?? 2026 },
   });
   return data;
 }

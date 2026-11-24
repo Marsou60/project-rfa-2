@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { requestInAppBack } from '../navigation/webHistory';
 import { Icon } from './Icon';
 import { colors, spacing } from '../theme';
 
@@ -15,6 +16,7 @@ export function BackHeader({ title, subtitle }: Props) {
   const insets = useSafeAreaInsets();
 
   const onBack = () => {
+    if (requestInAppBack()) return;
     if (navigation.canGoBack()) {
       navigation.goBack();
       return;

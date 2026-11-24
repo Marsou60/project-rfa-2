@@ -9,7 +9,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { dismissCouche, readCouches, writeCouches } from '../navigation/couches';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getAdherentMap } from '../api/map';
 import { FranceMap } from '../components/FranceMap';
@@ -33,22 +34,27 @@ import { colors, spacing } from '../theme';
 
 export function MapScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
+  const couches = readCouches(route.params);
+  const coucheKey = couches.join('|');
+  const selected = couches.find((item) => item.startsWith('carte:'))?.slice(6) ?? null;
+  const sheetCode = couches.find((item) => item.startsWith('fiche:'))?.slice(6) ?? null;
+  const filtersOpen = couches.includes('filtres');
+  const showMissing = couches.includes('sans-position');
+  const fullscreen = couches.includes('plein-ecran');
+  const legendOpen = couches.includes('legende');
+  const setCouches = (next: string[]) => writeCouches(navigation, couches, next);
+  const viewLayers = (list: string[]) => list.filter((item) => item === 'plein-ecran' || item === 'legende');
   const [payload, setPayload] = useState<AdherentMapResponse | null>(mapDemoEnabled ? DEMO_MAP : null);
   const [loading, setLoading] = useState(!mapDemoEnabled);
   const [error, setError] = useState<string | null>(null);
   const [supplier, setSupplier] = useState<string | null>(null);
   const [nearOnly, setNearOnly] = useState(false);
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
-  const [sheetCode, setSheetCode] = useState<string | null>(null);
-  const [showMissing, setShowMissing] = useState(false);
   const [colorMode, setColorMode] = useState<ColorMode>('plateforme');
-  const [legendOpen, setLegendOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [basemap, setBasemap] = useState<BasemapId>('light');
   const [showDepartments, setShowDepartments] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
   const [cluster, setCluster] = useState<ClusterPreview | null>(null);
   const [locateRequest, setLocateRequest] = useState(0);
   const [fitRequest, setFitRequest] = useState(0);
@@ -78,6 +84,10 @@ export function MapScreen() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!coucheKey.split('|').includes('groupe')) setCluster(null);
+  }, [coucheKey]);
 
   useEffect(() => {
     const parent = navigation.getParent?.();
@@ -149,7 +159,7 @@ export function MapScreen() {
             <View style={{ flex: 1 }} />
             <Pressable
               style={styles.missingBtn}
-              onPress={() => setShowMissing(true)}
+              onPress={() => setCouches([...couches, 'sans-position'])}
               accessibilityRole="button"
               accessibilityLabel={`${unlocated.length} adhérents sans position`}
             >
@@ -171,7 +181,10 @@ export function MapScreen() {
             />
             <Pressable
               style={[styles.filterBtn, (filtersOpen || activeFilters > 0) && styles.filterBtnOn]}
-              onPress={() => setFiltersOpen((value) => !value)}
+              onPress={() => {
+                if (filtersOpen) dismissCouche(navigation, route.params, 'filtres');
+                else setCouches([...couches, 'filtres']);
+              }}
               accessibilityRole="button"
               accessibilityState={{ expanded: filtersOpen }}
               accessibilityLabel={activeFilters ? `Filtres, ${activeFilters} actifs` : 'Filtres'}
@@ -206,21 +219,16 @@ export function MapScreen() {
             points={visible}
             selectedCode={selected}
             onSelect={(code) => {
-              setSelected(code);
-              setSheetCode(null);
               setCluster(null);
-              setFiltersOpen(false);
+              setCouches([...viewLayers(couches), `carte:${code}`]);
             }}
             onBackgroundPress={() => {
-              setSelected(null);
-              setSheetCode(null);
               setCluster(null);
-              setFiltersOpen(false);
+              setCouches(viewLayers(couches));
             }}
             onCluster={(preview) => {
               setCluster(preview);
-              setSelected(null);
-              setSheetCode(null);
+              setCouches([...viewLayers(couches), 'groupe']);
             }}
             colorMode={colorMode}
             basemap={basemap}
@@ -241,7 +249,10 @@ export function MapScreen() {
             points={visible}
             mode={colorMode}
             open={legendOpen}
-            onToggle={() => setLegendOpen((value) => !value)}
+            onToggle={() => {
+              if (legendOpen) dismissCouche(navigation, route.params, 'legende');
+              else setCouches([...couches, 'legende']);
+            }}
           />
         </View>
 
@@ -299,8 +310,8 @@ export function MapScreen() {
             label={fullscreen ? 'Quitter le plein écran' : 'Plein écran'}
             active={fullscreen}
             onPress={() => {
-              setFullscreen((value) => !value);
-              setFiltersOpen(false);
+              if (fullscreen) dismissCouche(navigation, route.params, 'plein-ecran');
+              else setCouches([...couches.filter((item) => item !== 'filtres'), 'plein-ecran']);
             }}
           />
         </View>
@@ -315,11 +326,12 @@ export function MapScreen() {
           {cluster && !sheetCode ? (
             <MapClusterCard
               preview={cluster}
-              onClose={() => setCluster(null)}
+              onClose={() => dismissCouche(navigation, route.params, 'groupe')}
               onZoom={() => {
                 setZoomCodes(cluster.codes);
                 setZoomRequest((value) => value + 1);
                 setCluster(null);
+                setCouches(couches.filter((item) => item !== 'groupe'));
               }}
             />
           ) : null}
@@ -329,8 +341,13 @@ export function MapScreen() {
               missing={selectedPoint ? null : selectedMissing}
               color={pointColor(selectedPoint || selectedMissing || {}, colorMode, palette)}
               showCommercial={colorMode === 'commercial'}
-              onClose={() => setSelected(null)}
-              onOpenFiche={() => setSheetCode(selected)}
+              onClose={() => dismissCouche(navigation, route.params, `carte:${selected}`)}
+              onOpenFiche={() => {
+                if (!selected) return;
+                const base = couches.filter((item) => !item.startsWith('fiche:'));
+                const withCarte = base.includes(`carte:${selected}`) ? base : [...base, `carte:${selected}`];
+                setCouches([...withCarte, `fiche:${selected}`]);
+              }}
             />
           ) : null}
         </View>
@@ -339,7 +356,7 @@ export function MapScreen() {
           <MapDetailSheet
             point={sheetPoint}
             missing={sheetPoint ? null : sheetMissing}
-            onClose={() => setSheetCode(null)}
+            onClose={() => dismissCouche(navigation, route.params, `fiche:${sheetCode}`)}
             onOpenFiche={openFullClient}
           />
         ) : null}
@@ -348,12 +365,19 @@ export function MapScreen() {
       <MissingModal
         visible={showMissing}
         rows={unlocated}
-        onClose={() => setShowMissing(false)}
+        onClose={() => dismissCouche(navigation, route.params, 'sans-position')}
         onPick={(code) => {
-          setShowMissing(false);
-          setSelected(code);
-          setSheetCode(null);
           setCluster(null);
+          setCouches([
+            ...couches.filter(
+              (item) =>
+                item !== 'sans-position' &&
+                item !== 'groupe' &&
+                !item.startsWith('carte:') &&
+                !item.startsWith('fiche:'),
+            ),
+            `carte:${code}`,
+          ]);
         }}
       />
     </View>
