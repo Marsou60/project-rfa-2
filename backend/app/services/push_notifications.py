@@ -20,9 +20,10 @@ portefeuille. Les adhérents ne reçoivent pas cette alerte réseau.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 MONTHS = [
     "",
@@ -121,6 +122,84 @@ def plan_recipients(
 
 def sending_allowed() -> bool:
     return os.environ.get("PUSH_SEND_ENABLED", "").strip() == "1"
+
+
+def _push_error(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if status:
+        return f"HTTP {status}"
+    return type(exc).__name__
+
+
+def deliver_planned(
+    recipients: Iterable[Dict[str, Any]],
+    subscriptions: Iterable[Dict[str, Any]],
+    sender: Callable[[Dict[str, Any], str], None],
+) -> List[Dict[str, Any]]:
+    """Un envoi par abonnement des comptes prévus. Les compteurs à 0 ne partent pas."""
+    by_user: Dict[int, List[Dict[str, Any]]] = {}
+    for sub in subscriptions:
+        by_user.setdefault(int(sub["user_id"]), []).append(sub)
+    results = []
+    for row in recipients:
+        base = {
+            "user_id": row.get("user_id"),
+            "username": row.get("username"),
+            "count": row.get("count"),
+            "title": row.get("title"),
+            "body": row.get("body"),
+        }
+        if row.get("status") == "ignoré" or int(row.get("count") or 0) <= 0:
+            results.append({**base, "result": "ignoré", "sent": 0, "failed": 0})
+            continue
+        if not row.get("would_push"):
+            results.append({**base, "result": "pas d'abonnement", "sent": 0, "failed": 0})
+            continue
+        payload = json.dumps(
+            {"title": row.get("title"), "body": row.get("body"), "url": row.get("url")},
+            ensure_ascii=False,
+        )
+        sent = 0
+        failed = 0
+        errors: List[str] = []
+        for sub in by_user.get(int(row["user_id"]), []):
+            try:
+                sender(sub, payload)
+                sent += 1
+            except Exception as exc:
+                failed += 1
+                errors.append(_push_error(exc))
+        if sent and not failed:
+            result = "envoyé"
+        elif failed:
+            result = "échec"
+        else:
+            result = "pas d'abonnement"
+        results.append({**base, "result": result, "sent": sent, "failed": failed, "errors": errors})
+    return results
+
+
+def vapid_sender() -> Callable[[Dict[str, Any], str], None]:
+    private = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+    subject = os.environ.get("VAPID_SUBJECT", "").strip()
+    if not private or not subject:
+        raise RuntimeError("clés VAPID absentes")
+
+    def send(sub: Dict[str, Any], payload: str) -> None:
+        from pywebpush import webpush
+
+        webpush(
+            subscription_info={
+                "endpoint": sub["endpoint"],
+                "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+            },
+            data=payload,
+            vapid_private_key=private,
+            vapid_claims={"sub": subject},
+        )
+
+    return send
 
 
 def after_import_enabled() -> bool:
