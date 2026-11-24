@@ -230,6 +230,36 @@ export async function getNetworkKpis(params?: {
   return data;
 }
 
+export type PalierAlertRow = {
+  code_union: string;
+  raison_sociale?: string;
+  kind?: 'plateforme' | 'tripartite' | 'niveau';
+  objective?: string;
+  current?: number;
+  next_palier?: number;
+  missing?: number;
+  palier?: number;
+};
+
+export type PalierAlerts = {
+  available?: boolean;
+  /** ca_a_date : écart sur le cumul déjà importé, pas la projection de décembre. */
+  basis?: string;
+  year?: number;
+  month?: number | null;
+  proches?: PalierAlertRow[];
+  atteints?: PalierAlertRow[];
+};
+
+export async function getPalierAlerts(params?: {
+  yearCurrent?: number;
+}): Promise<PalierAlerts> {
+  const { data } = await api.get('/pure-data/cumulative/palier-alerts', {
+    params: { year_current: params?.yearCurrent ?? 2026 },
+  });
+  return data;
+}
+
 export async function getNetworkDashboard(params?: {
   yearCurrent?: number;
   yearPrevious?: number;

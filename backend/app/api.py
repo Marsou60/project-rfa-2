@@ -3973,6 +3973,72 @@ async def pure_data_network_dashboard(
         raise HTTPException(status_code=500, detail=f"Erreur dashboard réseau: {str(e)}")
 
 
+@router.get("/pure-data/cumulative/palier-alerts")
+async def pure_data_palier_alerts(
+    year_current: int = 2026,
+    commercial: Optional[str] = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(require_staff),
+):
+    """
+    Paliers proches et paliers franchis sur le dernier mois importé.
+    Écart calculé sur le CA à date (pas la projection de fin d'année).
+    Le mois est le max des mois présents dans les lignes de l'année.
+    """
+    try:
+        from app.services.commercial_scope import resolve_commercial_scope
+        from app.services.network_cache import cached_network_value
+
+        forced = resolve_commercial_scope(user)
+        if forced:
+            commercial = forced
+        scope = commercial
+        from app.database import release_request_connection
+
+        cache_key = json.dumps(
+            {"kind": "palier-alerts", "y": year_current, "com": scope},
+            sort_keys=True,
+            default=str,
+        )
+        release_request_connection(session)
+
+        def _build():
+            from app.services.contract_resolver import BatchContractResolver
+            from app.services.palier_alerts import build_palier_alerts
+            from app.services.pure_data_sales_source import load_evolution_sales_rows
+            from app.services.rfa_calculator import load_contract_rules
+
+            rows, source = load_evolution_sales_rows()
+            resolver = BatchContractResolver()
+            rules_cache: dict = {}
+
+            def rules_for(contract):
+                cid = getattr(contract, "id", None)
+                if cid not in rules_cache:
+                    rules_cache[cid] = load_contract_rules(contract)
+                return rules_cache[cid]
+
+            def resolve(code, groupe):
+                return resolver.resolve(code_union=code, groupe_client=groupe, year=year_current)
+
+            return build_palier_alerts(
+                rows,
+                year=year_current,
+                resolve=resolve,
+                rules_for=rules_for,
+                commercial=scope,
+                data_source=source,
+            )
+
+        return cached_network_value(cache_key, _build)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erreur alertes paliers: {str(e)}")
+
+
 @router.get("/pure-data/cumulative/network-kpis")
 async def pure_data_network_kpis(
     year_current: int = 2026,
