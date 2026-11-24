@@ -239,6 +239,8 @@ export type PalierAlertRow = {
   next_palier?: number;
   missing?: number;
   palier?: number;
+  /** CA projeté au 31/12, même rythme que la fiche. */
+  projected?: number;
 };
 
 export type PalierAlerts = {
@@ -247,7 +249,10 @@ export type PalierAlerts = {
   basis?: string;
   year?: number;
   month?: number | null;
+  projection_method?: string;
+  projection_month?: number | null;
   proches?: PalierAlertRow[];
+  projection?: PalierAlertRow[];
   atteints?: PalierAlertRow[];
 };
 

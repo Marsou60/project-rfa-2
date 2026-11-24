@@ -4008,7 +4008,11 @@ async def pure_data_palier_alerts(
             from app.services.pure_data_sales_source import load_evolution_sales_rows
             from app.services.rfa_calculator import load_contract_rules
 
+            from app.database import engine, lease_session
+
             rows, source = load_evolution_sales_rows()
+            with lease_session(engine) as calc_session:
+                platform_months = _effective_platform_months(calc_session, year_current)
             resolver = BatchContractResolver()
             rules_cache: dict = {}
 
@@ -4028,6 +4032,7 @@ async def pure_data_palier_alerts(
                 rules_for=rules_for,
                 commercial=scope,
                 data_source=source,
+                platform_months=platform_months,
             )
 
         return cached_network_value(cache_key, _build)

@@ -90,6 +90,39 @@ def test_gap_is_ytd_and_month_comes_from_rows():
     assert tri_hit["objective"] == "Embrayage LuK"
 
 
+def test_projection_reuses_december_run_rate():
+    """12 / mois de la plateforme, comme la fiche : 62 000 € en octobre → 74 400 €."""
+    rows = [
+        _row(code_union="RUN", raison_sociale="Rythme", ca=62000, month=10),
+        _row(code_union="PAST", raison_sociale="Dépassé", ca=70000, month=10),
+    ]
+    payload = build_palier_alerts(
+        rows,
+        year=2026,
+        resolve=lambda code, groupe: _contract(),
+        rules_for=_rules,
+        platform_months={"ACR": 10},
+    )
+    assert payload["projection_method"] == "scale_recap_by_platform_months"
+    run = next(
+        row for row in payload["projection"]
+        if row["code_union"] == "RUN" and row["objective"] == "ACR"
+    )
+    assert run["current"] == 62000
+    assert run["projected"] == 74400
+    assert run["next_palier"] == 75000
+    assert run["missing"] == 600
+    ytd = next(
+        row for row in payload["proches"]
+        if row["code_union"] == "RUN" and row["objective"] == "ACR"
+    )
+    assert ytd["missing"] == 13000
+    assert not any(
+        row["code_union"] == "PAST" and row["objective"] == "ACR"
+        for row in payload["projection"]
+    )
+
+
 def test_later_import_moves_the_month():
     rows = [
         _row(ca=40000, month=10),

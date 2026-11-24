@@ -1,10 +1,13 @@
 """
 Alertes paliers pour l'app mobile.
 
-Le manque et le palier atteint sont calculés sur le CA à date (cumul de
-l'année déjà importé), comme la jauge de la fiche RFA et le Génie
-(`missing_ca` = prochain seuil − CA). La projection de fin d'année n'entre
-pas dans le calcul : elle sert ailleurs à estimer la RFA de décembre.
+`proches` et `atteints` utilisent le CA à date, comme la jauge de la fiche
+et le Génie (`missing_ca` = prochain seuil − CA).
+
+`projection` reprend `scale_recap_by_platform_months` : le CA à date de
+chaque plateforme est multiplié par 12 / mois de cette plateforme, le même
+rythme que l'estimation RFA au 31 décembre de la fiche. Le palier suivant
+est celui qui reste au-dessus de ce CA projeté.
 
 Le mois « atteint » est le plus grand mois présent dans les lignes de
 l'année (jamais une constante).
@@ -17,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional
 from app.core.fields import get_field_by_key, get_tri_fields
 from app.core.global_tiers import GLOBAL_PLATFORMS
 from app.services.pdf_export import _get_tier_progress
+from app.services.pure_data_network_rfa import scale_recap_by_platform_months
 from app.services.pure_data_rfa_parser import compute_recap_ca_from_rows
 from app.services.rfa_calculator import (
     compute_total_global_ca,
@@ -103,6 +107,37 @@ def _label(key: str, rules: Dict[str, Any]) -> str:
     return get_field_by_key(key)[1]
 
 
+def _gap_row(
+    *,
+    code: str,
+    name: str,
+    kind: str,
+    objective: str,
+    current: float,
+    compared: float,
+    ladders: List[List[Dict[str, float]]],
+    projected: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    state = _combined(compared, ladders)
+    if not state or state["next_min"] is None:
+        return None
+    gap = round(float(state["next_min"]) - compared, 2)
+    if gap <= 0:
+        return None
+    row = {
+        "code_union": code,
+        "raison_sociale": name,
+        "kind": kind,
+        "objective": objective,
+        "current": round(current, 2),
+        "next_palier": float(state["next_min"]),
+        "missing": gap,
+    }
+    if projected is not None:
+        row["projected"] = round(projected, 2)
+    return row
+
+
 def build_palier_alerts(
     rows: List[Dict[str, Any]],
     *,
@@ -111,6 +146,7 @@ def build_palier_alerts(
     rules_for: RulesFor,
     commercial: Optional[str] = None,
     data_source: str = "",
+    platform_months: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     """
     `proches` : CA à date > 0 et encore un seuil au-dessus (le mobile filtre le plafond en €).
@@ -163,7 +199,9 @@ def build_palier_alerts(
             bucket["month"].append(row)
 
     proches: List[Dict[str, Any]] = []
+    projection: List[Dict[str, Any]] = []
     atteints: List[Dict[str, Any]] = []
+    projection_month: Optional[int] = None
 
     for code, bucket in by_code.items():
         contract = resolve(code, bucket["groupe"] or None)
@@ -176,6 +214,13 @@ def build_palier_alerts(
         recap = compute_recap_ca_from_rows(bucket["ytd"])
         before = compute_recap_ca_from_rows(bucket["before"])
         month_recap = compute_recap_ca_from_rows(bucket["month"]) if latest else None
+        projected_recap, _factor, display_month = scale_recap_by_platform_months(
+            recap,
+            platform_months=platform_months,
+            fallback_month=latest,
+        )
+        if display_month is not None:
+            projection_month = display_month
         name = bucket["name"] or code
 
         levels = parse_level_baremes(contract)
@@ -201,6 +246,26 @@ def build_palier_alerts(
                         "next_palier": float(next_level.get("minGlobal") or 0),
                         "missing": gap,
                     })
+            if projected_recap is not None:
+                total_proj = compute_total_global_ca(projected_recap)
+                next_proj = None
+                for level in sorted(levels, key=lambda item: float(item.get("minGlobal") or 0)):
+                    if float(level.get("minGlobal") or 0) > total_proj:
+                        next_proj = level
+                        break
+                if next_proj is not None and total_proj > 0:
+                    gap = round(float(next_proj.get("minGlobal") or 0) - total_proj, 2)
+                    if gap > 0:
+                        projection.append({
+                            "code_union": code,
+                            "raison_sociale": name,
+                            "kind": "niveau",
+                            "objective": f"Niveau {next_proj.get('id') or ''}".strip(),
+                            "current": round(total_now, 2),
+                            "projected": round(total_proj, 2),
+                            "next_palier": float(next_proj.get("minGlobal") or 0),
+                            "missing": gap,
+                        })
             now_id = (level_now or {}).get("id") if level_now else None
             before_id = (level_before or {}).get("id") if level_before else None
             month_global = compute_total_global_ca(month_recap) if month_recap else 0
@@ -243,6 +308,32 @@ def build_palier_alerts(
                     "ca_month": float((month_recap.get("tri") or {}).get(key) or 0) if month_recap else 0,
                 })
 
+        projected_objectives: List[Dict[str, Any]] = []
+        if projected_recap is not None:
+            for key in GLOBAL_PLATFORMS:
+                rfa_tiers, bonus_tiers = _platform_ladders(contract, projected_recap, rules, key)
+                if not rfa_tiers and not bonus_tiers:
+                    continue
+                projected_objectives.append({
+                    "kind": "plateforme",
+                    "label": _label(key, rules),
+                    "ladders": [rfa_tiers, bonus_tiers],
+                    "current": float((recap.get("global") or {}).get(key) or 0),
+                    "projected": float((projected_recap.get("global") or {}).get(key) or 0),
+                })
+            if _tri_enabled(contract, projected_recap):
+                for key in get_tri_fields():
+                    tiers = _tri_ladder(rules, key)
+                    if not tiers:
+                        continue
+                    projected_objectives.append({
+                        "kind": "tripartite",
+                        "label": _label(key, rules),
+                        "ladders": [tiers],
+                        "current": float((recap.get("tri") or {}).get(key) or 0),
+                        "projected": float((projected_recap.get("tri") or {}).get(key) or 0),
+                    })
+
         for item in objectives:
             if item["ca"] <= 0:
                 continue
@@ -274,14 +365,34 @@ def build_palier_alerts(
                         "current": round(item["ca"], 2),
                     })
 
+        for item in projected_objectives:
+            if item["current"] <= 0 or item["projected"] <= 0:
+                continue
+            row = _gap_row(
+                code=code,
+                name=name,
+                kind=item["kind"],
+                objective=item["label"],
+                current=item["current"],
+                compared=item["projected"],
+                ladders=item["ladders"],
+                projected=item["projected"],
+            )
+            if row:
+                projection.append(row)
+
     proches.sort(key=lambda row: (row["missing"], -row["current"]))
+    projection.sort(key=lambda row: (row["missing"], -row["projected"]))
     atteints.sort(key=lambda row: (-row["current"], row["code_union"]))
     return {
         "available": True,
         "basis": "ca_a_date",
+        "projection_method": "scale_recap_by_platform_months",
         "year": int(year),
         "month": latest,
+        "projection_month": projection_month,
         "data_source": data_source,
         "proches": proches,
+        "projection": projection,
         "atteints": atteints,
     }

@@ -108,6 +108,13 @@ export function AlertsScreen() {
       ) as AlertRow[],
     [palier, gap],
   );
+  const projectionRows = useMemo(
+    () =>
+      (palier?.projection || []).filter(
+        (row) => (row.missing || 0) > 0 && (row.missing || 0) <= gap,
+      ) as AlertRow[],
+    [palier, gap],
+  );
   const atteints = (palier?.atteints || []) as AlertRow[];
 
   const categories: Category[] = useMemo(() => {
@@ -127,6 +134,21 @@ export function AlertsScreen() {
           : `Adhérents à moins de ${fmtEuro(gap)} de leur prochain palier. L'écart est le CA à date ${yearFromData} (cumul déjà importé), le même que la jauge de la fiche — pas la projection de fin d'année. Plateformes, niveau de contrat, et tripartites quand le contrat les ouvre.`,
         detail: (row) =>
           `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)}.`,
+      },
+      {
+        id: 'projection',
+        label: 'Projection 31/12',
+        chip: '31/12',
+        icon: 'calendar-outline',
+        tone: 'amber',
+        target: 'client',
+        pinned: true,
+        rows: projectionRows,
+        intro: palierError
+          ? palierError
+          : `Même liste, mais l'écart est sur le CA projeté au 31 décembre : le CA à date de chaque plateforme est multiplié par 12 divisé par le mois de cette plateforme, comme l'estimation de RFA de décembre sur la fiche. On ne garde que ceux qui restent sous le palier suivant, à moins de ${fmtEuro(gap)}.`,
+        detail: (row) =>
+          `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · projection 31/12 ${fmtEuro(row.projected)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)} en projection.`,
       },
       {
         id: 'atteints',
@@ -229,7 +251,7 @@ export function AlertsScreen() {
           `CA réseau ${fmtEuro(m.current)}, ${fmtDeltaPct(m.delta_pct)} vs N-1. À pousser chez les clients qui ne l'achètent pas encore.`,
       },
     ];
-  }, [alertes, thr, caMin, recentLabel, year, proches, atteints, gap, palierError, monthName, yearFromData]);
+  }, [alertes, thr, caMin, recentLabel, year, proches, projectionRows, atteints, gap, palierError, monthName, yearFromData]);
 
   const available = categories.filter((cat) => cat.pinned || cat.rows.length > 0);
   const current = available.find((c) => c.id === active) || available[0] || null;
@@ -333,7 +355,7 @@ export function AlertsScreen() {
                     {current.label} · {palierLoading && current.pinned ? '…' : current.rows.length}
                   </Text>
                   <Text style={styles.introText}>{current.intro}</Text>
-                  {current.id === 'proches' ? (
+                  {current.id === 'proches' || current.id === 'projection' ? (
                     <View style={styles.gapBox}>
                       <Text style={styles.gapLabel}>Seuil de proximité</Text>
                       <View style={styles.gapRow}>
@@ -371,8 +393,10 @@ export function AlertsScreen() {
               ListEmptyComponent={
                 <Text style={styles.empty}>
                   {current.id === 'proches'
-                    ? `Aucun adhérent à moins de ${fmtEuro(gap)} d'un palier.`
-                    : 'Aucune ligne pour cette alerte.'}
+                    ? `Aucun adhérent à moins de ${fmtEuro(gap)} d'un palier sur le CA à date.`
+                    : current.id === 'projection'
+                      ? `Aucun adhérent dont la projection au 31/12 reste à moins de ${fmtEuro(gap)} du palier suivant.`
+                      : 'Aucune ligne pour cette alerte.'}
                 </Text>
               }
               renderItem={({ item }) => (
