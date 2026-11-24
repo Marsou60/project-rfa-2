@@ -165,6 +165,15 @@ test('recharger une adresse profonde réaffiche l’écran et le retour reste da
   assert.equal(history.url, '/analyses');
 });
 
+test('ouvrir une fiche sans communiqué n’empile qu’un cran', () => {
+  const app = harness('union', '/alertes', parse('/alertes', 'union'));
+  app.go(parse('/alertes/fiche/M0001/mois', 'union'));
+  assert.equal(app.history.url, '/alertes/fiche/M0001/mois');
+  assert.equal(app.history.index, 1);
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/alertes');
+});
+
 test('ouvrir une fiche avec le communiqué laisse la fiche au retour', () => {
   const app = harness('union', '/alertes', parse('/alertes', 'union'));
   app.go(parse('/alertes/fiche/M0001/mois?c=prodex', 'union'));

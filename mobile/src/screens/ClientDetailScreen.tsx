@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -27,7 +27,6 @@ import {
 } from '../api/consultation';
 import { BackHeader } from '../components/BackHeader';
 import { ImpayesBanner } from '../components/ImpayesBanner';
-import { ProdexNoticeModal } from '../components/ProdexNoticeModal';
 import { HierarchyList } from '../components/HierarchyList';
 import { Icon, IconName } from '../components/Icon';
 import { MonthlyCaCard } from '../components/MonthlyCaCard';
@@ -109,7 +108,6 @@ export function ClientDetailScreen({
   const [rfaLoading, setRfaLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const prodexNotice = readCouches(route.params).includes('prodex');
   const docsOpen = readCouches(route.params).includes('docs');
   const docsOffered = useRef(false);
   const [missingDocs, setMissingDocs] = useState<string[] | null>(null);
@@ -137,20 +135,6 @@ export function ClientDetailScreen({
   const selectTab = (id: TabId) => {
     setTab(id);
     navigation.setParams({ initialTab: id });
-  };
-
-  const prodexOpenedAt = useRef(0);
-  useLayoutEffect(() => {
-    prodexOpenedAt.current = Date.now();
-    pushCouche(navigation, route.params, 'prodex');
-    // Une fois à l'ouverture : le retour ferme le communiqué avant de quitter la fiche.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const closeProdex = () => {
-    // Le tap qui ouvre la fiche peut retomber sur le communiqué. On l'ignore,
-    // sinon « J'ai compris » renvoie à la liste au lieu de montrer la fiche.
-    if (Date.now() - prodexOpenedAt.current < 500) return;
-    dismissCouche(navigation, route.params, 'prodex');
   };
 
   useEffect(() => {
@@ -302,10 +286,6 @@ export function ClientDetailScreen({
       </ScrollView>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <ProdexNoticeModal
-        visible={prodexNotice}
-        onClose={closeProdex}
-      />
       <Modal
         visible={docsOpen}
         transparent
