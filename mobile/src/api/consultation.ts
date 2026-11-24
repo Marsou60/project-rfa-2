@@ -359,11 +359,22 @@ export type MonthlyPoint = {
   delta_pct?: number | null;
 };
 
+export type MonthlyPlatformMonth = {
+  month: number;
+  current?: number;
+  previous?: number;
+  delta?: number;
+  delta_pct?: number | null;
+  /** pending : la plateforme n'a pas encore ce mois. known : 0 € est un vrai zéro. */
+  status?: 'known' | 'pending' | string;
+};
+
 export type MonthlyPlatform = {
   platform: string;
   total_current?: number;
   total_previous?: number;
   by_month?: Record<string, { current?: number; previous?: number }>;
+  months?: MonthlyPlatformMonth[];
 };
 
 export type ClientMonthlyEvolution = {
@@ -382,6 +393,8 @@ export type ClientMonthlyEvolution = {
   };
   months?: MonthlyPoint[];
   platforms?: MonthlyPlatform[];
+  /** Dernier mois importé par plateforme (EXADIS/DCA peuvent être en retard). */
+  platform_months?: Record<string, number | null>;
 };
 
 export async function getClientMonthlyEvolution(params: {

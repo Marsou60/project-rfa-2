@@ -70,6 +70,7 @@ test('les adresses d’écran survivent à un aller-retour', () => {
     { area: 'union', tab: 'Carte', layers: ['filtres', 'fiche:M0001'] },
     { area: 'union', tab: 'Alertes', layers: [], palierVue: 'projection' },
     { area: 'union', tab: 'Alertes', alerte: 'atteints', layers: [] },
+    { area: 'union', tab: 'Adherents', layers: ['mois:1'], stack: { name: 'ClientRfa', codeUnion: 'M0001', onglet: 'mois' } },
   ];
   for (const loc of samples) roundTrip(loc);
 });
