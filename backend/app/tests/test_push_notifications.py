@@ -25,13 +25,26 @@ def test_direction_recoit_tout_un_commercial_seulement_son_portefeuille():
     by_name = {item["username"]: item for item in plans}
     assert "fx01" not in by_name
     assert by_name["martial"]["count"] == 12
-    assert by_name["martial"]["body"] == "12 adhérents ont franchi un palier en octobre"
+    assert by_name["martial"]["title"] == "RFA Union (test)"
+    assert by_name["martial"]["body"] == (
+        "12 adhérents ont franchi un palier en octobre — données réelles, notifications en phase de test"
+    )
+    assert by_name["martial"]["status"] == "prévu"
     assert by_name["martial"]["would_push"] is True
     assert by_name["RYHAN"]["scope"] == "all"
     assert by_name["rayane"]["scope"] == "Rayane"
     assert by_name["rayane"]["count"] == 2
     assert by_name["rayane"]["would_push"] is False
-    assert atteints_message(1, 10)["body"].startswith("1 adhérent a")
+    assert atteints_message(1, 10)["body"].startswith("1 adhérent a franchi")
+
+
+def test_un_compteur_a_zero_est_ignore_meme_si_le_telephone_est_abonne():
+    coralie = _user("CORALIE", "CORALIE SAKILI", "COMMERCIAL", 9)
+    plans = plan_recipients([coralie], {"Coralie": 0}, 10, subscribed_user_ids=[9])
+    assert plans[0]["status"] == "ignoré"
+    assert plans[0]["would_push"] is False
+    assert plans[0]["reason"] == "ignoré"
+    assert plans[0]["title"] == "RFA Union (test)"
 
 
 def test_import_et_essai_n_envoient_rien(monkeypatch):
