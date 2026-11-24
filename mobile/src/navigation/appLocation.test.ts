@@ -4,6 +4,7 @@ import {
   type AppLocation,
   build,
   decideNavigation,
+  forwardHistoryUrls,
   homeLocation,
   locationFromNav,
   parentLocation,
@@ -67,6 +68,8 @@ test('les adresses d’écran survivent à un aller-retour', () => {
     { area: 'public', tab: 'Rejoindre', layers: [] },
     { area: 'public', tab: 'Accueil', layers: [], stack: { name: 'Connexion' } },
     { area: 'union', tab: 'Carte', layers: ['filtres', 'fiche:M0001'] },
+    { area: 'union', tab: 'Alertes', layers: [], palierVue: 'projection' },
+    { area: 'union', tab: 'Alertes', alerte: 'atteints', layers: [] },
   ];
   for (const loc of samples) roundTrip(loc);
 });
@@ -100,6 +103,19 @@ test('le parent logique recule d’un seul niveau et s’arrête à la racine', 
   ]);
   assert.equal(parentLocation(homeLocation('union')), null);
   assert.equal(parentLocation(homeLocation('public')), null);
+  assert.equal(build(parentLocation(parse('/alertes?palier=projection', 'union'))!), '/alertes');
+  assert.equal(build(parentLocation(parse('/alertes?alerte=atteints', 'union'))!), '/alertes');
+});
+
+test('fermer le communiqué ne saute pas la fiche', () => {
+  const list = parse('/alertes', 'union');
+  const fiche = parse('/alertes/fiche/M0001/mois?c=prodex', 'union');
+  assert.deepEqual(forwardHistoryUrls(list, fiche), [
+    '/alertes/fiche/M0001/mois',
+    '/alertes/fiche/M0001/mois?c=prodex',
+  ]);
+  const bare = parse('/alertes/fiche/M0001/mois', 'union');
+  assert.equal(decideNavigation(fiche, bare, '/alertes').type, 'set-params');
 });
 
 test('le retour sur l’écran précédent utilise goBack, un onglet utilise setParams', () => {

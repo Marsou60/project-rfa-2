@@ -139,11 +139,19 @@ export function ClientDetailScreen({
     navigation.setParams({ initialTab: id });
   };
 
+  const prodexOpenedAt = useRef(0);
   useLayoutEffect(() => {
+    prodexOpenedAt.current = Date.now();
     pushCouche(navigation, route.params, 'prodex');
     // Une fois à l'ouverture : le retour ferme le communiqué avant de quitter la fiche.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const closeProdex = () => {
+    // Le tap qui ouvre la fiche peut retomber sur le communiqué. On l'ignore,
+    // sinon « J'ai compris » renvoie à la liste au lieu de montrer la fiche.
+    if (Date.now() - prodexOpenedAt.current < 500) return;
+    dismissCouche(navigation, route.params, 'prodex');
+  };
 
   useEffect(() => {
     if (!staffFiche || !codeUnion) {
@@ -296,7 +304,7 @@ export function ClientDetailScreen({
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <ProdexNoticeModal
         visible={prodexNotice}
-        onClose={() => dismissCouche(navigation, route.params, 'prodex')}
+        onClose={closeProdex}
       />
       <Modal
         visible={docsOpen}

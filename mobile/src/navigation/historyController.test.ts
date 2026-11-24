@@ -165,6 +165,37 @@ test('recharger une adresse profonde réaffiche l’écran et le retour reste da
   assert.equal(history.url, '/analyses');
 });
 
+test('ouvrir une fiche avec le communiqué laisse la fiche au retour', () => {
+  const app = harness('union', '/alertes', parse('/alertes', 'union'));
+  app.go(parse('/alertes/fiche/M0001/mois?c=prodex', 'union'));
+  assert.equal(app.history.url, '/alertes/fiche/M0001/mois?c=prodex');
+  assert.equal(app.history.index, 2);
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/alertes/fiche/M0001/mois');
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/alertes');
+});
+
+test('depuis une marque, fermer le communiqué reste sur la fiche', () => {
+  const app = harness('union', '/analyses', parse('/analyses', 'union'));
+  app.go(parse('/analyses/marque/LuK/adherents', 'union'));
+  app.go(parse('/analyses/fiche/M0001/mois?c=prodex', 'union'));
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/analyses/fiche/M0001/mois');
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/analyses/marque/LuK/adherents');
+});
+
+test('le sous-onglet projection est un cran, le retour revient à date', () => {
+  const app = harness('union', '/alertes', parse('/alertes', 'union'));
+  app.go(parse('/alertes?palier=projection', 'union'));
+  assert.equal(app.history.url, '/alertes?palier=projection');
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/alertes');
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/accueil');
+});
+
 test('un retour in-app qui change déjà l’écran aligne l’historique sans doubler', () => {
   const app = harness('union', '/accueil', parse('/accueil', 'union'));
   app.go(parse('/analyses', 'union'));
