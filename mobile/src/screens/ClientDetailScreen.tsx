@@ -36,6 +36,7 @@ import { fmtDeltaPct, fmtEuro } from '../utils/format';
 import { describeCotisation } from '../utils/cotisationStatus';
 import { downloadBlob } from '../utils/downloadBlob';
 import { ClientFichePanel } from '../components/ClientFichePanel';
+import { VisitPrepSheet } from '../components/VisitPrepSheet';
 import { getClientFiche } from '../api/fiches';
 
 type TabId = 'rfa' | 'mois' | 'marques' | 'familles' | 'contrat' | 'fiche';
@@ -109,6 +110,7 @@ export function ClientDetailScreen({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const docsOpen = readCouches(route.params).includes('docs');
+  const visitOpen = readCouches(route.params).includes('visite');
   const docsOffered = useRef(false);
   const [missingDocs, setMissingDocs] = useState<string[] | null>(null);
   const insets = useSafeAreaInsets();
@@ -284,8 +286,25 @@ export function ClientDetailScreen({
           </Pressable>
         ))}
       </ScrollView>
+      {staffFiche && codeUnion ? (
+        <Pressable
+          style={styles.visitBtn}
+          onPress={() => pushCouche(navigation, route.params, 'visite')}
+          accessibilityRole="button"
+          accessibilityLabel="Préparer ma visite"
+        >
+          <Text style={styles.visitBtnText}>Préparer ma visite</Text>
+        </Pressable>
+      ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {visitOpen ? (
+        <VisitPrepSheet
+          codeUnion={codeUnion}
+          rfa={rfa}
+          onClose={() => dismissCouche(navigation, route.params, 'visite')}
+        />
+      ) : null}
       <Modal
         visible={docsOpen}
         transparent
@@ -488,6 +507,18 @@ const styles = StyleSheet.create({
   tabText: { color: colors.muted, fontWeight: '800', fontSize: 14 },
   tabTextActive: { color: colors.white },
   scroll: { padding: spacing.lg, gap: 12, paddingBottom: 40 },
+  visitBtn: {
+    marginHorizontal: spacing.lg,
+    marginBottom: 8,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.orange,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  visitBtnText: { color: colors.orange, fontWeight: '800' },
   error: { color: colors.red, paddingHorizontal: spacing.lg, marginBottom: 6 },
   kpiRow: { flexDirection: 'row', gap: 10 },
   kpi: {
