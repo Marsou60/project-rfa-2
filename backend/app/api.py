@@ -4212,6 +4212,9 @@ async def import_pure_data_cumulative_excel(
         if result["months_in_file"]:
             month_mismatch = max(result["months_in_file"]) != reporting_month
 
+        from app.services.push_notifications import note_after_import
+        push_after_import = note_after_import(stored_month)
+
         return {
             "success": True,
             "filename": file.filename,
@@ -4224,6 +4227,7 @@ async def import_pure_data_cumulative_excel(
             "reporting_month": stored_month,
             "reporting_year": reporting_year,
             "month_mismatch": month_mismatch,
+            "push": push_after_import,
             "columns_detected": columns[:12],
         }
     except HTTPException:
@@ -7114,5 +7118,68 @@ async def add_impaye_note(
         raise HTTPException(status_code=404, detail="Dossier introuvable")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/push/vapid-public")
+def push_vapid_public(_user: User = Depends(require_staff)):
+    """Clé publique VAPID. Jamais la clé privée."""
+    import os
+    public = os.environ.get("VAPID_PUBLIC_KEY") or ""
+    return {"publicKey": public or None, "configured": bool(public)}
+
+
+@router.post("/push/subscribe")
+def push_subscribe(
+    payload: Dict[str, Any] = Body(...),
+    user: User = Depends(require_staff),
+):
+    from app.services.push_store import upsert_subscription
+    try:
+        upsert_subscription(int(user.id), payload.get("subscription") or payload)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="La table pwa_push_subscriptions n'existe pas encore. La migration n'a pas été appliquée.",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True}
+
+
+@router.delete("/push/subscribe")
+def push_unsubscribe(
+    payload: Dict[str, Any] = Body(default={}),
+    user: User = Depends(require_staff),
+):
+    from app.services.push_store import delete_subscription
+    delete_subscription(int(user.id), str((payload or {}).get("endpoint") or ""))
+    return {"ok": True}
+
+
+@router.post("/push/palier-mois")
+def push_palier_mois(
+    payload: Dict[str, Any] = Body(default=None),
+    _admin: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+):
+    """Essai par défaut. Un dry_run false n'envoie rien tant que l'envoi n'est pas autorisé."""
+    from app.services.push_notifications import compose_palier_preview, sending_allowed
+
+    body = payload or {}
+    dry_run = body.get("dry_run") is not False
+    if not dry_run and not sending_allowed():
+        raise HTTPException(
+            status_code=409,
+            detail="Envoi réel refusé : PUSH_SEND_ENABLED n'est pas à 1. Relancez avec dry_run true.",
+        )
+    if not dry_run:
+        raise HTTPException(
+            status_code=409,
+            detail="L'envoi réel reste bloqué : utilisez dry_run pour voir les destinataires.",
+        )
+    preview = compose_palier_preview(session)
+    preview["dry_run"] = True
+    preview["sent"] = False
+    return preview
 
 
