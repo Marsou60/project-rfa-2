@@ -124,3 +124,87 @@ export function combinedLadder(tiersRfa: Tier[], tiersBonus: Tier[]) {
     return { min, rfa, bonus, total: rfa + bonus };
   });
 }
+
+export type PalierGauge = {
+  key: string;
+  label: string;
+  current: number;
+  nextMin: number | null;
+  missing: number;
+  progress: number;
+  gain: number;
+  projectedCa: number | null;
+  projectedMissing: number | null;
+  projectedProgress: number | null;
+  projectedGain: number | null;
+  projectionReaches: boolean;
+};
+
+const LEVELS = [
+  { id: 'SILVER', min: 100001, label: 'Silver' },
+  { id: 'GOLD', min: 300001, label: 'Gold' },
+];
+
+export function fichePalierGauges(input: {
+  caGlobal?: number;
+  level?: string | null;
+  levelBased?: boolean;
+  lines: Array<{
+    key: string;
+    label: string;
+    ca?: number;
+    caRemunere?: number | null;
+    tiersRfa?: unknown;
+    tiersBonus?: unknown;
+    projectedCa?: number | null;
+  }>;
+}): PalierGauge[] {
+  const gauges: PalierGauge[] = [];
+  const caGlobal = Number(input.caGlobal) || 0;
+  const level = String(input.level || '').toUpperCase();
+  if (input.levelBased) {
+    const next = LEVELS.find((item) => caGlobal < item.min && (level === '' || level === 'CLASSIQUE' || (level === 'SILVER' && item.id === 'GOLD')));
+    if (next && (level === 'CLASSIQUE' || level === '' || (level === 'SILVER' && next.id === 'GOLD'))) {
+      const missing = Math.max(next.min - caGlobal, 0);
+      gauges.push({
+        key: `niveau:${next.id}`,
+        label: `Passer ${next.label}`,
+        current: caGlobal,
+        nextMin: next.min,
+        missing,
+        progress: Math.min((caGlobal / next.min) * 100, 100),
+        gain: 0,
+        projectedCa: null,
+        projectedMissing: null,
+        projectedProgress: null,
+        projectedGain: null,
+        projectionReaches: false,
+      });
+    }
+  }
+  for (const line of input.lines) {
+    const ca = Number(line.ca) || 0;
+    if (ca <= 0) continue;
+    const prog = globalProgress(ca, parseTiers(line.tiersRfa), parseTiers(line.tiersBonus), line.caRemunere);
+    if (prog.nextMin == null) continue;
+    const projectedCa = line.projectedCa == null ? null : Number(line.projectedCa);
+    const projected = projectedCa == null
+      ? null
+      : globalProgress(projectedCa, parseTiers(line.tiersRfa), parseTiers(line.tiersBonus), line.caRemunere);
+    gauges.push({
+      key: line.key,
+      label: line.label,
+      current: ca,
+      nextMin: prog.nextMin,
+      missing: prog.missing,
+      progress: prog.progress,
+      gain: prog.projectedGain,
+      projectedCa,
+      projectedMissing: projected?.missing ?? null,
+      projectedProgress: projected?.progress ?? null,
+      projectedGain: projected?.projectedGain ?? null,
+      projectionReaches: projected != null && projected.nextMin == null,
+    });
+  }
+  return gauges;
+}

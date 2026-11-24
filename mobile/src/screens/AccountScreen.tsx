@@ -3,6 +3,7 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import { BrandHero } from '../components/BrandHero';
+import { PushOptIn } from '../components/PushOptIn';
 import { UNION_CONTACT } from '../content/union';
 import { colors, spacing } from '../theme';
 
@@ -40,6 +41,7 @@ export function AccountScreen() {
           <Text style={styles.lead}>Lecture seule · chiffres 2026 du groupement</Text>
         </View>
       </BrandHero>
+      {isUnion ? <PushOptIn /> : null}
 
       <View style={styles.body}>
         <View style={styles.card}>

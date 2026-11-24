@@ -23,6 +23,7 @@ import { useSupplierLogos } from '../api/logos';
 import { HeroCaCard } from './HeroCaCard';
 import { ProdexNoticeModal } from './ProdexNoticeModal';
 import { RfaProgressCard } from './RfaProgressCard';
+import { PalierGauges } from './PalierGauges';
 import { colors, spacing } from '../theme';
 import { fmtEuro, fmtPct, untilMonthLabel } from '../utils/format';
 import { CotisationPayload } from '../utils/cotisationStatus';
@@ -352,6 +353,8 @@ export function RfaPanel({
         </View>
         <Text style={styles.objPct}>{Math.round(d.nextObjective.progress)} % du palier</Text>
       </View>
+
+      <PalierGauges data={data} />
 
       {data.rfa?.acr_challenge ? (
         <View style={data.rfa.acr_challenge.triggered ? styles.infoCyan : styles.infoAmber}>
