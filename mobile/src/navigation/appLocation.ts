@@ -21,6 +21,10 @@ export type AppLocation = {
   /** Onglet de l'écran « Ma RFA » (adhérent). */
   onglet?: string;
   vue?: 'groupes';
+  /** Puce d'alerte autre que Palier (atteints, à risque, marques…). */
+  alerte?: string;
+  /** Sous-onglet de la puce Palier. Absent = CA à date. */
+  palierVue?: 'projection';
   stack?: StackLocation;
   layers: string[];
 };
@@ -132,6 +136,10 @@ export function leafParams(loc: AppLocation): Record<string, string> {
     if (loc.tab === 'RFA') params.initialTab = loc.onglet || 'rfa';
     if (loc.tab === 'Adherents') params.vue = loc.vue === 'groupes' ? 'groupes' : '';
     if (couches || loc.tab === 'Accueil' || loc.tab === 'Carte' || loc.tab === 'RFA') params.couches = couches;
+    if (loc.tab === 'Alertes') {
+      params.alerte = loc.alerte || '';
+      params.palier = loc.palierVue === 'projection' ? 'projection' : '';
+    }
     return params;
   }
   const params: Record<string, string> = { couches };
@@ -223,11 +231,14 @@ function locationFromTab(area: AppArea, tabState?: NavState, fallbackParams?: Re
       params = route.params || {};
     }
   }
+  const alerte = tab === 'Alertes' ? String(params.alerte || '').trim() : '';
   return {
     area,
     tab,
     onglet: tab === 'RFA' ? clientOnglet(params.initialTab, 'rfa') : undefined,
     vue: tab === 'Adherents' && params.vue === 'groupes' ? 'groupes' : undefined,
+    alerte: alerte && alerte !== 'palier' ? alerte : undefined,
+    palierVue: tab === 'Alertes' && params.palier === 'projection' ? 'projection' : undefined,
     layers: readLayers(params),
   };
 }
@@ -336,6 +347,10 @@ export function build(loc: AppLocation): string {
   }
   if (stack?.name === 'FilteredClients' && stack.fournisseur) query.set('plateforme', stack.fournisseur);
   if (!stack && loc.vue === 'groupes') query.set('vue', 'groupes');
+  if (!stack && loc.tab === 'Alertes') {
+    if (loc.alerte && loc.alerte !== 'palier') query.set('alerte', loc.alerte);
+    if (loc.palierVue === 'projection') query.set('palier', 'projection');
+  }
   for (const layer of loc.layers) query.append('c', layer);
   const qs = query.toString();
   return qs ? `${path}?${qs}` : path;
@@ -402,7 +417,10 @@ export function parse(url: string, area: AppArea): AppLocation {
   if (stack && !stackAllowed(area, stack)) return home;
 
   const vue = !stack && tab === 'Adherents' && query.get('vue') === 'groupes' ? 'groupes' : undefined;
-  return { area, tab, onglet, vue, stack, layers: stack || tab ? layers : [] };
+  const alerteRaw = !stack && tab === 'Alertes' ? (query.get('alerte') || '').trim() : '';
+  const alerte = alerteRaw && alerteRaw !== 'palier' ? alerteRaw : undefined;
+  const palierVue = !stack && tab === 'Alertes' && query.get('palier') === 'projection' ? 'projection' : undefined;
+  return { area, tab, onglet, vue, alerte, palierVue, stack, layers: stack || tab ? layers : [] };
 }
 
 export function canonicalize(url: string, area: AppArea): string {
@@ -441,11 +459,49 @@ export function parentLocation(loc: AppLocation): AppLocation | null {
     return { ...loc, onglet: 'rfa' };
   }
   if (loc.stack) return { ...loc, stack: undefined, layers: [] };
+  if (!loc.stack && loc.tab === 'Alertes' && loc.palierVue === 'projection') {
+    return { ...loc, palierVue: undefined };
+  }
+  if (!loc.stack && loc.tab === 'Alertes' && loc.alerte) {
+    return { ...loc, alerte: undefined, palierVue: undefined };
+  }
   if (loc.tab !== defaultTab(loc.area)) {
     const tab = defaultTab(loc.area);
     return { area: loc.area, tab, onglet: tab === 'RFA' ? 'rfa' : undefined, layers: [] };
   }
   return null;
+}
+
+/**
+ * Adresses à empiler quand l'app saute plusieurs crans d'un coup.
+ * Ouvrir une fiche pousse aussi le communiqué dans le même rendu : sans cran
+ * intermédiaire, fermer le communiqué quittait la fiche.
+ */
+export function forwardHistoryUrls(current: AppLocation, next: AppLocation): string[] {
+  const nextUrl = build(next);
+  const currentUrl = build(current);
+  if (nextUrl === currentUrl) return [];
+  const sameLeaf = leafId(current) === leafId(next);
+  if (!sameLeaf && next.layers.length) {
+    const urls: string[] = [];
+    for (let i = 0; i <= next.layers.length; i += 1) {
+      const url = build({ ...next, layers: next.layers.slice(0, i) });
+      if (url !== currentUrl && url !== urls[urls.length - 1]) urls.push(url);
+    }
+    return urls;
+  }
+  const prefixOk =
+    sameLeaf &&
+    next.layers.length > current.layers.length &&
+    current.layers.every((layer, index) => next.layers[index] === layer);
+  if (prefixOk) {
+    const urls: string[] = [];
+    for (let i = current.layers.length + 1; i <= next.layers.length; i += 1) {
+      urls.push(build({ ...next, layers: next.layers.slice(0, i) }));
+    }
+    return urls;
+  }
+  return [nextUrl];
 }
 
 export function decideNavigation(current: AppLocation, next: AppLocation, previousUrl?: string): NavDecision {

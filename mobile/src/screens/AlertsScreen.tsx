@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { getPalierAlerts, NetworkClientRow, PalierAlerts, PalierAlertRow } from '../api/consultation';
 import { useNetworkDashboard } from '../api/networkStore';
 import { useAuth } from '../auth/AuthContext';
@@ -64,9 +64,11 @@ const TONE_COLOR: Record<Tone, string> = {
 
 export function AlertsScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { commercialScope, isNetworkFullAccess } = useAuth();
   const { dash, loading, error, refresh } = useNetworkDashboard();
-  const [active, setActive] = useState<string | null>(null);
+  const requested = String(route.params?.alerte || '');
+  const palierVue = route.params?.palier === 'projection' ? 'projection' : 'date';
   const [gapText, setGapText] = useState('2000');
   const [palier, setPalier] = useState<PalierAlerts | null>(null);
   const [palierLoading, setPalierLoading] = useState(false);
@@ -120,36 +122,37 @@ export function AlertsScreen() {
   const categories: Category[] = useMemo(() => {
     const a = alertes;
     return [
-      {
-        id: 'proches',
-        label: 'Paliers proches',
-        chip: 'Proches',
-        icon: 'flag-outline',
-        tone: 'amber',
-        target: 'client',
-        pinned: true,
-        rows: proches,
-        intro: palierError
-          ? palierError
-          : `Adhérents à moins de ${fmtEuro(gap)} de leur prochain palier. L'écart est le CA à date ${yearFromData} (cumul déjà importé), le même que la jauge de la fiche — pas la projection de fin d'année. Plateformes, niveau de contrat, et tripartites quand le contrat les ouvre.`,
-        detail: (row) =>
-          `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)}.`,
-      },
-      {
-        id: 'projection',
-        label: 'Projection 31/12',
-        chip: '31/12',
-        icon: 'calendar-outline',
-        tone: 'amber',
-        target: 'client',
-        pinned: true,
-        rows: projectionRows,
-        intro: palierError
-          ? palierError
-          : `Même liste, mais l'écart est sur le CA projeté au 31 décembre : le CA à date de chaque plateforme est multiplié par 12 divisé par le mois de cette plateforme, comme l'estimation de RFA de décembre sur la fiche. On ne garde que ceux qui restent sous le palier suivant, à moins de ${fmtEuro(gap)}.`,
-        detail: (row) =>
-          `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · projection 31/12 ${fmtEuro(row.projected)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)} en projection.`,
-      },
+      palierVue === 'projection'
+        ? {
+            id: 'palier',
+            label: 'Palier · 31/12 (projection)',
+            chip: 'Palier',
+            icon: 'flag-outline',
+            tone: 'amber' as Tone,
+            target: 'client' as const,
+            pinned: true,
+            rows: projectionRows,
+            intro: palierError
+              ? palierError
+              : `Écart sur le CA projeté au 31 décembre : le CA à date de chaque plateforme est multiplié par 12 divisé par le mois de cette plateforme, comme l'estimation de RFA de décembre sur la fiche. On ne garde que ceux qui restent sous le palier suivant, à moins de ${fmtEuro(gap)}.`,
+            detail: (row: AlertRow) =>
+              `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · projection 31/12 ${fmtEuro(row.projected)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)} en projection.`,
+          }
+        : {
+            id: 'palier',
+            label: 'Palier · à date',
+            chip: 'Palier',
+            icon: 'flag-outline',
+            tone: 'amber' as Tone,
+            target: 'client' as const,
+            pinned: true,
+            rows: proches,
+            intro: palierError
+              ? palierError
+              : `Adhérents à moins de ${fmtEuro(gap)} de leur prochain palier. L'écart est le CA à date ${yearFromData} (cumul déjà importé), le même que la jauge de la fiche — pas la projection de fin d'année. Plateformes, niveau de contrat, et tripartites quand le contrat les ouvre.`,
+            detail: (row: AlertRow) =>
+              `${objectiveLine(row)}. CA à date ${fmtEuro(row.current)} · prochain palier ${fmtEuro(row.next_palier)} · il manque ${fmtEuro(row.missing)}.`,
+          },
       {
         id: 'atteints',
         label: 'Paliers atteints du mois',
@@ -251,10 +254,26 @@ export function AlertsScreen() {
           `CA réseau ${fmtEuro(m.current)}, ${fmtDeltaPct(m.delta_pct)} vs N-1. À pousser chez les clients qui ne l'achètent pas encore.`,
       },
     ];
-  }, [alertes, thr, caMin, recentLabel, year, proches, projectionRows, atteints, gap, palierError, monthName, yearFromData]);
+  }, [alertes, thr, caMin, recentLabel, year, proches, projectionRows, atteints, gap, palierError, monthName, yearFromData, palierVue]);
 
   const available = categories.filter((cat) => cat.pinned || cat.rows.length > 0);
-  const current = available.find((c) => c.id === active) || available[0] || null;
+  const wanted = requested && requested !== 'palier' && requested !== 'proches' && requested !== 'projection'
+    ? requested
+    : 'palier';
+  const current = available.find((c) => c.id === wanted) || available[0] || null;
+
+  const selectChip = (id: string) => {
+    navigation.setParams({
+      alerte: id === 'palier' ? '' : id,
+      palier: '',
+    });
+  };
+  const selectPalierVue = (vue: 'date' | 'projection') => {
+    navigation.setParams({
+      alerte: '',
+      palier: vue === 'projection' ? 'projection' : '',
+    });
+  };
 
   const openRow = (cat: Category, row: AlertRow) => {
     if (cat.target === 'client' && row.code_union) {
@@ -309,7 +328,7 @@ export function AlertsScreen() {
               return (
                 <Pressable
                   key={cat.id}
-                  onPress={() => setActive(cat.id)}
+                  onPress={() => selectChip(cat.id)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: isActive }}
                   accessibilityLabel={`${cat.label}, ${cat.rows.length}`}
@@ -355,7 +374,33 @@ export function AlertsScreen() {
                     {current.label} · {palierLoading && current.pinned ? '…' : current.rows.length}
                   </Text>
                   <Text style={styles.introText}>{current.intro}</Text>
-                  {current.id === 'proches' || current.id === 'projection' ? (
+                  {current.id === 'palier' ? (
+                    <View style={styles.subTabs} accessibilityRole="tablist">
+                      <Pressable
+                        style={[styles.subTab, palierVue === 'date' && styles.subTabOn]}
+                        onPress={() => selectPalierVue('date')}
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: palierVue === 'date' }}
+                        accessibilityLabel="À date"
+                      >
+                        <Text style={[styles.subTabText, palierVue === 'date' && styles.subTabTextOn]}>
+                          À date ({proches.length})
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.subTab, palierVue === 'projection' && styles.subTabOn]}
+                        onPress={() => selectPalierVue('projection')}
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: palierVue === 'projection' }}
+                        accessibilityLabel="31/12 (projection)"
+                      >
+                        <Text style={[styles.subTabText, palierVue === 'projection' && styles.subTabTextOn]}>
+                          31/12 (projection) ({projectionRows.length})
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  {current.id === 'palier' ? (
                     <View style={styles.gapBox}>
                       <Text style={styles.gapLabel}>Seuil de proximité</Text>
                       <View style={styles.gapRow}>
@@ -392,9 +437,9 @@ export function AlertsScreen() {
               }
               ListEmptyComponent={
                 <Text style={styles.empty}>
-                  {current.id === 'proches'
+                  {current.id === 'palier' && palierVue === 'date'
                     ? `Aucun adhérent à moins de ${fmtEuro(gap)} d'un palier sur le CA à date.`
-                    : current.id === 'projection'
+                    : current.id === 'palier'
                       ? `Aucun adhérent dont la projection au 31/12 reste à moins de ${fmtEuro(gap)} du palier suivant.`
                       : 'Aucune ligne pour cette alerte.'}
                 </Text>
@@ -518,6 +563,22 @@ const styles = StyleSheet.create({
   },
   introTitle: { color: colors.white, fontWeight: '800', fontSize: 16 },
   introText: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 4 },
+  subTabs: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  subTab: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.card,
+  },
+  subTabOn: { backgroundColor: colors.orange, borderColor: colors.orange },
+  subTabText: { color: colors.muted, fontWeight: '800', fontSize: 13, textAlign: 'center' },
+  subTabTextOn: { color: colors.white },
   row: {
     flexDirection: 'row',
     gap: 10,

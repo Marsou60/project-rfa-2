@@ -3,6 +3,7 @@ import {
   type AppLocation,
   build,
   canonicalize,
+  forwardHistoryUrls,
   leafId,
   parentLocation,
   parse,
@@ -160,15 +161,19 @@ export function createHistoryController(
       alignCurrent(actual);
       return;
     }
-    const followed = followAppUrl(session, actual);
-    session = followed.session;
-    writeSaved(storage, session);
-    if (followed.command.op === 'back') {
-      pendingSkipApply = true;
-      history.back();
-      return;
+    const urls = forwardHistoryUrls(parse(session.urls[session.index], area()), bridge.getLocation());
+    for (const url of urls) {
+      const followed = followAppUrl(session, url);
+      session = followed.session;
+      if (followed.command.op === 'back') {
+        writeSaved(storage, session);
+        pendingSkipApply = true;
+        history.back();
+        return;
+      }
+      run(followed.command);
     }
-    run(followed.command);
+    writeSaved(storage, session);
   };
 
   const requestInAppBack = (): boolean => {
