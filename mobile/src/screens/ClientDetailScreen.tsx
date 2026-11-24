@@ -348,7 +348,7 @@ export function ClientDetailScreen({
           {tab === 'mois' && (
             <>
               <Text style={styles.hint}>
-                Chiffre par plateforme. Tapez une plateforme pour voir chaque mois.
+                Tapez un mois pour voir les achats par plateforme, comparés au même mois N-1.
               </Text>
               <MonthlyCaCard data={monthly} />
             </>

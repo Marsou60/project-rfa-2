@@ -1,8 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ClientMonthlyEvolution, MonthlyPlatform } from '../api/consultation';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { ClientMonthlyEvolution } from '../api/consultation';
+import { dismissCouche, pushCouche, readCouches } from '../navigation/couches';
 import { colors, spacing } from '../theme';
-import { fmtDeltaPct, fmtEuro, monthShort } from '../utils/format';
+import { fmtDeltaPct, fmtEuro, monthLong, monthShort } from '../utils/format';
+import { rowsForMonth } from '../utils/monthPlatforms';
 
 type Props = {
   data: ClientMonthlyEvolution | null;
@@ -10,28 +13,46 @@ type Props = {
   emptyHint?: string;
 };
 
-function monthSlice(byMonth: MonthlyPlatform['by_month'], month: number) {
-  if (!byMonth) return { current: 0, previous: 0 };
-  const row = byMonth[String(month)] || byMonth[month as unknown as string];
-  return {
-    current: Number(row?.current) || 0,
-    previous: Number(row?.previous) || 0,
-  };
+function monthToken(month: number): string {
+  return `mois:${month}`;
+}
+
+function monthFromCouches(params?: { couches?: unknown } | null): number | null {
+  const token = readCouches(params).find((item) => item.startsWith('mois:'));
+  const month = Number(token?.slice(5));
+  return month >= 1 && month <= 12 ? month : null;
 }
 
 export function MonthlyCaCard({ data, compact = false, emptyHint }: Props) {
-  const [openMonth, setOpenMonth] = useState<number | null>(null);
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const openMonth = monthFromCouches(route.params);
 
-  const months = useMemo(() => {
+  const months = React.useMemo(() => {
     const list = [...(data?.months || [])].sort((a, b) => a.month - b.month);
     if (!compact) return list;
     return list.slice(-6);
   }, [data, compact]);
 
-  const platforms = data?.platforms || [];
   const yearN = data?.year_current ?? 2026;
   const yearN1 = data?.year_previous ?? 2025;
   const maxCa = Math.max(1, ...months.map((m) => Math.max(m.current || 0, m.previous || 0)));
+
+  const selectMonth = (month: number) => {
+    const token = monthToken(month);
+    if (openMonth === month) {
+      dismissCouche(navigation, route.params, token);
+      return;
+    }
+    const current = readCouches(route.params).filter((item) => !item.startsWith('mois:'));
+    if (openMonth) {
+      const previous = readCouches(route.params);
+      navigation.setParams({ couches: [...current, token].join('|') });
+      if (previous.join('|') === [...current, token].join('|')) return;
+      return;
+    }
+    pushCouche(navigation, route.params, token);
+  };
 
   if (!data?.available || months.length === 0) {
     return (
@@ -49,11 +70,7 @@ export function MonthlyCaCard({ data, compact = false, emptyHint }: Props) {
       <Text style={styles.title}>Achats mois par mois</Text>
       <Text style={styles.hint}>
         {yearN} vs {yearN1}
-        {compact
-          ? ' · 6 derniers mois'
-          : platforms.length
-            ? ' · tap un mois pour le détail'
-            : ''}
+        {compact ? ' · 6 derniers mois' : ''}. Tapez un mois pour le détail par plateforme.
       </Text>
 
       {months.map((m) => {
@@ -63,22 +80,15 @@ export function MonthlyCaCard({ data, compact = false, emptyHint }: Props) {
         const deltaPct = m.delta_pct;
         const up = (m.delta || 0) > 0;
         const down = (m.delta || 0) < 0;
-        const platRows = open
-          ? platforms
-              .map((p) => ({
-                platform: p.platform,
-                ...monthSlice(p.by_month, m.month),
-              }))
-              .filter((p) => p.current > 0 || p.previous > 0)
-              .sort((a, b) => b.current - a.current)
-          : [];
+        const platRows = open ? rowsForMonth(data, m.month) : [];
 
         return (
           <View key={m.month} style={styles.monthBlock}>
             <Pressable
-              onPress={() => setOpenMonth(open ? null : m.month)}
+              onPress={() => selectMonth(m.month)}
               accessibilityRole="button"
-              accessibilityLabel={`${monthShort(m.month)} ${fmtEuro(current)}, ${fmtDeltaPct(deltaPct)} versus ${yearN1}`}
+              accessibilityState={{ expanded: open }}
+              accessibilityLabel={`${monthLong(m.month)} ${fmtEuro(current)}, ${fmtDeltaPct(deltaPct)} versus ${yearN1}`}
               style={styles.monthHit}
             >
               <View style={styles.monthHead}>
@@ -112,18 +122,31 @@ export function MonthlyCaCard({ data, compact = false, emptyHint }: Props) {
                 vs {yearN1} : {fmtEuro(previous)}
               </Text>
             </Pressable>
-            {open && platRows.length > 0 ? (
+            {open ? (
               <View style={styles.platBox}>
-                {platRows.map((p) => (
-                  <View key={p.platform} style={styles.platRow}>
-                    <Text style={styles.platName}>{p.platform}</Text>
-                    <Text style={styles.platCa}>{fmtEuro(p.current)}</Text>
-                  </View>
-                ))}
+                <Text style={styles.platTitle}>
+                  {monthLong(m.month)} {yearN} par plateforme
+                </Text>
+                {platRows.length === 0 ? (
+                  <Text style={styles.hint}>Aucun achat enregistré sur ce mois.</Text>
+                ) : (
+                  platRows.map((p) => (
+                    <View key={p.platform} style={styles.platRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.platName}>{p.platform}</Text>
+                        <Text style={styles.platPrev}>
+                          {yearN1} : {fmtEuro(p.previous)}
+                        </Text>
+                      </View>
+                      {p.pending ? (
+                        <Text style={styles.pending}>Pas encore reçu</Text>
+                      ) : (
+                        <Text style={styles.platCa}>{fmtEuro(p.current)}</Text>
+                      )}
+                    </View>
+                  ))
+                )}
               </View>
-            ) : null}
-            {open && platRows.length === 0 ? (
-              <Text style={styles.hint}>Pas de détail plateforme ce mois-là.</Text>
             ) : null}
           </View>
         );
@@ -186,9 +209,12 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
     borderLeftWidth: 2,
     borderLeftColor: colors.orangeMuted,
-    gap: 4,
+    gap: 6,
   },
-  platRow: { flexDirection: 'row', alignItems: 'center', minHeight: 32, gap: 8 },
-  platName: { color: colors.muted, flex: 1, fontSize: 13, fontWeight: '600' },
-  platCa: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  platTitle: { color: colors.white, fontWeight: '800', fontSize: 13, textTransform: 'capitalize' },
+  platRow: { flexDirection: 'row', alignItems: 'center', minHeight: 36, gap: 8 },
+  platName: { color: colors.white, fontSize: 14, fontWeight: '700' },
+  platPrev: { color: colors.muted2, fontSize: 12, marginTop: 1 },
+  platCa: { color: colors.white, fontSize: 14, fontWeight: '800' },
+  pending: { color: colors.orangeSoft, fontSize: 13, fontWeight: '800', textAlign: 'right' },
 });

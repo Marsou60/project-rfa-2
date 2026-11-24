@@ -5651,6 +5651,11 @@ async def pure_data_monthly_client_evolution(
         if not code_union and not groupe_client:
             raise HTTPException(status_code=400, detail="Fournir code_union ou groupe_client.")
 
+    from app.services.commercial_scope import enforce_commercial_entity_access
+    enforce_commercial_entity_access(
+        user, code_union=code_union, groupe_client=groupe_client
+    )
+
     try:
         from app.services.pure_data_import import filter_rows_by_fournisseur
         from app.services.rfa_fusion import filter_rows_for_codes, fusion_for_code
@@ -5873,6 +5878,13 @@ async def pure_data_monthly_client_evolution(
         grand_prev = sum(p["total_previous"] for p in platforms)
         grand_delta = grand_curr - grand_prev
 
+        try:
+            platform_months = _effective_platform_months(session, year_current)
+        except Exception:
+            platform_months = {}
+        from app.services.month_platform_coverage import annotate_platform_months
+        annotate_platform_months(platforms, platform_months)
+
         return {
             "available": True,
             "label": label,
@@ -5885,6 +5897,7 @@ async def pure_data_monthly_client_evolution(
                        "delta": grand_delta, "delta_pct": _pct(grand_delta, grand_prev)},
             "months": monthly,
             "platforms": platforms,
+            "platform_months": platform_months,
             "stores": stores,
             "fusion": {
                 "id": fusion["id"],

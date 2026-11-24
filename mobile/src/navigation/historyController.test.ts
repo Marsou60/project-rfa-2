@@ -165,6 +165,14 @@ test('recharger une adresse profonde réaffiche l’écran et le retour reste da
   assert.equal(history.url, '/analyses');
 });
 
+test('le détail d’un mois est un cran, le retour ferme ce détail', () => {
+  const app = harness('union', '/alertes/fiche/M0001/mois', parse('/alertes/fiche/M0001/mois', 'union'));
+  app.go(parse('/alertes/fiche/M0001/mois?c=mois%3A1', 'union'));
+  assert.equal(app.history.url, '/alertes/fiche/M0001/mois?c=mois%3A1');
+  assert.equal(app.ctl.requestInAppBack(), true);
+  assert.equal(build(app.loc), '/alertes/fiche/M0001/mois');
+});
+
 test('ouvrir une fiche sans communiqué n’empile qu’un cran', () => {
   const app = harness('union', '/alertes', parse('/alertes', 'union'));
   app.go(parse('/alertes/fiche/M0001/mois', 'union'));
