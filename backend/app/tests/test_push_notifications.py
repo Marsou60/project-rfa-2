@@ -21,22 +21,28 @@ def test_direction_recoit_tout_un_commercial_seulement_son_portefeuille():
     assert receives_all_notifications(martial)
     assert receives_all_notifications(julien)
     assert not receives_all_notifications(rayane)
-    counts = {"all": 12, "Rayane": 2}
+    counts = {
+        "all": {"paliers": 47, "adherents": 37},
+        "Rayane": {"paliers": 2, "adherents": 1},
+    }
     plans = plan_recipients([martial, julien, rayane, adherent], counts, 10, subscribed_user_ids=[1])
     by_name = {item["username"]: item for item in plans}
     assert "fx01" not in by_name
-    assert by_name["martial"]["count"] == 12
+    assert by_name["martial"]["paliers"] == 47
+    assert by_name["martial"]["adherents"] == 37
     assert by_name["martial"]["title"] == "RFA Union (test)"
     assert by_name["martial"]["body"] == (
-        "12 adhérents ont franchi un palier en octobre — données réelles, notifications en phase de test"
+        "47 paliers franchis par 37 adhérents en octobre — données réelles, notifications en phase de test"
     )
     assert by_name["martial"]["status"] == "prévu"
     assert by_name["martial"]["would_push"] is True
     assert by_name["RYHAN"]["scope"] == "all"
     assert by_name["rayane"]["scope"] == "Rayane"
-    assert by_name["rayane"]["count"] == 2
+    assert by_name["rayane"]["body"] == (
+        "2 paliers franchis par 1 adhérent en octobre — données réelles, notifications en phase de test"
+    )
     assert by_name["rayane"]["would_push"] is False
-    assert atteints_message(1, 10)["body"].startswith("1 adhérent a franchi")
+    assert atteints_message(1, 1, 10)["body"].startswith("1 palier franchi par 1 adhérent")
 
 
 def test_un_compteur_a_zero_est_ignore_meme_si_le_telephone_est_abonne():
@@ -54,7 +60,11 @@ def test_lenvoi_ne_part_que_vers_un_compte_prevu_et_abonne():
     rayane = _user("RAYANE", "Rayane", "COMMERCIAL", 3)
     plans = plan_recipients(
         [martial, coralie, rayane],
-        {"all": 37, "Coralie": 0, "Rayane": 13},
+        {
+            "all": {"paliers": 47, "adherents": 37},
+            "Coralie": {"paliers": 0, "adherents": 0},
+            "Rayane": {"paliers": 13, "adherents": 11},
+        },
         10,
         subscribed_user_ids=[1, 9],
     )
@@ -76,12 +86,12 @@ def test_lenvoi_ne_part_que_vers_un_compte_prevu_et_abonne():
     assert by_name["CORALIE"]["sent"] == 0
     assert by_name["RAYANE"]["result"] == "pas d'abonnement"
     assert [item[0] for item in sent] == [1]
-    assert "37 adhérents ont franchi un palier en octobre" in sent[0][1]
+    assert "47 paliers franchis par 37 adhérents en octobre" in sent[0][1]
 
 
 def test_un_echec_push_est_compte_sans_relancer():
     martial = _user("admin", "Martial", "ADMIN", 1)
-    plans = plan_recipients([martial], {"all": 37}, 10, subscribed_user_ids=[1])
+    plans = plan_recipients([martial], {"all": {"paliers": 47, "adherents": 37}}, 10, subscribed_user_ids=[1])
 
     def sender(sub, payload):
         raise RuntimeError("réseau")
