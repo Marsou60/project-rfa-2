@@ -7162,24 +7162,36 @@ def push_palier_mois(
     _admin: User = Depends(require_admin),
     session: Session = Depends(get_session),
 ):
-    """Essai par défaut. Un dry_run false n'envoie rien tant que l'envoi n'est pas autorisé."""
-    from app.services.push_notifications import compose_palier_preview, sending_allowed
+    """Essai par défaut. Un envoi réel exige dry_run false et PUSH_SEND_ENABLED=1."""
+    from app.services.push_notifications import compose_palier_preview, deliver_planned, sending_allowed, vapid_sender
 
     body = payload or {}
     dry_run = body.get("dry_run") is not False
-    if not dry_run and not sending_allowed():
-        raise HTTPException(
-            status_code=409,
-            detail="Envoi réel refusé : PUSH_SEND_ENABLED n'est pas à 1. Relancez avec dry_run true.",
-        )
-    if not dry_run:
-        raise HTTPException(
-            status_code=409,
-            detail="L'envoi réel reste bloqué : utilisez dry_run pour voir les destinataires.",
-        )
     preview = compose_palier_preview(session)
-    preview["dry_run"] = True
-    preview["sent"] = False
+    if dry_run or not sending_allowed():
+        if not dry_run:
+            raise HTTPException(
+                status_code=409,
+                detail="Envoi réel refusé : PUSH_SEND_ENABLED n'est pas à 1. Relancez avec dry_run true.",
+            )
+        preview["dry_run"] = True
+        preview["sent"] = False
+        return preview
+    try:
+        sender = vapid_sender()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    from app.services.push_store import subscriptions_for
+
+    ids = [
+        int(row["user_id"])
+        for row in preview["recipients"]
+        if row.get("would_push") and row.get("user_id") is not None
+    ]
+    deliveries = deliver_planned(preview["recipients"], subscriptions_for(ids), sender)
+    preview["dry_run"] = False
+    preview["sent"] = any(item["sent"] for item in deliveries)
+    preview["deliveries"] = deliveries
     return preview
 
 

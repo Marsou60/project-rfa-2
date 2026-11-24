@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from app.services.push_notifications import (
     atteints_message,
+    deliver_planned,
     note_after_import,
     plan_recipients,
     receives_all_notifications,
@@ -45,6 +46,54 @@ def test_un_compteur_a_zero_est_ignore_meme_si_le_telephone_est_abonne():
     assert plans[0]["would_push"] is False
     assert plans[0]["reason"] == "ignoré"
     assert plans[0]["title"] == "RFA Union (test)"
+
+
+def test_lenvoi_ne_part_que_vers_un_compte_prevu_et_abonne():
+    martial = _user("admin", "Martial", "ADMIN", 1)
+    coralie = _user("CORALIE", "CORALIE SAKILI", "COMMERCIAL", 9)
+    rayane = _user("RAYANE", "Rayane", "COMMERCIAL", 3)
+    plans = plan_recipients(
+        [martial, coralie, rayane],
+        {"all": 37, "Coralie": 0, "Rayane": 13},
+        10,
+        subscribed_user_ids=[1, 9],
+    )
+    sent = []
+
+    def sender(sub, payload):
+        sent.append((sub["user_id"], payload))
+
+    results = deliver_planned(
+        plans,
+        [{"user_id": 1, "endpoint": "https://push.example/martial", "p256dh": "p", "auth": "a"},
+         {"user_id": 9, "endpoint": "https://push.example/coralie", "p256dh": "p", "auth": "a"}],
+        sender,
+    )
+    by_name = {item["username"]: item for item in results}
+    assert by_name["admin"]["result"] == "envoyé"
+    assert by_name["admin"]["sent"] == 1
+    assert by_name["CORALIE"]["result"] == "ignoré"
+    assert by_name["CORALIE"]["sent"] == 0
+    assert by_name["RAYANE"]["result"] == "pas d'abonnement"
+    assert [item[0] for item in sent] == [1]
+    assert "37 adhérents ont franchi un palier en octobre" in sent[0][1]
+
+
+def test_un_echec_push_est_compte_sans_relancer():
+    martial = _user("admin", "Martial", "ADMIN", 1)
+    plans = plan_recipients([martial], {"all": 37}, 10, subscribed_user_ids=[1])
+
+    def sender(sub, payload):
+        raise RuntimeError("réseau")
+
+    results = deliver_planned(
+        plans,
+        [{"user_id": 1, "endpoint": "https://push.example/martial", "p256dh": "p", "auth": "a"}],
+        sender,
+    )
+    assert results[0]["result"] == "échec"
+    assert results[0]["failed"] == 1
+    assert results[0]["errors"] == ["RuntimeError"]
 
 
 def test_import_et_essai_n_envoient_rien(monkeypatch):
