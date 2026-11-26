@@ -608,7 +608,9 @@ export const exportPilotageSheetOnly = async (importId, body = {}) => {
 // ==================== AUTHENTIFICATION ====================
 
 export const login = async (username, password) => {
-  const response = await api.post('/auth/login', { username, password })
+  const response = await api.post('/auth/login', { username, password }, {
+    headers: { 'X-Rfa-Client': 'web' },
+  })
   return response.data
 }
 
@@ -627,6 +629,11 @@ export const getMe = async (token = null) => {
 
 export const getUsers = async () => {
   const response = await api.get('/users')
+  return response.data
+}
+
+export const getLoginActivity = async () => {
+  const response = await api.get('/users/login-activity')
   return response.data
 }
 

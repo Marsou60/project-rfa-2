@@ -1,6 +1,42 @@
-import { useState, useEffect, useRef } from 'react'
-import { Users, Plus, Pencil, Trash2, X, Camera, Crown, Briefcase, Loader2 } from 'lucide-react'
-import { getUsers, createUser, updateUser, deleteUser, getEntities, uploadAvatar, getImageUrl } from '../api/client'
+import { Fragment, useState, useEffect, useRef } from 'react'
+import { Users, Plus, Pencil, Trash2, X, Camera, Crown, Briefcase, Loader2, ChevronDown } from 'lucide-react'
+import { getUsers, getLoginActivity, createUser, updateUser, deleteUser, getEntities, uploadAvatar, getImageUrl } from '../api/client'
+
+function formatParis(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat('fr-FR', {
+    timeZone: 'Europe/Paris',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function deviceLabel(userAgent) {
+  if (!userAgent) return 'Inconnu'
+  if (/iPhone/i.test(userAgent)) return 'iPhone'
+  if (/iPad/i.test(userAgent)) return 'iPad'
+  const android = userAgent.match(/Android[^;]*;\s*([^;)]+)/i)
+  if (android) {
+    const model = android[1].replace(/\s*Build\/.*/i, '').trim()
+    return model ? model.slice(0, 40) : 'Android'
+  }
+  if (/Android/i.test(userAgent)) return 'Android'
+  if (/Windows/i.test(userAgent)) return 'Windows'
+  if (/Macintosh|Mac OS/i.test(userAgent)) return 'Mac'
+  if (/Linux/i.test(userAgent)) return 'Linux'
+  return userAgent.slice(0, 40)
+}
+
+function channelLabel(channel) {
+  if (channel === 'mobile') return 'Mobile'
+  if (channel === 'web') return 'Web'
+  return channel || '—'
+}
 
 function apiErrorMessage(err, fallback) {
   const detail = err?.response?.data?.detail
@@ -16,6 +52,8 @@ function apiErrorMessage(err, fallback) {
 
 function UsersPage() {
   const [users, setUsers] = useState([])
+  const [activityById, setActivityById] = useState({})
+  const [openUserId, setOpenUserId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
@@ -30,8 +68,16 @@ function UsersPage() {
   const loadUsers = async () => {
     try {
       setLoading(true)
-      const data = await getUsers()
+      const [data, logins] = await Promise.all([
+        getUsers(),
+        getLoginActivity().catch(() => ({ users: [] })),
+      ])
+      const byId = {}
+      for (const row of logins?.users || []) {
+        byId[row.user_id] = row
+      }
       setUsers(data)
+      setActivityById(byId)
       setError(null)
     } catch (err) {
       setError(apiErrorMessage(err, 'Erreur lors du chargement'))
@@ -114,7 +160,10 @@ function UsersPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white">Utilisateurs</h1>
-            <p className="text-sm text-glass-secondary">Gérez les comptes et les accès</p>
+            <p className="text-sm text-glass-secondary">
+              Comptes, accès, et connexions web ou mobile. L'heure est celle de Paris.
+              Le détail par canal commence au jour de mise en place du journal.
+            </p>
           </div>
         </div>
         <button
@@ -152,7 +201,7 @@ function UsersPage() {
       )}
 
       {/* Liste */}
-      <div className="glass-card overflow-hidden">
+      <div className="glass-card overflow-x-auto">
         <table className="glass-table">
           <thead>
             <tr>
@@ -161,12 +210,21 @@ function UsersPage() {
               <th className="text-left">Lien</th>
               <th className="text-center">Actif</th>
               <th className="text-left">Dernière connexion</th>
+              <th className="text-left">Web</th>
+              <th className="text-left">Mobile</th>
+              <th className="text-right">7 j</th>
+              <th className="text-right">30 j</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => (
-              <tr key={user.id} className={!user.is_active ? 'opacity-50' : ''}>
+            {users.map((user) => {
+              const stats = activityById[user.id] || null
+              const recent = stats?.recent || []
+              const historyOpen = openUserId === user.id
+              return (
+              <Fragment key={user.id}>
+              <tr className={!user.is_active ? 'opacity-50' : ''}>
                 <td>
                   <div className="flex items-center gap-3">
                     {user.avatar_url ? (
@@ -229,14 +287,28 @@ function UsersPage() {
                     }`} />
                   </button>
                 </td>
-                <td className="text-glass-secondary text-sm">
-                  {user.last_login
-                    ? new Date(user.last_login).toLocaleString('fr-FR')
-                    : <span className="text-glass-muted">Jamais</span>
-                  }
+                <td className="text-glass-secondary text-sm whitespace-nowrap">
+                  {formatParis(user.last_login) || <span className="text-glass-muted">Jamais</span>}
                 </td>
+                <td className="text-glass-secondary text-sm whitespace-nowrap">
+                  {formatParis(stats?.last_login_web) || <span className="text-glass-muted">—</span>}
+                </td>
+                <td className="text-glass-secondary text-sm whitespace-nowrap">
+                  {formatParis(stats?.last_login_mobile) || <span className="text-glass-muted">—</span>}
+                </td>
+                <td className="text-right text-sm text-white">{stats?.logins_7d ?? 0}</td>
+                <td className="text-right text-sm text-white">{stats?.logins_30d ?? 0}</td>
                 <td>
                   <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setOpenUserId(historyOpen ? null : user.id)}
+                      className="glass-btn-icon"
+                      title="Historique des connexions"
+                      aria-expanded={historyOpen}
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
+                    </button>
                     <button
                       onClick={() => setEditingUser(user)}
                       className="glass-btn-icon"
@@ -254,10 +326,43 @@ function UsersPage() {
                   </div>
                 </td>
               </tr>
-            ))}
+              {historyOpen && (
+                <tr>
+                  <td colSpan={10} className="bg-white/5 px-4 py-3">
+                    {recent.length === 0 ? (
+                      <p className="text-sm text-glass-muted">
+                        Aucune connexion web ou mobile enregistrée. L'historique commence au jour de mise en place du journal.
+                      </p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-glass-muted">
+                            <th className="text-left font-medium pb-2">Date et heure (Paris)</th>
+                            <th className="text-left font-medium pb-2">Canal</th>
+                            <th className="text-left font-medium pb-2">Appareil</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recent.map((event, index) => (
+                            <tr key={`${event.logged_at}-${event.channel}-${index}`}>
+                              <td className="py-1 pr-4 text-white whitespace-nowrap">{formatParis(event.logged_at)}</td>
+                              <td className="py-1 pr-4 text-glass-secondary">{channelLabel(event.channel)}</td>
+                              <td className="py-1 text-glass-secondary" title={event.user_agent || ''}>
+                                {deviceLabel(event.user_agent)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+            )})}
             {users.length === 0 && (
               <tr>
-                <td colSpan="6" className="px-6 py-12 text-center text-glass-muted">
+                <td colSpan={10} className="px-6 py-12 text-center text-glass-muted">
                   Aucun utilisateur
                 </td>
               </tr>

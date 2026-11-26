@@ -59,10 +59,12 @@ from app.schemas import (
     UserCreate,
     UserUpdate,
     UserResponse,
+    LoginActivityResponse,
 )
 from app.database import get_session, hash_password, verify_password, UPLOADS_DIR, AVATARS_DIR, LOGOS_DIR, SUPPLIER_LOGOS_DIR
 from app.models import Contract, ContractRule, ContractAssignment, ContractOverride, RuleScope, TargetType, OverrideTierType, Ad, User, UserRole, AppSettings, SupplierLogo, CotisationSetting, BonusSetting
 from app.services import nathalie_service, impayes_service
+from app.services.login_events import list_login_activity, record_login_event
 from app.threadpool_route import ThreadpoolAPIRoute
 
 router = APIRouter(route_class=ThreadpoolAPIRoute)
@@ -3000,7 +3002,12 @@ async def get_commercial_contract_pdf(
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-async def login(request: LoginRequest, session: Session = Depends(get_session)):
+async def login(
+    request: LoginRequest,
+    session: Session = Depends(get_session),
+    x_rfa_client: Optional[str] = Header(default=None),
+    user_agent: Optional[str] = Header(default=None),
+):
     """Connexion utilisateur."""
     try:
         statement = select(User).where(User.username == request.username)
@@ -3012,9 +3019,20 @@ async def login(request: LoginRequest, session: Session = Depends(get_session)):
         if not user.is_active:
             raise HTTPException(status_code=403, detail="Compte désactivé")
 
-        # Mettre à jour last_login
-        user.last_login = datetime.now(timezone.utc)
+        # last_login d'abord, puis une ligne du journal dans la même session.
+        # X-Rfa-Client vaut web (site admin) ou mobile (PWA). Sans cet en-tête,
+        # on ne journalise pas : un vieux client ne doit pas être classé au hasard.
+        logged_at = datetime.now(timezone.utc)
+        user.last_login = logged_at
         session.add(user)
+        session.flush()
+        record_login_event(
+            session,
+            user_id=user.id,
+            channel=x_rfa_client,
+            user_agent=user_agent,
+            logged_at=logged_at,
+        )
         session.commit()
         session.refresh(user)
 
@@ -3109,6 +3127,18 @@ async def list_users(admin: User = Depends(require_admin), session: Session = De
     statement = select(User).order_by(User.role, User.username)
     users = session.exec(statement).all()
     return [_to_user_response(u) for u in users]
+
+
+@router.get("/users/login-activity", response_model=LoginActivityResponse)
+async def get_login_activity(
+    admin: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+    recent_limit: int = Query(20, ge=1, le=50),
+):
+    """Connexions web et mobile par utilisateur (admin only). Lecture seule."""
+    return LoginActivityResponse(
+        users=list_login_activity(session, recent_limit=recent_limit)
+    )
 
 
 @router.post("/users", response_model=UserResponse)

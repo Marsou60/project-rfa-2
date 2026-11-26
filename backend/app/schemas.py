@@ -338,3 +338,25 @@ class UserResponse(BaseModel):
     last_login: Optional[datetime]
     network_full_access: bool = True
     commercial_scope: Optional[str] = None
+
+
+class LoginEventItem(BaseModel):
+    """Une connexion réussie, pour l'historique admin."""
+    logged_at: datetime
+    channel: str
+    user_agent: Optional[str] = None
+
+
+class UserLoginActivity(BaseModel):
+    """Synthèse des connexions d'un compte."""
+    user_id: int
+    last_login_web: Optional[datetime] = None
+    last_login_mobile: Optional[datetime] = None
+    logins_7d: int = 0
+    logins_30d: int = 0
+    recent: List[LoginEventItem] = []
+
+
+class LoginActivityResponse(BaseModel):
+    """Journal des connexions, réservé aux admins."""
+    users: List[UserLoginActivity]

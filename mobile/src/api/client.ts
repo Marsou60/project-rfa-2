@@ -43,7 +43,9 @@ api.interceptors.request.use(async (config) => {
 });
 
 export async function login(username: string, password: string) {
-  const { data } = await api.post('/auth/login', { username, password });
+  const { data } = await api.post('/auth/login', { username, password }, {
+    headers: { 'X-Rfa-Client': 'mobile' },
+  });
   // Backend LoginResponse: flat fields + `token` (not access_token / nested user)
   const token = data.token || data.access_token;
   if (!token) {
