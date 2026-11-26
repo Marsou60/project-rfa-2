@@ -122,7 +122,7 @@ function ClientSpacePage({ importId, linkedCodeUnion, linkedGroupe, isAdherent, 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [supplierLogos, setSupplierLogos] = useState({})
-  const [showProdexNotice, setShowProdexNotice] = useState(true)
+  const [showProdexNotice, setShowProdexNotice] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [contractPdfMeta, setContractPdfMeta] = useState(null)
   const [loadingContractPdf, setLoadingContractPdf] = useState(false)
