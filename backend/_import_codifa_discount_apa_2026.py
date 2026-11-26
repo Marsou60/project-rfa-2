@@ -5,6 +5,12 @@ IMPORTANT : ne touche PAS aux contrats 2025 existants
 (« APA Marseille – Avenant… », « Groupe Discount »).
 Les assignments APA/Discount restent sur les contrats 2025 ;
 le résolveur bascule vers les versions 2026 uniquement si year >= 2026.
+
+Pour corriger seulement les barèmes globaux APA Marseille 2026
+(tableau de base + avenant), utiliser
+_sync_apa_marseille_2026_base_and_addendum.py.
+Ne pas relancer cet import pour ce correctif : il réécrit aussi
+Codifa, Groupe Discount 2026 et chaque clé tripartite du catalogue.
 """
 from __future__ import annotations
 
