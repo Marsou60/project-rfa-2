@@ -37,6 +37,11 @@ export async function getClientFiche(codeUnion: string): Promise<ClientFiche | n
   }
 }
 
+export async function getMyMissingDocs(): Promise<string[]> {
+  const { data } = await api.get('/me/missing-docs');
+  return (data?.missing || []) as string[];
+}
+
 export async function getClientNotes(codeUnion: string): Promise<ClientNote[]> {
   const { data } = await api.get(`/notes/client/${encodeURIComponent(codeUnion)}`);
   return (data?.notes || []) as ClientNote[];

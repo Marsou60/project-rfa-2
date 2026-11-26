@@ -341,7 +341,12 @@ export type ClientDashboardResponse = {
     delta_pct?: number | null;
     part_current?: number;
   }>;
-  top_marques?: Array<{ label: string; ca_current?: number; delta_pct?: number | null }>;
+  top_marques?: Array<{
+    label: string;
+    ca_current?: number;
+    ca_previous?: number;
+    delta_pct?: number | null;
+  }>;
   top_familles?: Array<{ label: string; ca_current?: number; delta_pct?: number | null }>;
   reporting_period?: {
     month?: number | null;

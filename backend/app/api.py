@@ -3119,6 +3119,16 @@ async def logout():
     return {"message": "Déconnecté"}
 
 
+@router.get("/me/missing-docs")
+async def adherent_missing_docs(
+    code_union: Optional[str] = None,
+    user: User = Depends(require_staff_or_adherent),
+):
+    """Pièces manquantes du magasin lié. code_union est ignoré. Pas de lien de fichier."""
+    from app.services.adherent_missing_docs import missing_docs_for_user
+    return missing_docs_for_user(user, code_union)
+
+
 # ==================== USERS (Admin only) ====================
 
 @router.get("/users", response_model=List[UserResponse])
