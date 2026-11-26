@@ -112,6 +112,8 @@ export function refreshNetworkDashboard(force = false): Promise<void> {
 }
 
 export function clearNetworkDashboard() {
+  // Invalide une réponse encore en vol : sinon elle réécrit le cache après la déconnexion.
+  requestSeq += 1;
   commercialFilter = null;
   state = { data: null, loading: false, error: null, loadedAt: 0, complete: false, scopeKey: '' };
   listeners.forEach((l) => l());
