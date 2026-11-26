@@ -5,7 +5,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, Dict
 from datetime import datetime, timezone
 from enum import Enum
-from sqlalchemy import DateTime
+from sqlalchemy import CheckConstraint, DateTime, Index
 
 
 class RuleScope(str, Enum):
@@ -157,6 +157,24 @@ class User(SQLModel, table=True):
         sa_type=DateTime(timezone=True),
     )
     last_login: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class LoginEvent(SQLModel, table=True):
+    """Connexion réussie (mot de passe saisi), canal web ou mobile."""
+    __tablename__ = "login_events"
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('web', 'mobile')",
+            name="login_events_channel_check",
+        ),
+        Index("login_events_user_id_logged_at_idx", "user_id", "logged_at"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int
+    logged_at: datetime = Field(sa_type=DateTime(timezone=True))
+    channel: str
+    user_agent: Optional[str] = None
 
 
 class SupplierLogo(SQLModel, table=True):
