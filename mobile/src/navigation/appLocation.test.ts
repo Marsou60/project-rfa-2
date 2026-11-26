@@ -81,6 +81,7 @@ test('une adresse inconnue ou hors rôle revient à l’accueil', () => {
   assert.equal(build(parse('/analyses/marque/LuK/plateformes', 'public')), '/accueil');
   assert.equal(build(parse('/', 'adherent')), '/accueil');
   assert.equal(build(parse('/ma-rfa', 'adherent')), '/ma-rfa/rfa');
+  assert.equal(build(parse('/alertes', 'adherent')), '/alertes');
 });
 
 test('le parent logique recule d’un seul niveau et s’arrête à la racine', () => {

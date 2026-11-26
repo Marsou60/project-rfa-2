@@ -28,6 +28,7 @@ import { PlatformGrid } from '../components/PlatformGrid';
 import { ProdexNoticeModal } from '../components/ProdexNoticeModal';
 import { colors, spacing } from '../theme';
 import { canonPlatform, fmtEuro, fmtPct, platformLabel, untilMonthLabel } from '../utils/format';
+import { buildOwnAlerts, type OwnPalier } from '../utils/adherentAlerts';
 
 function asNum(v: unknown): number {
   if (v == null) return 0;
@@ -103,6 +104,7 @@ export function AdherentHomeScreen() {
   const avgRate = ca > 0 ? rfaNet / ca : null;
   const caDeltaPctValue = caDeltaPct({ comparison: data?.comparison_n1, monthly });
   const until = untilMonthLabel(data?.reporting_month);
+  const closest = data?.available ? buildOwnAlerts(data, monthly?.platforms || []).closest : null;
 
   const platforms = useMemo(() => {
     const global = data?.rfa?.global || {};
@@ -171,6 +173,7 @@ export function AdherentHomeScreen() {
                   : null
             }
           />
+          {closest ? <ClosestPalier item={closest} onPress={() => navigation.navigate('Alertes')} /> : null}
           <Pressable
             style={styles.rfaCta}
             onPress={() => navigation.navigate('RFA')}
@@ -244,4 +247,37 @@ const styles = StyleSheet.create({
   },
   monthCtaText: { color: colors.white, fontWeight: '800', fontSize: 17 },
   monthCtaSub: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  alertCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.orange,
+    padding: spacing.md,
+    gap: 6,
+  },
+  alertKicker: { color: colors.orangeSoft, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  alertTitle: { color: colors.white, fontSize: 18, fontWeight: '800' },
+  alertBody: { color: colors.text, fontSize: 15, lineHeight: 21 },
+  alertLink: { color: colors.orangeSoft, fontWeight: '800', fontSize: 14 },
+  alertTrack: { height: 8, borderRadius: 99, backgroundColor: '#1E293B', overflow: 'hidden', marginTop: 4 },
+  alertFill: { height: 8, borderRadius: 99, backgroundColor: '#FBBF24' },
 });
+
+function ClosestPalier({ item, onPress }: { item: OwnPalier; onPress: () => void }) {
+  return (
+    <Pressable
+      style={styles.alertCard}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.label}. ${item.sentence}. Voir mes alertes`}
+    >
+      <Text style={styles.alertKicker}>Palier le plus proche</Text>
+      <Text style={styles.alertTitle}>{item.label}</Text>
+      <Text style={styles.alertBody}>{item.sentence}</Text>
+      <View style={styles.alertTrack}>
+        <View style={[styles.alertFill, { width: `${Math.min(Math.max(item.progress, 0), 100)}%` }]} />
+      </View>
+      <Text style={styles.alertLink}>Voir mes alertes ›</Text>
+    </Pressable>
+  );
+}

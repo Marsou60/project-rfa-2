@@ -81,7 +81,7 @@ const SLUG_TAB: Record<string, string> = Object.fromEntries(
 
 export function tabsFor(area: AppArea): string[] {
   if (area === 'public') return ['Accueil', 'Reseau', 'Rejoindre'];
-  if (area === 'adherent') return ['Accueil', 'RFA', 'Compte'];
+  if (area === 'adherent') return ['Accueil', 'RFA', 'Alertes', 'Compte'];
   if (area === 'demo') return ['Carte'];
   return ['Accueil', 'Adherents', 'Carte', 'Analyses', 'Alertes', 'Compte'];
 }

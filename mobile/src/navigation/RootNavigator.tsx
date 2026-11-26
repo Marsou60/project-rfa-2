@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
+import { useAdherentAlertBadge } from '../screens/useAdherentAlertBadge';
 import { useNetworkDashboard } from '../api/networkStore';
 import { Icon, IconName } from '../components/Icon';
 import { colors } from '../theme';
@@ -13,6 +14,7 @@ import { VitrineHomeScreen } from '../screens/VitrineHomeScreen';
 import { VitrineNetworkScreen } from '../screens/VitrineNetworkScreen';
 import { VitrineContactScreen } from '../screens/VitrineContactScreen';
 import { AccountScreen } from '../screens/AccountScreen';
+import { AdherentAlertsScreen } from '../screens/AdherentAlertsScreen';
 import { UnionHomeScreen } from '../screens/UnionHomeScreen';
 import { ClientsScreen } from '../screens/ClientsScreen';
 import { ClientRfaScreen } from '../screens/ClientRfaScreen';
@@ -198,6 +200,8 @@ function UnionTabs() {
 }
 
 function AdherentTabs() {
+  const { user } = useAuth();
+  const alertBadge = useAdherentAlertBadge(user?.linked_code_union, user?.linked_groupe);
   const screenOptions = useTabScreenOptions();
 
   return (
@@ -218,6 +222,16 @@ function AdherentTabs() {
           headerShown: false,
           tabBarLabel: 'Ma RFA',
           tabBarIcon: tabIcon('cash', 'cash-outline'),
+        }}
+      />
+      <Tab.Screen
+        name="Alertes"
+        component={AdherentAlertsScreen}
+        options={{
+          headerShown: false,
+          tabBarLabel: 'Alertes',
+          tabBarBadge: alertBadge,
+          tabBarIcon: tabIcon('notifications', 'notifications-outline'),
         }}
       />
       <Tab.Screen
