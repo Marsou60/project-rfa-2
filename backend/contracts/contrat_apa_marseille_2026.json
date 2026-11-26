@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "APA Marseille 2026 — taux garantis plateforme + bonus Nord+Franchise 12% Alliance/ACR si conditions. Ne remplace PAS le contrat APA 2025.",
+  "description": "APA Marseille 2026 — tableau de base 2026 sous le seuil de l'avenant, taux garantis au-dessus (sans cumul), bonus Nord+Franchise 12% Alliance/ACR si conditions. Ne remplace PAS le contrat APA 2025.",
   "contracts": [
     {
       "id": "CONTRAT_APA_MARSEILLE_2026",
@@ -8,31 +8,83 @@
       "isDefault": false,
       "useCombinedGlobalRate": false,
       "scope": "ADHERENT",
-      "notes": "RFA 2026 APA Marseille. Taux garantis : Alliance/EXADIS/ACR 11% dès 450k, DCA 10,5% dès 150k. Bonus Nord+Franchise : Alliance+ACR passent à 12% si Alliance≥450k ET ACR≥450k ET CA total≥2M€ (géré par le calculateur). Tripartites livret 2026. Partenaires FUCHS/TOTAL/NPS hors moteur RFA. Cotisation Alliance offerte (ne pas déduire).",
+      "notes": "RFA 2026 APA Marseille. Sous le seuil de l'avenant : tableau de base 2026 (RFA + bonus, jusqu'à 3,5 % + 3 %). À partir du seuil, l'avenant remplace le tableau et ne se cumule pas : Alliance/EXADIS/ACR 11 % dès 450 k€ (bonus remis à 0), DCA 10,5 % dès 150 k€ (bonus remis à 0). Bonus Nord+Franchise : Alliance+ACR passent à 12 % si Alliance≥450 k€ ET ACR≥450 k€ ET CA total≥2 M€ (géré par le calculateur, hors barème). Tripartites livret 2026 inchangés. Partenaires FUCHS/TOTAL/NPS hors moteur RFA. Cotisation Alliance offerte (ne pas déduire).",
       "globalRules": {
         "GLOBAL_ALLIANCE": {
           "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03},
+            {"min": 200000, "rate": 0.035},
             {"min": 450000, "rate": 0.11}
           ],
-          "tiersBonus": []
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03},
+            {"min": 450000, "rate": 0.0}
+          ]
         },
         "GLOBAL_ACR": {
           "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03},
+            {"min": 200000, "rate": 0.035},
             {"min": 450000, "rate": 0.11}
           ],
-          "tiersBonus": []
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03},
+            {"min": 450000, "rate": 0.0}
+          ]
         },
         "GLOBAL_EXADIS": {
           "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
+            {"min": 150000, "rate": 0.03},
+            {"min": 200000, "rate": 0.035},
             {"min": 450000, "rate": 0.11}
           ],
-          "tiersBonus": []
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.025},
+            {"min": 200000, "rate": 0.03},
+            {"min": 450000, "rate": 0.0}
+          ]
         },
         "GLOBAL_DCA": {
           "tiersRfa": [
+            {"min": 20000, "rate": 0.01},
+            {"min": 50000, "rate": 0.015},
+            {"min": 75000, "rate": 0.02},
+            {"min": 100000, "rate": 0.025},
             {"min": 150000, "rate": 0.105}
           ],
-          "tiersBonus": []
+          "tiersBonus": [
+            {"min": 20000, "rate": 0.005},
+            {"min": 50000, "rate": 0.01},
+            {"min": 75000, "rate": 0.015},
+            {"min": 100000, "rate": 0.02},
+            {"min": 150000, "rate": 0.0}
+          ]
         }
       },
       "triRules": {
