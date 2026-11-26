@@ -10,18 +10,21 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
+  getClientDashboard,
   getClientMonthlyEvolution,
   getClientRfa,
   getImpayesByAdherent,
   ImpayeItem,
 } from '../api/consultation';
+import { getMyMissingDocs } from '../api/fiches';
 import { useSupplierLogos } from '../api/logos';
 import { useAuth } from '../auth/AuthContext';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SupplierLogoBadge } from '../components/SupplierLogoBadge';
 import { colors, spacing } from '../theme';
 import { OwnAlerts, OwnPalier, PALIER_NEAR_EUR, ReachedPalier, buildOwnAlerts } from '../utils/adherentAlerts';
-import { canonPlatform, fmtEuro, fmtPct, monthLong } from '../utils/format';
+import { SituationAlerts, buildSituationAlerts } from '../utils/adherentSituation';
+import { canonPlatform, fmtDeltaPct, fmtEuro, fmtPct, monthLong } from '../utils/format';
 
 const KNOWN = new Set(['ACR', 'DCA', 'EXADIS', 'ALLIANCE']);
 
@@ -45,6 +48,7 @@ export function AdherentAlertsScreen() {
   const groupe = user?.linked_groupe || null;
   const { logos } = useSupplierLogos();
   const [alerts, setAlerts] = useState<OwnAlerts | null>(null);
+  const [situation, setSituation] = useState<SituationAlerts | null>(null);
   const [impayes, setImpayes] = useState<ImpayeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,12 +62,22 @@ export function AdherentAlertsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const [rfa, monthly, imp] = await Promise.all([
+      const [rfa, monthly, imp, dash, missing] = await Promise.all([
         getClientRfa({ codeUnion: code, groupeClient: code ? null : groupe, year: 2026 }),
         getClientMonthlyEvolution({ codeUnion: code, groupeClient: code ? null : groupe }).catch(() => null),
         code ? getImpayesByAdherent(code).catch(() => null) : Promise.resolve(null),
+        getClientDashboard({ codeUnion: code, groupeClient: code ? null : groupe }).catch(() => null),
+        code ? getMyMissingDocs().catch(() => []) : Promise.resolve([]),
       ]);
-      setAlerts(buildOwnAlerts(rfa, monthly?.platforms || []));
+      const next = buildOwnAlerts(rfa, monthly?.platforms || []);
+      setAlerts(next);
+      setSituation(buildSituationAlerts({
+        brands: dash?.top_marques || [],
+        months: monthly?.months || [],
+        missingDocs: missing,
+        reached: next.reached,
+        reportingMonth: rfa.reporting_month,
+      }));
       setImpayes(imp?.items || []);
     } catch (e: unknown) {
       const msg =
@@ -119,6 +133,69 @@ export function AdherentAlertsScreen() {
               <PalierCard key={item.id} item={item} logos={logos} onPress={openRfa} />
             ))
           )}
+
+          {situation && situation.brands.length > 0 ? (
+            <>
+              <Text style={styles.section}>Marque en baisse</Text>
+              <Text style={styles.intro}>
+                Marques d’au moins 5 000 € l’an dernier, en recul de 15 % ou plus sur la même période.
+              </Text>
+              {situation.brands.map((brand) => (
+                <View key={brand.label} style={styles.card}>
+                  <Text style={styles.kicker}>Marque</Text>
+                  <Text style={styles.cardTitle}>{brand.label}</Text>
+                  <Text style={styles.body}>
+                    {fmtEuro(brand.current)} contre {fmtEuro(brand.previous)} en 2025 · {fmtDeltaPct(brand.deltaPct)}
+                  </Text>
+                </View>
+              ))}
+            </>
+          ) : null}
+
+          {situation?.month ? (
+            <>
+              <Text style={styles.section}>Mois en baisse</Text>
+              <Text style={styles.intro}>
+                Dernier mois importé, en recul de 15 % ou plus par rapport au même mois l’an dernier (au moins 1 000 € en N-1).
+              </Text>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>{monthLong(situation.month.month)}</Text>
+                <Text style={styles.body}>
+                  {fmtEuro(situation.month.current)} contre {fmtEuro(situation.month.previous)} · {fmtDeltaPct(situation.month.deltaPct)}
+                </Text>
+              </View>
+            </>
+          ) : null}
+
+          {situation && situation.missingDocs.length > 0 ? (
+            <Pressable
+              style={styles.warn}
+              onPress={() => navigation.navigate('Compte')}
+              accessibilityRole="button"
+              accessibilityLabel="Pièces manquantes, ouvrir le compte"
+            >
+              <Text style={styles.kicker}>Pièce manquante</Text>
+              <Text style={styles.cardTitle}>{situation.missingDocs.join(', ')}</Text>
+              <Text style={styles.body}>Le dossier n’est pas complet. Ouvrir Compte ›</Text>
+            </Pressable>
+          ) : null}
+
+          {situation && situation.reachedThisMonth.length > 0 ? (
+            <>
+              <Text style={styles.section}>Palier franchi ce mois-ci</Text>
+              <Text style={styles.intro}>
+                Seuils passés pendant le dernier mois importé, d’après le cumul des achats mois par mois.
+              </Text>
+              {situation.reachedThisMonth.map((item) => (
+                <View key={item.id} style={styles.good}>
+                  <Text style={styles.cardTitle}>{item.label}</Text>
+                  <Text style={styles.body}>
+                    Palier {fmtEuro(item.threshold)} franchi en {monthLong(item.month)}.
+                  </Text>
+                </View>
+              ))}
+            </>
+          ) : null}
 
           <Text style={styles.section}>Déjà atteints</Text>
           <Text style={styles.intro}>

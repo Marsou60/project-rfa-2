@@ -41,7 +41,7 @@
     "web": "expo start --web",
     "build:web": "expo export -p web",
     "test:map": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/map/markerStyle.test.ts src/map/filters.test.ts",
-    "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test-register.mjs --test src/map/markerStyle.test.ts src/map/filters.test.ts src/navigation/appLocation.test.ts src/navigation/historyController.test.ts src/navigation/loggedOut.test.ts src/auth/session.test.ts src/utils/rankRows.test.ts src/utils/monthPlatforms.test.ts src/utils/rfaProgress.test.ts src/utils/adherentAlerts.test.ts src/utils/visitBrief.test.ts",
+    "test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test-register.mjs --test src/map/markerStyle.test.ts src/map/filters.test.ts src/navigation/appLocation.test.ts src/navigation/historyController.test.ts src/navigation/loggedOut.test.ts src/auth/session.test.ts src/utils/rankRows.test.ts src/utils/monthPlatforms.test.ts src/utils/rfaProgress.test.ts src/utils/adherentAlerts.test.ts src/utils/adherentSituation.test.ts src/utils/visitBrief.test.ts",
     "build:apk": "eas build -p android --profile preview"
   },
   "private": true
