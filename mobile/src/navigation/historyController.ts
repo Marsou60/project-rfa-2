@@ -38,7 +38,8 @@ export type HistoryBridge = {
   getArea: () => AppArea;
 };
 
-const STORAGE_KEY = 'rfa-web-history';
+export const WEB_HISTORY_STORAGE_KEY = 'rfa-web-history';
+const STORAGE_KEY = WEB_HISTORY_STORAGE_KEY;
 
 export type HistoryController = {
   notify: () => void;

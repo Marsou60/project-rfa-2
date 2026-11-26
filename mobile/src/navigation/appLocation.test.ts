@@ -77,6 +77,7 @@ test('les adresses d’écran survivent à un aller-retour', () => {
 
 test('une adresse inconnue ou hors rôle revient à l’accueil', () => {
   assert.equal(build(parse('/nope', 'union')), '/accueil');
+  assert.equal(build(parse('/compte', 'public')), '/accueil');
   assert.equal(build(parse('/analyses/marque/LuK/plateformes', 'public')), '/accueil');
   assert.equal(build(parse('/', 'adherent')), '/accueil');
   assert.equal(build(parse('/ma-rfa', 'adherent')), '/ma-rfa/rfa');

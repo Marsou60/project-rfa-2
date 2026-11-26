@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 import {
   AuthUser,
   isAdherentRole,
@@ -8,6 +9,7 @@ import {
   logout as apiLogout,
 } from '../api/client';
 import { clearNetworkDashboard, setNetworkCommercialFilter } from '../api/networkStore';
+import { exitToPublicHome } from '../navigation/loggedOut';
 import { hasNetworkFullAccess, resolveCommercialScope } from './commercialScope';
 
 type AuthContextValue = {
@@ -55,8 +57,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await apiLogout();
+    try {
+      await apiLogout();
+    } catch (error) {
+      console.error('Déconnexion : session locale', error);
+    }
     clearNetworkDashboard();
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      exitToPublicHome(window);
+    }
     setUser(null);
   }, []);
 

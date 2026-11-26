@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
+import { AUTH_TOKEN_KEY, AUTH_USER_KEY, clearStoredSession } from '../auth/session';
 import { storageDelete, storageGet, storageSet } from '../utils/storage';
 
-const TOKEN_KEY = 'rfa_auth_token';
-const USER_KEY = 'rfa_auth_user';
+const TOKEN_KEY = AUTH_TOKEN_KEY;
+const USER_KEY = AUTH_USER_KEY;
 
 export type UserRole = 'ADMIN' | 'COMMERCIAL' | 'ADHERENT' | string;
 
@@ -85,8 +86,7 @@ export async function loadStoredSession(): Promise<{ token: string; user: AuthUs
 }
 
 export async function logout() {
-  await storageDelete(TOKEN_KEY);
-  await storageDelete(USER_KEY);
+  await clearStoredSession(storageDelete);
 }
 
 export function isUnionRole(role?: string | null): boolean {
