@@ -43,13 +43,11 @@ test('les paliers restants sont triés du plus proche, avec le gain de RFA', () 
   assert.equal(alerts.remaining[0].label, 'DCA');
   assert.equal(alerts.remaining[0].missing, 1000);
   assert.equal(alerts.remaining[0].sentence, `Encore ${fmtEuro(1000)} pour +${fmtEuro(150)} de RFA.`);
-  const acrRow = alerts.remaining.find((item) => item.label === 'ACR');
-  assert.ok(acrRow);
-  assert.equal(acrRow.missing, 8000);
-  assert.equal(acrRow.gain, 580);
   assert.equal(alerts.closest?.id, 'GLOBAL_DCA');
-  assert.equal(alerts.remaining.some((item) => item.locked && item.kind === 'tripartite'), true);
-  assert.equal(alerts.badge, 4);
+  assert.equal(alerts.remaining.some((item) => item.label === 'ACR'), false);
+  assert.equal(alerts.remaining.some((item) => item.kind === 'niveau'), false);
+  assert.equal(alerts.remaining.some((item) => item.locked), false);
+  assert.equal(alerts.badge, 2);
 });
 
 test('un palier déjà franchi donne le mois du cumul, pas une date inventée', () => {
@@ -78,11 +76,28 @@ test('sans historique mensuel, le palier atteint n’a pas de mois', () => {
   assert.equal(hit.month, null);
 });
 
-test('un impayé actif ajoute 1 au badge, les tripartites verrouillées non', () => {
+test('un palier à exactement 2 000 € reste, un palier à 2 001 € non', () => {
+  const alerts = buildOwnAlerts({
+    available: true,
+    ca: { totals: { global_total: 10000 } },
+    rfa: {
+      global: {
+        GLOBAL_ACR: { label: 'ACR', ca: 48000, tiers_rfa: [{ min: 50000, rate: 0.02 }] },
+        GLOBAL_DCA: { label: 'DCA', ca: 7999, tiers_rfa: [{ min: 10000, rate: 0.01 }] },
+      },
+    },
+  });
+  assert.deepEqual(alerts.remaining.map((item) => item.label), ['ACR']);
+  assert.equal(alerts.remaining[0].missing, 2000);
+  assert.equal(alerts.closest?.label, 'ACR');
+  assert.equal(alerts.reached.length >= 0, true);
+});
+
+test('un impayé actif ajoute 1 au badge, les paliers loin non', () => {
   const alerts = buildOwnAlerts(acr);
-  const chase = alerts.remaining.filter((item) => !item.locked).length + 1;
-  assert.equal(alerts.badge, chase);
-  assert.equal(alertBadge(alerts, 1), chase + 1);
+  assert.equal(alerts.remaining.filter((item) => !item.locked).length, 1);
+  assert.equal(alerts.badge, 2);
+  assert.equal(alertBadge(alerts, 1), 3);
   assert.equal(alerts.acr?.missing, 23000);
 });
 

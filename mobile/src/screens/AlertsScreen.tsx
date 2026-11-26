@@ -16,6 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Icon, IconName } from '../components/Icon';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { colors, spacing } from '../theme';
+import { PALIER_NEAR_EUR } from '../utils/adherentAlerts';
 import { fmtDeltaPct, fmtEuro } from '../utils/format';
 
 const MONTHS = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -46,7 +47,7 @@ const GAP_PRESETS = [1500, 2000, 3000, 5000];
 
 function parseGap(text: string): number {
   const n = Number(String(text).replace(/\s/g, '').replace(',', '.'));
-  if (!Number.isFinite(n) || n < 0) return 2000;
+  if (!Number.isFinite(n) || n < 0) return PALIER_NEAR_EUR;
   return Math.round(n);
 }
 
@@ -69,7 +70,7 @@ export function AlertsScreen() {
   const { dash, loading, error, refresh } = useNetworkDashboard();
   const requested = String(route.params?.alerte || '');
   const palierVue = route.params?.palier === 'projection' ? 'projection' : 'date';
-  const [gapText, setGapText] = useState('2000');
+  const [gapText, setGapText] = useState(String(PALIER_NEAR_EUR));
   const [palier, setPalier] = useState<PalierAlerts | null>(null);
   const [palierLoading, setPalierLoading] = useState(false);
   const [palierError, setPalierError] = useState<string | null>(null);
