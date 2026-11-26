@@ -74,3 +74,55 @@ export async function uploadClientDocument(
   );
   return (data?.client || null) as ClientFiche | null;
 }
+
+export type OwnPiece = {
+  kind: string;
+  label: string;
+  missing: boolean;
+  status?: 'pending' | 'refused' | null;
+  reason?: string | null;
+};
+
+export async function getMyDocuments(): Promise<OwnPiece[]> {
+  const { data } = await api.get('/me/documents');
+  return (data?.pieces || []) as OwnPiece[];
+}
+
+export async function submitMyDocument(kind: string, file: { uri?: string; name: string; type: string; file?: Blob }): Promise<void> {
+  const form = new FormData();
+  form.append('kind', kind);
+  if (file.file) form.append('file', file.file);
+  else form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
+  await api.post('/me/documents', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  });
+}
+
+export type PendingDocument = {
+  file_id: string;
+  kind: string;
+  label?: string;
+  status: string;
+  reason?: string | null;
+  link?: string | null;
+};
+
+export async function listPendingDocuments(codeUnion: string): Promise<PendingDocument[]> {
+  const { data } = await api.get(`/nathalie/client/${encodeURIComponent(codeUnion)}/pending-documents`);
+  return (data?.documents || []) as PendingDocument[];
+}
+
+export async function acceptPendingDocument(codeUnion: string, fileId: string): Promise<ClientFiche | null> {
+  const { data } = await api.post(
+    `/nathalie/client/${encodeURIComponent(codeUnion)}/pending-documents/${encodeURIComponent(fileId)}/accept`,
+  );
+  return (data?.client || null) as ClientFiche | null;
+}
+
+export async function refusePendingDocument(codeUnion: string, fileId: string, reason: string): Promise<void> {
+  await api.post(
+    `/nathalie/client/${encodeURIComponent(codeUnion)}/pending-documents/${encodeURIComponent(fileId)}/refuse`,
+    { reason },
+  );
+}

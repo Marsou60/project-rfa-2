@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
-import { addClientNote, getClientNotes, nathalieGetClientDetail, polishClientNote, uploadClientDocument } from '../api/client'
+import { addClientNote, getClientNotes, nathalieGetClientDetail, polishClientNote, uploadClientDocument, listPendingDocuments, acceptPendingDocument, refusePendingDocument } from '../api/client'
 
 const DOCS = [
   { kind: 'rib', label: 'RIB', missing: 'RIB' },
@@ -72,6 +72,8 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
   const [rawDraft, setRawDraft] = useState(null)
   const [claudeText, setClaudeText] = useState(null)
   const [uploading, setUploading] = useState('')
+  const [pending, setPending] = useState([])
+  const [reasons, setReasons] = useState({})
   const [error, setError] = useState(null)
   const [alertOpen, setAlertOpen] = useState(false)
 
@@ -91,12 +93,14 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
         throw err
       }),
       getClientNotes(codeUnion),
+      listPendingDocuments(codeUnion).catch(() => []),
     ])
-      .then(([detail, journal]) => {
+      .then(([detail, journal, waiting]) => {
         if (cancel) return
         const next = detail?.client || null
         setFiche(next)
         setNotes(journal?.notes || [])
+        setPending(waiting || [])
         if (next?.missing_docs?.length) setAlertOpen(true)
       })
       .catch((err) => {
@@ -237,6 +241,36 @@ export default function ClientFichePanel({ codeUnion, tone = 'light', showIdenti
               </label>
             )
           })}
+        </div>
+      )}
+
+      {pending.length > 0 && (
+        <div className="space-y-2">
+          <p className={`text-sm font-semibold ${body}`}>À valider</p>
+          {pending.map((doc) => (
+            <div key={doc.file_id} className={`rounded-xl border p-3 text-sm ${dark ? 'border-white/15' : 'border-gray-200'}`}>
+              <p className="font-semibold">{doc.label || doc.kind}</p>
+              {doc.link ? <a className="underline" href={doc.link} target="_blank" rel="noreferrer">Ouvrir la pièce</a> : null}
+              <input
+                value={reasons[doc.file_id] || ''}
+                onChange={(e) => setReasons((prev) => ({ ...prev, [doc.file_id]: e.target.value }))}
+                placeholder="Raison du refus"
+                aria-label={`Raison du refus pour ${doc.label || doc.kind}`}
+                className={`mt-2 w-full rounded-lg px-2 py-1.5 text-sm ${dark ? 'bg-slate-950 text-white' : 'border border-gray-200'}`}
+              />
+              <div className="mt-2 flex gap-2">
+                <button type="button" className="rounded-lg bg-emerald-600 px-3 py-1.5 text-white" onClick={async () => {
+                  const res = await acceptPendingDocument(codeUnion, doc.file_id)
+                  if (res?.client) setFiche(res.client)
+                  setPending((prev) => prev.filter((item) => item.file_id !== doc.file_id))
+                }}>Accepter</button>
+                <button type="button" className="rounded-lg bg-red-600 px-3 py-1.5 text-white" onClick={async () => {
+                  await refusePendingDocument(codeUnion, doc.file_id, reasons[doc.file_id] || '')
+                  setPending((prev) => prev.filter((item) => item.file_id !== doc.file_id))
+                }}>Refuser</button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

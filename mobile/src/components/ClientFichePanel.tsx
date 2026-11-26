@@ -16,6 +16,10 @@ import {
   addClientNote,
   getClientFiche,
   getClientNotes,
+  listPendingDocuments,
+  acceptPendingDocument,
+  refusePendingDocument,
+  PendingDocument,
   polishClientNote,
   uploadClientDocument,
 } from '../api/fiches';
@@ -73,15 +77,22 @@ export function ClientFichePanel({ codeUnion }: { codeUnion: string }) {
   const [rawDraft, setRawDraft] = useState<string | null>(null);
   const [claudeText, setClaudeText] = useState<string | null>(null);
   const [uploading, setUploading] = useState('');
+  const [pending, setPending] = useState<PendingDocument[]>([]);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [next, journal] = await Promise.all([getClientFiche(codeUnion), getClientNotes(codeUnion)]);
+      const [next, journal, waiting] = await Promise.all([
+        getClientFiche(codeUnion),
+        getClientNotes(codeUnion),
+        listPendingDocuments(codeUnion).catch(() => []),
+      ]);
       setFiche(next);
       setNotes(journal);
+      setPending(waiting);
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Fiche indisponible.');
     } finally {
@@ -198,6 +209,64 @@ export function ClientFichePanel({ codeUnion }: { codeUnion: string }) {
               );
             })}
           </View>
+          {pending.length ? (
+            <View style={styles.pendingBox}>
+              <Text style={styles.section}>À valider</Text>
+              {pending.map((doc) => (
+                <View key={doc.file_id} style={styles.pendingItem}>
+                  <Text style={styles.name}>{doc.label || doc.kind}</Text>
+                  {doc.link ? (
+                    <Text style={styles.link} onPress={() => Linking.openURL(doc.link!)}>
+                      Ouvrir la pièce
+                    </Text>
+                  ) : null}
+                  <TextInput
+                    value={reasons[doc.file_id] || ''}
+                    onChangeText={(value) => setReasons((prev) => ({ ...prev, [doc.file_id]: value }))}
+                    placeholder="Raison du refus"
+                    placeholderTextColor="#C8BBA4"
+                    style={styles.input}
+                    accessibilityLabel={`Raison du refus pour ${doc.label || doc.kind}`}
+                  />
+                  <View style={styles.docRow}>
+                    <Pressable
+                      style={[styles.docBtn, styles.docOk]}
+                      onPress={async () => {
+                        setError(null);
+                        try {
+                          const next = await acceptPendingDocument(codeUnion, doc.file_id);
+                          if (next) setFiche(next);
+                          setPending((prev) => prev.filter((item) => item.file_id !== doc.file_id));
+                        } catch (err: any) {
+                          setError(err?.response?.data?.detail || 'Validation impossible.');
+                        }
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Accepter ${doc.label || doc.kind}`}
+                    >
+                      <Text style={styles.docText}>Accepter</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.docBtn, styles.docMissing]}
+                      onPress={async () => {
+                        setError(null);
+                        try {
+                          await refusePendingDocument(codeUnion, doc.file_id, reasons[doc.file_id] || '');
+                          setPending((prev) => prev.filter((item) => item.file_id !== doc.file_id));
+                        } catch (err: any) {
+                          setError(err?.response?.data?.detail || 'Refus impossible.');
+                        }
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Refuser ${doc.label || doc.kind}`}
+                    >
+                      <Text style={styles.docText}>Refuser</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </>
       ) : !loading ? (
         <Text style={styles.meta}>Aucune fiche Nathalie pour ce code. Vous pouvez quand même noter.</Text>
@@ -273,6 +342,8 @@ const styles = StyleSheet.create({
   link: { color: colors.orangeSoft, fontSize: 15, fontWeight: '700', textDecorationLine: 'underline' },
   error: { color: colors.red },
   docRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pendingBox: { gap: 8, marginTop: 8 },
+  pendingItem: { gap: 6 },
   docBtn: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1 },
   docOk: { borderColor: colors.green },
   docMissing: { borderColor: colors.red, backgroundColor: 'rgba(248,113,113,0.12)' },

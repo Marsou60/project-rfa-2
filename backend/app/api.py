@@ -6776,6 +6776,69 @@ async def nathalie_upload_document(
         raise HTTPException(status_code=500, detail=f"Dépôt du document impossible : {e}")
 
 
+@router.get("/me/documents")
+async def adherent_documents(user: User = Depends(require_staff_or_adherent)):
+    """Pièces du magasin lié au compte. Le code demandé n'existe pas : c'est le sien."""
+    from app.services.pending_documents import pieces_for_adherent, resolve_adherent_code
+    code = resolve_adherent_code(user)
+    try:
+        return {"code_union": code, "pieces": pieces_for_adherent(code)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/me/documents")
+async def adherent_submit_document(
+    kind: str = Form(...),
+    file: UploadFile = File(...),
+    code_union: Optional[str] = Form(None),
+    user: User = Depends(require_staff_or_adherent),
+):
+    """Dépôt adhérent. code_union est ignoré : seul le magasin du compte est utilisé."""
+    from app.services.pending_documents import resolve_adherent_code, submit_pending
+    code = resolve_adherent_code(user, code_union)
+    try:
+        return submit_pending(code, kind, file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Dépôt impossible.")
+
+
+@router.get("/nathalie/client/{code_union}/pending-documents")
+async def staff_pending_documents(code_union: str, _user: User = Depends(require_staff)):
+    from app.services.pending_documents import pending_for_staff
+    try:
+        return {"documents": pending_for_staff(code_union.strip().upper())}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/nathalie/client/{code_union}/pending-documents/{file_id}/accept")
+async def staff_accept_document(code_union: str, file_id: str, _user: User = Depends(require_staff)):
+    from app.services.pending_documents import accept_pending
+    try:
+        return accept_pending(code_union.strip().upper(), file_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/nathalie/client/{code_union}/pending-documents/{file_id}/refuse")
+async def staff_refuse_document(
+    code_union: str,
+    file_id: str,
+    payload: Dict[str, Any] = Body(...),
+    _user: User = Depends(require_staff),
+):
+    from app.services.pending_documents import refuse_pending
+    try:
+        return refuse_pending(code_union.strip().upper(), file_id, str(payload.get("reason") or ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/nathalie/client/{code_union}")
 async def nathalie_client_detail(code_union: str, user: Optional[User] = Depends(get_current_user)):
     """Détail complet d'un adhérent + tâches associées (Sheets, best-effort)."""

@@ -1140,6 +1140,26 @@ export const uploadClientDocument = async (codeUnion, kind, file) => {
   return response.data
 }
 
+export const listPendingDocuments = async (codeUnion) => {
+  const response = await api.get(`/nathalie/client/${encodeURIComponent(codeUnion)}/pending-documents`)
+  return response.data?.documents || []
+}
+
+export const acceptPendingDocument = async (codeUnion, fileId) => {
+  const response = await api.post(
+    `/nathalie/client/${encodeURIComponent(codeUnion)}/pending-documents/${encodeURIComponent(fileId)}/accept`,
+  )
+  return response.data
+}
+
+export const refusePendingDocument = async (codeUnion, fileId, reason) => {
+  const response = await api.post(
+    `/nathalie/client/${encodeURIComponent(codeUnion)}/pending-documents/${encodeURIComponent(fileId)}/refuse`,
+    { reason },
+  )
+  return response.data
+}
+
 export const nathalieGetClientDetail = async (codeUnion) => {
   const response = await api.get(`/nathalie/client/${codeUnion}`)
   return response.data

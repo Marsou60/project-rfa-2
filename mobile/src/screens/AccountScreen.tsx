@@ -3,6 +3,7 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import { BrandHero } from '../components/BrandHero';
+import { AdherentPieces } from '../components/AdherentPieces';
 import { PushOptIn } from '../components/PushOptIn';
 import { UNION_CONTACT } from '../content/union';
 import { colors, spacing } from '../theme';
@@ -61,6 +62,8 @@ export function AccountScreen() {
           {user?.linked_groupe ? <Row label="Groupe" value={String(user.linked_groupe)} /> : null}
           <Row label="Secrétariat" value={UNION_CONTACT.email} last />
         </View>
+
+        {isAdherent ? <AdherentPieces /> : null}
 
         <Pressable
           style={styles.button}
