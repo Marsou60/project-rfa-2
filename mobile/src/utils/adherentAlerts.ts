@@ -74,7 +74,7 @@ export type OwnAlerts = {
   remaining: OwnPalier[];
   reached: ReachedPalier[];
   closest: OwnPalier | null;
-  /** Paliers encore à aller chercher (hors tripartites verrouillées) + challenge ACR en cours. */
+  /** Paliers à 2 000 € ou moins (hors tripartites verrouillées) + challenge ACR en cours. */
   badge: number;
   acr: OwnAcr | null;
   reportingMonth: number | null;
@@ -82,6 +82,12 @@ export type OwnAlerts = {
 
 const SILVER_MIN = 100001;
 const GOLD_MIN = 300001;
+
+/**
+ * Même seuil que le filtre « Palier » de l'écran Alertes Union
+ * (valeur par défaut : 2 000 €). Un palier plus loin reste dans Ma RFA.
+ */
+export const PALIER_NEAR_EUR = 2000;
 
 function rateAt(tiers: Tier[], threshold: number): number {
   let rate = 0;
@@ -293,6 +299,7 @@ export function buildOwnAlerts(input: OwnAlertInput | null | undefined, months: 
   }
 
   remaining.sort((a, b) => Number(a.locked) - Number(b.locked) || a.missing - b.missing || b.gain - a.gain);
+  const near = remaining.filter((item) => item.missing > 0 && item.missing <= PALIER_NEAR_EUR);
   reached.sort((a, b) => (b.month || 0) - (a.month || 0) || a.label.localeCompare(b.label, 'fr'));
 
   const acrRaw = input.rfa?.acr_challenge;
@@ -306,11 +313,11 @@ export function buildOwnAlerts(input: OwnAlertInput | null | undefined, months: 
       }
     : null;
 
-  const chase = remaining.filter((item) => !item.locked).length + (acr && !acr.triggered && acr.missing > 0 ? 1 : 0);
+  const chase = near.filter((item) => !item.locked).length + (acr && !acr.triggered && acr.missing > 0 ? 1 : 0);
   return {
-    remaining,
+    remaining: near,
     reached,
-    closest: remaining.find((item) => !item.locked) || remaining[0] || null,
+    closest: near.find((item) => !item.locked) || near[0] || null,
     badge: chase,
     acr,
     reportingMonth: input.reporting_month ?? null,

@@ -20,7 +20,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { SupplierLogoBadge } from '../components/SupplierLogoBadge';
 import { colors, spacing } from '../theme';
-import { OwnAlerts, OwnPalier, ReachedPalier, buildOwnAlerts } from '../utils/adherentAlerts';
+import { OwnAlerts, OwnPalier, PALIER_NEAR_EUR, ReachedPalier, buildOwnAlerts } from '../utils/adherentAlerts';
 import { canonPlatform, fmtEuro, fmtPct, monthLong } from '../utils/format';
 
 const KNOWN = new Set(['ACR', 'DCA', 'EXADIS', 'ALLIANCE']);
@@ -108,10 +108,12 @@ export function AdherentAlertsScreen() {
         <>
           <Text style={styles.section}>À aller chercher</Text>
           <Text style={styles.intro}>
-            Du plus proche au plus loin. L’écart est le CA à date{until ? ` (jusqu’en ${until})` : ''}, le même que la jauge de votre fiche.
+            Seulement les paliers à {fmtEuro(PALIER_NEAR_EUR)} ou moins, du plus proche au plus loin. L’écart est le CA à date{until ? ` (jusqu’en ${until})` : ''}.
           </Text>
           {alerts.remaining.length === 0 ? (
-            <Text style={styles.empty}>Tous les paliers suivis sont atteints.</Text>
+            <Text style={styles.empty}>
+              Aucun palier à {fmtEuro(PALIER_NEAR_EUR)} ou moins. Les seuils plus loin restent dans Ma RFA.
+            </Text>
           ) : (
             alerts.remaining.map((item) => (
               <PalierCard key={item.id} item={item} logos={logos} onPress={openRfa} />
